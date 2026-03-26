@@ -13,11 +13,13 @@ services:
       MINIO_ACCESS_KEY: cloudforge
       MINIO_SECRET_KEY: cloudforge123
       MINIO_BUCKET: cloud-forge
+      PUBLISHED_WORKER_IMAGE: cloudforge/worker
+      PUBLISHED_WORKER_TAG: latest
     depends_on:
       - redis
       - minio
     volumes:
-      - ./data:/app/data
+      - sqlite-data:/app/data
     restart: unless-stopped
 
   redis:
@@ -40,3 +42,4 @@ services:
 
 volumes:
   minio-data:
+  sqlite-data:

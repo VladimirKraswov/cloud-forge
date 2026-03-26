@@ -37,7 +37,13 @@ const buildAttachedFilesConfig = (attachedFiles: AttachedFile[]) =>
     mount_path: `${WORKSPACE.input_dir}/${file.filename}`,
   }));
 
+/**
+ * Generates a docker run command for remote execution.
+ * MVP: Uses official published worker image. User code executes inside this container.
+ * Future: Worker will become an executor and orchestrate additional containers defined in job config.
+ */
 const buildDockerCommand = (job: Job, token: string, baseUrl: string): string => {
+  // We use the first container (or bootstrap) resources as a hint for the worker run command
   const bootstrap =
     job.containers.find((container) => container.name === 'bootstrap' || container.is_parent) ||
     job.containers[0];
@@ -53,7 +59,7 @@ const buildDockerCommand = (job: Job, token: string, baseUrl: string): string =>
   }
 
   parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
-  parts.push(bootstrap.image);
+  parts.push(`${config.publishedWorkerImage}:${config.publishedWorkerTag}`);
 
   return parts.join(' \\\n  ');
 };
@@ -117,7 +123,12 @@ export class JobService {
     return { id, normalized };
   }
 
-  static async listJobs(filters: { search?: string; status?: RunStatus }) {
+  static async listJobs(filters: {
+    search?: string;
+    status?: RunStatus;
+    limit?: number;
+    offset?: number;
+  }) {
     return JobModel.list(filters);
   }
 
@@ -126,11 +137,80 @@ export class JobService {
     if (!job) return null;
 
     const [runs, shareTokens] = await Promise.all([
-      RunModel.listByJobId(jobId),
+      RunModel.listByJobIdPaginated(jobId, 10, 0),
       ShareTokenModel.listByJobId(jobId),
     ]);
 
     return { job, runs, share_tokens: shareTokens };
+  }
+
+  static async updateJob(jobId: string, payload: any) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    // For PATCH, we merge with existing job data to validate
+    const merged = {
+      ...toCreateJobData(assertValidCreateJobPayload(job), jobId),
+      ...payload,
+    };
+
+    const normalized = assertValidCreateJobPayload(merged);
+    await JobModel.update(jobId, normalized);
+
+    return { id: jobId, normalized };
+  }
+
+  static async deleteJob(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    await JobModel.delete(jobId);
+  }
+
+  static async cloneJob(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const newId = makeId('job');
+    const clonedData = {
+      ...job,
+      id: newId,
+      title: `${job.title} (copy)`,
+    };
+
+    await JobModel.create(clonedData);
+
+    return { id: newId, title: clonedData.title };
+  }
+
+  static async listJobRuns(jobId: string, limit = 10, offset = 0) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const [runs, total] = await Promise.all([
+      RunModel.listByJobIdPaginated(jobId, limit, offset),
+      RunModel.countByJobId(jobId),
+    ]);
+
+    return { runs, total, limit, offset };
+  }
+
+  static async listJobShareTokens(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    return ShareTokenModel.listByJobId(jobId);
+  }
+
+  static async getShareToken(tokenId: string) {
+    return ShareTokenModel.findById(tokenId);
+  }
+
+  static async revokeShareToken(tokenId: string) {
+    const token = await ShareTokenModel.findById(tokenId);
+    if (!token) throw new Error('Share token not found');
+
+    await ShareTokenModel.revoke(tokenId);
   }
 
   static async createShareToken(
@@ -166,9 +246,7 @@ export class JobService {
     return {
       share_token: created,
       job_config_url: `${baseUrl}/api/run-config?token=${token}`,
-      docker_image:
-        job.containers.find((container) => container.name === 'bootstrap' || container.is_parent)
-          ?.image || job.containers[0]?.image,
+      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
       docker_command: buildDockerCommand(job, token, baseUrl),
     };
   }

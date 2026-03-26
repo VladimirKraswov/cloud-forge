@@ -173,7 +173,9 @@ export class JobModel {
   static async list(filters: {
     search?: string;
     status?: RunStatus;
-  }): Promise<JobListItem[]> {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ jobs: JobListItem[]; total: number }> {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -189,12 +191,33 @@ export class JobModel {
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    const countRow = await getAsync<{ total: number }>(
+      `
+      SELECT COUNT(*) as total
+      FROM jobs j
+      LEFT JOIN runs lr ON lr.id = (
+        SELECT r.id
+        FROM runs r
+        WHERE r.job_id = j.id
+        ORDER BY datetime(r.created_at) DESC, r.id DESC
+        LIMIT 1
+      )
+      ${whereClause}
+      `,
+      params,
+    );
+
+    const limit = filters.limit ?? 20;
+    const offset = filters.offset ?? 0;
+
     const rows = await allAsync<any>(
       `
       SELECT
         j.*,
         lr.status AS latest_run_status,
-        COALESCE(lr.started_at, lr.created_at) AS latest_run_at
+        COALESCE(lr.started_at, lr.created_at) AS latest_run_at,
+        (SELECT COUNT(*) FROM runs WHERE job_id = j.id) as runs_count,
+        (SELECT COUNT(*) FROM runs WHERE job_id = j.id AND status IN ('created', 'running')) as active_runs_count
       FROM jobs j
       LEFT JOIN runs lr ON lr.id = (
         SELECT r.id
@@ -205,15 +228,70 @@ export class JobModel {
       )
       ${whereClause}
       ORDER BY datetime(j.updated_at) DESC, datetime(j.created_at) DESC
+      LIMIT ? OFFSET ?
       `,
-      params,
+      [...params, limit, offset],
     );
 
-    return rows.map((row) => ({
+    const jobs = rows.map((row) => ({
       ...mapJobRow(row),
       latest_run_status: row.latest_run_status ?? null,
       latest_run_at: row.latest_run_at ?? null,
+      runs_count: row.runs_count,
+      active_runs_count: row.active_runs_count,
     }));
+
+    return {
+      jobs,
+      total: countRow?.total ?? 0,
+    };
+  }
+
+  static async update(id: string, jobData: Partial<Job>): Promise<void> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+
+    const fieldsMapping: Record<string, keyof Job> = {
+      title: 'title',
+      description: 'description',
+      owner_id: 'owner_id',
+      containers: 'containers',
+      environments: 'environments',
+      attached_files: 'attached_files',
+      execution_code: 'execution_code',
+      execution_language: 'execution_language',
+      entrypoint: 'entrypoint',
+    };
+
+    for (const [column, key] of Object.entries(fieldsMapping)) {
+      if (jobData[key] !== undefined) {
+        sets.push(`${column} = ?`);
+        let value = jobData[key];
+        if (['containers', 'environments', 'attached_files'].includes(column)) {
+          value = JSON.stringify(value);
+        }
+        params.push(value);
+      }
+    }
+
+    if (sets.length === 0) return;
+
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+
+    await runAsync(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+
+  static async delete(id: string): Promise<void> {
+    // Cascade delete handled by logic since we don't have FOREIGN KEY constraints with CASCADE enabled in init script (we should add them or do it manually)
+    // For now, doing it manually to be safe.
+    await runAsync('DELETE FROM logs WHERE run_id IN (SELECT id FROM runs WHERE job_id = ?)', [id]);
+    await runAsync('DELETE FROM run_artifacts WHERE run_id IN (SELECT id FROM runs WHERE job_id = ?)', [
+      id,
+    ]);
+    await runAsync('DELETE FROM runs WHERE job_id = ?', [id]);
+    await runAsync('DELETE FROM share_tokens WHERE job_id = ?', [id]);
+    await runAsync('DELETE FROM jobs WHERE id = ?', [id]);
   }
 }
 
@@ -241,6 +319,11 @@ export class ShareTokenModel {
 
   static async findByToken(token: string): Promise<ShareToken | null> {
     const row = await getAsync<any>('SELECT * FROM share_tokens WHERE token = ?', [token]);
+    return row ? mapShareTokenRow(row) : null;
+  }
+
+  static async findById(id: string): Promise<ShareToken | null> {
+    const row = await getAsync<any>('SELECT * FROM share_tokens WHERE id = ?', [id]);
     return row ? mapShareTokenRow(row) : null;
   }
 
@@ -304,6 +387,26 @@ export class RunModel {
       [jobId],
     );
     return rows.map(mapRunRow);
+  }
+
+  static async listByJobIdPaginated(
+    jobId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Run[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM runs WHERE job_id = ? ORDER BY datetime(created_at) DESC, id DESC LIMIT ? OFFSET ?`,
+      [jobId, limit, offset],
+    );
+    return rows.map(mapRunRow);
+  }
+
+  static async countByJobId(jobId: string): Promise<number> {
+    const row = await getAsync<{ total: number }>(
+      'SELECT COUNT(*) as total FROM runs WHERE job_id = ?',
+      [jobId],
+    );
+    return row?.total ?? 0;
   }
 
   static async markRunning(

@@ -28,4 +28,6 @@ export const config = {
     process.env.RUN_WATCHDOG_INTERVAL_SECONDS || '10',
     10,
   ),
+  publishedWorkerImage: process.env.PUBLISHED_WORKER_IMAGE || 'cloudforge/worker',
+  publishedWorkerTag: process.env.PUBLISHED_WORKER_TAG || 'latest',
 };

@@ -28,6 +28,8 @@ interface CreateJobBody {
 interface ListJobsQuerystring {
   search?: string;
   status?: RunStatus;
+  limit?: number;
+  offset?: number;
 }
 
 interface CreateShareTokenBody {
@@ -139,7 +141,13 @@ export default async function jobsRoutes(app: FastifyInstance) {
       },
     },
     async (req: FastifyRequest<{ Querystring: ListJobsQuerystring }>) => {
-      return JobService.listJobs(req.query);
+      const limit = req.query.limit ? Number(req.query.limit) : 20;
+      const offset = req.query.offset ? Number(req.query.offset) : 0;
+      return JobService.listJobs({
+        ...req.query,
+        limit,
+        offset,
+      });
     },
   );
 
@@ -165,6 +173,162 @@ export default async function jobsRoutes(app: FastifyInstance) {
       }
 
       return result;
+    },
+  );
+
+  app.patch(
+    '/jobs/:id',
+    {
+      schema: {
+        description: 'Update an existing job',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            description: { type: 'string', nullable: true },
+            owner_id: { type: 'string', nullable: true },
+            containers: {
+              type: 'array',
+              items: { type: 'object' },
+            },
+            environments: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+            },
+            attached_files: {
+              type: 'array',
+              items: { type: 'object' },
+            },
+            execution_code: { type: 'string' },
+            execution_language: {
+              type: 'string',
+              enum: ['python', 'javascript'],
+            },
+            entrypoint: { type: 'string', nullable: true },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{ Params: { id: string }; Body: CreateJobBody }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const result = await JobService.updateJob(req.params.id, req.body);
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof JobValidationError) {
+          return reply.code(422).send({
+            valid: false,
+            errors: err.details,
+            warnings: [],
+          });
+        }
+
+        const message = err instanceof Error ? err.message : 'Failed to update job';
+        req.log.error({ err }, '[PATCH /jobs/:id] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.delete(
+    '/jobs/:id',
+    {
+      schema: {
+        description: 'Delete a job and its associated runs and tokens',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        await JobService.deleteJob(req.params.id);
+        return reply.code(204).send();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to delete job';
+        req.log.error({ err }, '[DELETE /jobs/:id] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/clone',
+    {
+      schema: {
+        description: 'Clone a job',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const result = await JobService.cloneJob(req.params.id);
+        return reply.code(201).send(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to clone job';
+        req.log.error({ err }, '[POST /jobs/:id/clone] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/runs',
+    {
+      schema: {
+        description: 'List runs for a specific job',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            limit: { type: 'integer', minimum: 1, maximum: 100 },
+            offset: { type: 'integer', minimum: 0 },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { limit?: number; offset?: number };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const limit = req.query.limit ? Number(req.query.limit) : 20;
+        const offset = req.query.offset ? Number(req.query.offset) : 0;
+        const result = await JobService.listJobRuns(req.params.id, limit, offset);
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to list job runs';
+        req.log.error({ err }, '[GET /jobs/:id/runs] failed');
+        return reply.code(400).send({ error: message });
+      }
     },
   );
 
@@ -210,6 +374,32 @@ export default async function jobsRoutes(app: FastifyInstance) {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create share token';
         req.log.error({ err }, '[POST /jobs/:id/share-tokens] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/share-tokens',
+    {
+      schema: {
+        description: 'List share tokens for a specific job',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const result = await JobService.listJobShareTokens(req.params.id);
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to list share tokens';
+        req.log.error({ err }, '[GET /jobs/:id/share-tokens] failed');
         return reply.code(400).send({ error: message });
       }
     },

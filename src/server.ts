@@ -12,7 +12,10 @@ import wsRoutes, { broadcastRunStatus } from './routes/ws';
 import jobsRoutes from './routes/jobs';
 import workerRoutes from './routes/worker';
 import workersRoutes from './routes/workers';
+import tokensRoutes from './routes/tokens';
+import dashboardRoutes from './routes/dashboard';
 import catalogRoutes from './routes/catalog';
+import healthRoutes from './routes/health';
 import { ArtifactService } from './services/artifact.service';
 import { RunWatchdogService } from './services/run-watchdog.service';
 
@@ -95,11 +98,14 @@ const start = async () => {
       routePrefix: '/docs',
     });
 
+    await app.register(healthRoutes);
     await app.register(wsRoutes);
     await app.register(catalogRoutes);
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
     await app.register(workersRoutes);
+    await app.register(tokensRoutes);
+    await app.register(dashboardRoutes);
     await app.register(artifactsRoutes);
 
     startWatchdog();
