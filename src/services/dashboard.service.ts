@@ -1,6 +1,7 @@
 import db from '../db/index';
 import { JobModel, RunModel, WorkerModel } from '../models';
 import { JobListItem, Run, Worker } from '../models/job';
+import { JobService } from './job.service';
 
 const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
   new Promise((resolve, reject) => {
@@ -32,9 +33,9 @@ export class DashboardService {
         (SELECT COUNT(*) FROM runs WHERE status = 'lost') as lost_runs
     `);
 
-    const workers = await WorkerModel.list();
-    const active_workers = workers.filter(w => w.status !== 'offline').length;
-    const offline_workers = workers.filter(w => w.status === 'offline').length;
+    const workers = await JobService.listWorkers();
+    const active_workers = workers.filter((w) => w.status !== 'offline').length;
+    const offline_workers = workers.filter((w) => w.status === 'offline').length;
 
     return {
       total_jobs: stats.total_jobs,
@@ -64,8 +65,8 @@ export class DashboardService {
   }
 
   static async getActiveWorkers() {
-    const workers = await WorkerModel.list();
-    return workers.filter(w => w.status !== 'offline');
+    const workers = await JobService.listWorkers();
+    return workers.filter((w) => w.status !== 'offline');
   }
 
   static async getRecentEvents() {

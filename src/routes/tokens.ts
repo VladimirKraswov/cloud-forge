@@ -1,5 +1,12 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
+import { config } from '../utils/config';
+
+const getBaseUrl = (req: FastifyRequest): string => {
+  if (config.publicBaseUrl) return config.publicBaseUrl;
+  const host = req.headers.host || `localhost:${config.port}`;
+  return `${req.protocol}://${host}`;
+};
 
 export default async function tokensRoutes(app: FastifyInstance) {
   app.get(
@@ -17,7 +24,7 @@ export default async function tokensRoutes(app: FastifyInstance) {
       },
     },
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const token = await JobService.getShareToken(req.params.id);
+      const token = await JobService.getShareToken(req.params.id, getBaseUrl(req));
 
       if (!token) {
         return reply.code(404).send({ error: 'Share token not found' });

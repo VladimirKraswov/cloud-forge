@@ -2,24 +2,30 @@
 
 Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, and SQLite.
 
+## Architecture
+
+Cloud Forge consists of two main components:
+
+1.  **Orchestrator Stack**: The central control plane (Backend, Redis, MinIO, SQLite). Manages jobs, runs, and worker coordination.
+2.  **Worker Image**: A standalone, publishable Docker image that executes jobs on remote machines.
+
+### MVP Execution Model
+In the current MVP phase, user code executes **directly inside the worker container**. While Job configurations support multiple containers, the worker does not yet orchestrate them on the remote host. This is planned for the "Future Mode" phase.
+
 ## Features
 
-- **Project Structure**: Modern TypeScript-first organization.
-- **API Documentation**: Automatic Swagger UI at `/docs`.
-- **Job Queue**: Scalable job processing using BullMQ and Redis.
-- **WebSockets**: Live job status and log updates.
-- **Robust Data Layer**: SQLite for storage with models for easy interaction.
-- **Logging**: High-performance logging with Pino.
-- **Containerization**: Ready for deployment with Docker and Docker Compose.
-- **Testing**: Comprehensive tests using Vitest and Supertest.
+- **UI-Ready API**: Comprehensive CRUD for jobs, paginated lists, and dashboard statistics.
+- **Remote Execution**: Secure job claiming via share tokens.
+- **Live Monitoring**: Heartbeats, logs, and status updates via WebSockets.
+- **Artifact Management**: S3-compatible storage for persistent run outputs.
+- **Health Checks**: Live and Ready probes for orchestration stack reliability.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 20+
-- Redis (optional but recommended for BullMQ)
-- Docker (optional)
+- Docker & Docker Compose
 
 ### Local Development
 
@@ -28,47 +34,64 @@ Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, a
     npm install
     ```
 
-2.  **Configuration**:
-    Create a `.env` file based on the provided `.env` (it is created automatically by the setup).
+2.  **Run Infrastructure**:
+    ```bash
+    docker compose up -d redis minio
+    ```
 
-3.  **Run in development mode**:
+3.  **Run Orchestrator**:
     ```bash
     npm run dev
     ```
 
-4.  **Open API Documentation**:
-    Visit `http://localhost:3000/docs` in your browser.
-
-### Scripts
-
-- `npm run dev`: Start the server with `ts-node`.
-- `npm run build`: Compile TypeScript to JavaScript.
-- `npm run start`: Start the compiled production server.
-- `npm run lint`: Run ESLint to check code quality.
-- `npm test`: Run tests using Vitest.
-
-## Docker
-
-### Building images
-
-```bash
-docker build -t cloud-forge-server .
-docker build -t cloud-forge-worker -f Dockerfile.worker .
-```
+4.  **Open Documentation**:
+    Visit `http://localhost:3000/docs`.
 
 ## API Overview
 
-### Jobs
+### Jobs CRUD
+- `POST /jobs`: Create a job template.
+- `GET /jobs`: List jobs (paginated, searchable).
+- `GET /jobs/:id`: Get job details and counters.
+- `PATCH /jobs/:id`: Update job configuration.
+- `DELETE /jobs/:id`: Delete job (allowed only if no active runs).
+- `POST /jobs/:id/clone`: Create a copy of a job.
+- `POST /jobs/validate`: Dry-run validation of a job payload.
 
-- `POST /jobs`: Create a new task. Returns `job_id` and `run_token`.
-- `GET /jobs/:id`: Get task status, result, metrics, and logs.
+### Share Tokens
+- `POST /jobs/:id/share-tokens`: Create a token for remote execution.
+- `GET /jobs/:id/share-tokens`: List tokens for a job.
+- `GET /share-tokens/:id`: Get token details and remote run command.
+- `POST /share-tokens/:id/revoke`: Revoke a token.
+
+### Dashboard
+- `GET /dashboard/summary`: System-wide statistics.
+- `GET /dashboard/active-runs`: Currently executing tasks.
+- `GET /dashboard/active-workers`: Online worker status.
+- `GET /dashboard/recent-events`: Feed of recent terminal run changes.
 
 ### Worker API
-
-- `POST /claim`: Claim a job using a `run_token`.
-- `POST /logs`: Submit log messages for a job.
-- `POST /finish`: Mark a job as finished or failed with results and metrics.
+- `GET /api/run-config?token=...`: Claim a run and fetch full configuration.
+- `POST /api/runs/start`: Notify run start.
+- `POST /api/runs/heartbeat`: Send heartbeat and check for stop requests.
+- `POST /api/runs/logs`: Stream execution logs.
+- `POST /api/runs/finish`: Finalize run with status and metrics.
+- `GET /api/runs/:id`: Get detailed run history, logs, and artifacts.
 
 ### WebSockets
+- `WS /ws/runs/:run_id`: Real-time logs and status updates.
 
-- `WS /ws/:job_id`: Connect to receive live status updates and logs for a specific job.
+## Docker & Deployment
+
+### Orchestrator Stack
+Deploy the full orchestration stack using Docker Compose:
+```bash
+docker compose up -d
+```
+
+### Worker Image
+Build and publish the worker image:
+```bash
+npm run worker:build
+npm run worker:publish
+```

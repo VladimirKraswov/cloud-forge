@@ -173,10 +173,15 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
     expect(hbRes.json().should_stop).toBe(false);
 
     // 7. Upload Artifact
-    // Note: Since we use app.inject, multipart is tricky.
-    // For smoke test, we'll verify the endpoint logic exists.
-    // In a real e2e we'd use supertest with .attach()
-    // Here we'll just check that it's registered.
+    const artifactRes = await app.inject({
+      method: 'POST',
+      url: '/artifacts/upload-run',
+      query: { runId: run_id, relativePath: 'output.txt' },
+      // Simplified multipart simulation for inject
+      headers: { 'content-type': 'multipart/form-data; boundary=bound' },
+      payload: '--bound\r\nContent-Disposition: form-data; name="file"; filename="output.txt"\r\nContent-Type: text/plain\r\n\r\nhello artifact\r\n--bound--\r\n',
+    });
+    expect(artifactRes.statusCode).toBe(200);
 
     // 8. Finish Run
     const finishRes = await app.inject({
@@ -201,6 +206,30 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
     expect(runDetails.run.status).toBe('finished');
     expect(runDetails.logs.length).toBeGreaterThan(0);
     expect(runDetails.logs[0].message).toBe('Job started');
+    expect(runDetails.artifacts.length).toBeGreaterThan(0);
+    expect(runDetails.artifacts[0].filename).toBe('output.txt');
+
+    // 10. Verify Delete Policy (Variant A: cannot delete with active runs)
+    // First, create an active run
+    const activeTokenRes = await app.inject({
+      method: 'POST',
+      url: `/jobs/${job_id}/share-tokens`,
+      payload: { max_claims: 1 },
+    });
+    const activeToken = activeTokenRes.json().share_token.token;
+    await app.inject({
+      method: 'GET',
+      url: '/api/run-config',
+      query: { token: activeToken },
+    });
+    // This creates a run in 'created' status
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: `/jobs/${job_id}`,
+    });
+    expect(deleteRes.statusCode).toBe(400);
+    expect(deleteRes.json().error).toContain('active runs');
 
     console.log(`✅ Smoke E2E test passed for run ${run_id}`);
   });

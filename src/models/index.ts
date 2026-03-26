@@ -409,6 +409,14 @@ export class RunModel {
     return row?.total ?? 0;
   }
 
+  static async countActiveByJobId(jobId: string): Promise<number> {
+    const row = await getAsync<{ total: number }>(
+      "SELECT COUNT(*) as total FROM runs WHERE job_id = ? AND status IN ('created', 'running')",
+      [jobId],
+    );
+    return row?.total ?? 0;
+  }
+
   static async markRunning(
     id: string,
     workerId: string,

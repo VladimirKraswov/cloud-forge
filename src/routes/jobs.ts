@@ -136,6 +136,8 @@ export default async function jobsRoutes(app: FastifyInstance) {
               type: 'string',
               enum: ['created', 'running', 'finished', 'failed', 'cancelled', 'lost'],
             },
+            limit: { type: 'integer', minimum: 1, maximum: 100 },
+            offset: { type: 'integer', minimum: 0 },
           },
         },
       },

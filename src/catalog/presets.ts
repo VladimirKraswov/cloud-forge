@@ -18,6 +18,7 @@ export interface ContainerPreset {
   description: string;
   recommended_for: string[];
   container: Container;
+  support_level: 'supported' | 'future';
 }
 
 export interface JobTemplate {
@@ -26,6 +27,7 @@ export interface JobTemplate {
   description: string;
   tags: string[];
   draft: JobDraftTemplate;
+  support_level: 'supported' | 'future';
 }
 
 const PYTHON_SAMPLE = `from cloudforge import info, input_path, artifacts_path, raise_if_cancel_requested
@@ -84,6 +86,7 @@ export const containerPresets: ContainerPreset[] = [
     category: 'bootstrap',
     description: 'Базовый bootstrap-контейнер для Python job с SDK Cloud Forge.',
     recommended_for: ['python', 'training', 'etl', 'data-processing'],
+    support_level: 'supported',
     container: {
       name: 'bootstrap',
       image: 'xproger/cloud-forge-worker:py311',
@@ -99,6 +102,7 @@ export const containerPresets: ContainerPreset[] = [
     category: 'bootstrap',
     description: 'Базовый bootstrap-контейнер для JavaScript/Node.js job.',
     recommended_for: ['javascript', 'node', 'etl', 'automation'],
+    support_level: 'supported',
     container: {
       name: 'bootstrap',
       image: 'xproger/cloud-forge-worker:node20',
@@ -114,6 +118,7 @@ export const containerPresets: ContainerPreset[] = [
     category: 'runtime',
     description: 'Контейнер с PyTorch и CUDA для обучения и инференса.',
     recommended_for: ['pytorch', 'training', 'gpu', 'vision'],
+    support_level: 'future',
     container: {
       name: 'pytorch',
       image: 'pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime',
@@ -130,6 +135,7 @@ export const containerPresets: ContainerPreset[] = [
     category: 'runtime',
     description: 'Контейнер для инференса LLM через vLLM.',
     recommended_for: ['llm', 'inference', 'vllm', 'gpu'],
+    support_level: 'future',
     container: {
       name: 'vllm',
       image: 'vllm/vllm-openai:latest',
@@ -146,6 +152,7 @@ export const containerPresets: ContainerPreset[] = [
     category: 'runtime',
     description: 'Контейнер для SFT/LoRA fine-tuning с Unsloth.',
     recommended_for: ['llm', 'finetune', 'unsloth', 'gpu'],
+    support_level: 'future',
     container: {
       name: 'unsloth',
       image: 'unsloth/unsloth:latest',
@@ -162,6 +169,7 @@ export const containerPresets: ContainerPreset[] = [
     category: 'model',
     description: 'Контейнер-носитель с предзагруженной моделью семейства Qwen 7B.',
     recommended_for: ['llm', 'qwen', 'inference', 'training'],
+    support_level: 'future',
     container: {
       name: 'model-qwen-7b',
       image: 'igortet/model-qwen-7b:latest',
@@ -178,6 +186,7 @@ export const jobTemplates: JobTemplate[] = [
     name: 'Python Basic',
     description: 'Простой Python job с одним bootstrap-контейнером.',
     tags: ['python', 'basic', 'sdk'],
+    support_level: 'supported',
     draft: {
       title: 'Python Basic Job',
       description: 'Шаблон базовой Python job для обработки данных или автоматизации.',
@@ -196,6 +205,7 @@ export const jobTemplates: JobTemplate[] = [
     name: 'JavaScript Basic',
     description: 'Простой Node.js job с bootstrap-контейнером.',
     tags: ['javascript', 'node', 'basic', 'sdk'],
+    support_level: 'supported',
     draft: {
       title: 'JavaScript Basic Job',
       description: 'Шаблон базовой JavaScript job для скриптов и автоматизации.',
@@ -214,6 +224,7 @@ export const jobTemplates: JobTemplate[] = [
     name: 'PyTorch Training',
     description: 'Стартовая конфигурация для обучения модели на PyTorch.',
     tags: ['python', 'pytorch', 'training', 'gpu'],
+    support_level: 'future',
     draft: {
       title: 'PyTorch Training Job',
       description: 'Шаблон job для обучения модели с GPU и датасетом.',
@@ -250,6 +261,7 @@ info("training finished")
     name: 'vLLM Inference',
     description: 'Шаблон для запуска инференса LLM с vLLM и отдельным model-контейнером.',
     tags: ['python', 'llm', 'vllm', 'inference', 'gpu'],
+    support_level: 'future',
     draft: {
       title: 'vLLM Inference Job',
       description: 'Шаблон для инференса с отдельным runtime и модельным контейнером.',

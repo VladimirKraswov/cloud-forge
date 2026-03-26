@@ -100,25 +100,25 @@ const normalizeWorkerStatus = (worker: Worker): Worker => {
   return { ...worker, status: 'online' };
 };
 
-const toCreateJobData = (payload: CreateJobPayload, id: string) => ({
-  id,
-  title: payload.title,
-  description: payload.description ?? null,
-  owner_id: payload.owner_id ?? null,
-  containers: payload.containers,
-  environments: payload.environments ?? {},
-  attached_files: payload.attached_files ?? [],
-  execution_code: payload.execution_code,
-  execution_language: payload.execution_language,
-  entrypoint: payload.entrypoint ?? null,
-});
-
 export class JobService {
+  static toCreateJobData = (payload: CreateJobPayload, id: string) => ({
+    id,
+    title: payload.title,
+    description: payload.description ?? null,
+    owner_id: payload.owner_id ?? null,
+    containers: payload.containers,
+    environments: payload.environments ?? {},
+    attached_files: payload.attached_files ?? [],
+    execution_code: payload.execution_code,
+    execution_language: payload.execution_language,
+    entrypoint: payload.entrypoint ?? null,
+  });
+
   static async createJob(payload: unknown) {
     const normalized = assertValidCreateJobPayload(payload);
     const id = makeId('job');
 
-    await JobModel.create(toCreateJobData(normalized, id));
+    await JobModel.create(this.toCreateJobData(normalized, id));
 
     return { id, normalized };
   }
@@ -136,12 +136,20 @@ export class JobService {
     const job = await JobModel.findById(jobId);
     if (!job) return null;
 
-    const [runs, shareTokens] = await Promise.all([
-      RunModel.listByJobIdPaginated(jobId, 10, 0),
+    const [shareTokens, totalRuns, activeRunsCount] = await Promise.all([
       ShareTokenModel.listByJobId(jobId),
+      RunModel.countByJobId(jobId),
+      RunModel.countActiveByJobId(jobId),
     ]);
 
-    return { job, runs, share_tokens: shareTokens };
+    return {
+      job,
+      share_tokens: shareTokens.map((t) => this.normalizeShareToken(t)),
+      stats: {
+        total_runs: totalRuns,
+        active_runs: activeRunsCount,
+      },
+    };
   }
 
   static async updateJob(jobId: string, payload: any) {
@@ -150,7 +158,7 @@ export class JobService {
 
     // For PATCH, we merge with existing job data to validate
     const merged = {
-      ...toCreateJobData(assertValidCreateJobPayload(job), jobId),
+      ...this.toCreateJobData(assertValidCreateJobPayload(job), jobId),
       ...payload,
     };
 
@@ -163,6 +171,12 @@ export class JobService {
   static async deleteJob(jobId: string) {
     const job = await JobModel.findById(jobId);
     if (!job) throw new Error('Job not found');
+
+    const activeRuns = await RunModel.countActiveByJobId(jobId);
+
+    if (activeRuns > 0) {
+      throw new Error('Cannot delete job with active runs');
+    }
 
     await JobModel.delete(jobId);
   }
@@ -199,11 +213,38 @@ export class JobService {
     const job = await JobModel.findById(jobId);
     if (!job) throw new Error('Job not found');
 
-    return ShareTokenModel.listByJobId(jobId);
+    const tokens = await ShareTokenModel.listByJobId(jobId);
+    return tokens.map((t) => this.normalizeShareToken(t));
   }
 
-  static async getShareToken(tokenId: string) {
-    return ShareTokenModel.findById(tokenId);
+  static async getShareToken(tokenId: string, baseUrl: string) {
+    const token = await ShareTokenModel.findById(tokenId);
+    if (!token) return null;
+
+    const job = await JobModel.findById(token.job_id);
+    if (!job) return null;
+
+    return {
+      ...this.normalizeShareToken(token),
+      job_config_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
+      docker_command: buildDockerCommand(job, token.token, baseUrl),
+    };
+  }
+
+  private static normalizeShareToken(token: ShareToken) {
+    return {
+      id: token.id,
+      token: token.token,
+      revoked: token.revoked,
+      expires_at: token.expires_at,
+      max_claims: token.max_claims,
+      claim_count: token.claim_count,
+      remaining_claims:
+        token.max_claims != null ? Math.max(0, token.max_claims - token.claim_count) : null,
+      last_claimed_at: token.last_claimed_at,
+      created_at: token.created_at,
+    };
   }
 
   static async revokeShareToken(tokenId: string) {
@@ -244,7 +285,7 @@ export class JobService {
     }
 
     return {
-      share_token: created,
+      share_token: this.normalizeShareToken(created),
       job_config_url: `${baseUrl}/api/run-config?token=${token}`,
       docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
       docker_command: buildDockerCommand(job, token, baseUrl),
