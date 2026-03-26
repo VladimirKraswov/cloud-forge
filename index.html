@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>Logs</h2>
+  <pre id="logs"></pre>
+
+  <script>
+    const jobId = prompt("job id?");
+    const ws = new WebSocket(`ws://localhost:3000/ws/${jobId}`);
+
+    ws.onmessage = (event) => {
+      document.getElementById("logs").textContent += event.data;
+    };
+  </script>
+</body>
+</html>

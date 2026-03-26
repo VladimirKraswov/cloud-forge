@@ -1,0 +1,374 @@
+=== CODE BUNDLE ===
+root: /Volumes/Extend/work/cloud-forge
+ignore: .codebundleignore
+generated: 2026-03-26T12:04:02.305Z
+
+
+
+path: /package.json
+----------------------------------------
+{
+  "name": "cloud-forge",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.2.0",
+    "fastify": "^5.8.4",
+    "sqlite3": "^6.0.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  }
+}
+
+
+path: /runner.py
+----------------------------------------
+import os
+import requests
+import subprocess
+
+SERVER = os.getenv("SERVER_URL", "http://host.docker.internal:3000")
+TOKEN = os.environ.get("RUN_TOKEN")
+
+if not TOKEN:
+    print("RUN_TOKEN missing")
+    exit(1)
+
+# claim job
+r = requests.post(f"{SERVER}/claim", json={"token": TOKEN})
+config = r.json()
+
+if "error" in config:
+    print("Error:", config["error"])
+    exit(1)
+
+job_id = config["job_id"]
+cmd = config["command"]
+
+print(f"Running job {job_id}: {cmd}")
+
+proc = subprocess.Popen(
+    cmd,
+    shell=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT
+)
+
+# stream logs
+for line in iter(proc.stdout.readline, b''):
+    text = line.decode(errors="ignore")
+    print(text, end="")
+
+    try:
+        requests.post(f"{SERVER}/logs", json={
+            "job_id": job_id,
+            "message": text
+        })
+    except:
+        pass
+
+proc.wait()
+
+status = "finished" if proc.returncode == 0 else "failed"
+
+requests.post(f"{SERVER}/finish", json={
+    "job_id": job_id,
+    "status": status
+})
+
+print(f"Job finished with status: {status}")
+
+
+path: /src/db.ts
+----------------------------------------
+import sqlite3 from "sqlite3";
+
+const db = new sqlite3.Database("./db.sqlite");
+
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      status TEXT,
+      command TEXT
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tokens (
+      token TEXT PRIMARY KEY,
+      job_id TEXT,
+      used INTEGER DEFAULT 0
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT,
+      message TEXT
+    )
+  `);
+});
+
+export default db;
+
+
+path: /src/routes/jobs.ts
+----------------------------------------
+import { FastifyInstance } from "fastify";
+import { v4 as uuidv4 } from "uuid";
+import db from "../db";
+
+export default async function (app: FastifyInstance) {
+
+  app.post("/jobs", async (req) => {
+    const id = "job_" + uuidv4();
+    const token = "run_" + uuidv4();
+    const command = (req.body as any)?.command || "echo hello";
+
+    return new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO jobs (id, status, command) VALUES (?, ?, ?)",
+        [id, "pending", command],
+        (err) => {
+          if (err) return reject(err);
+
+          db.run(
+            "INSERT INTO tokens (token, job_id) VALUES (?, ?)",
+            [token, id],
+            (err2) => {
+              if (err2) return reject(err2);
+              resolve({ job_id: id, run_token: token });
+            }
+          );
+        }
+      );
+    });
+  });
+
+  app.get("/jobs/:id", async (req) => {
+    const { id } = req.params as any;
+
+    return new Promise((resolve, reject) => {
+      db.all(
+        "SELECT * FROM logs WHERE job_id = ? ORDER BY id ASC",
+        [id],
+        (err, logs) => {
+          if (err) return reject(err);
+
+          db.get(
+            "SELECT * FROM jobs WHERE id = ?",
+            [id],
+            (err2, job) => {
+              if (err2) return reject(err2);
+              resolve({ job, logs });
+            }
+          );
+        }
+      );
+    });
+  });
+}
+
+
+path: /src/routes/worker.ts
+----------------------------------------
+import { FastifyInstance } from "fastify";
+import db from "../db";
+
+export default async function (app: FastifyInstance) {
+
+  app.post("/claim", async (req, reply) => {
+    const { token } = req.body as { token?: string };
+
+    if (!token) {
+      return reply.code(400).send({ error: "token required" });
+    }
+
+    return new Promise((resolve) => {
+      db.get(
+        "SELECT * FROM tokens WHERE token = ? AND used = 0",
+        [token],
+        (err, row: any) => {
+
+          if (!row) {
+            return resolve({ error: "invalid token" });
+          }
+
+          db.run("UPDATE tokens SET used = 1 WHERE token = ?", [token]);
+
+          db.get(
+            "SELECT * FROM jobs WHERE id = ?",
+            [row.job_id],
+            (err2, job: any) => {
+
+              if (!job) {
+                return resolve({ error: "job not found" });
+              }
+
+              db.run(
+                "UPDATE jobs SET status = 'running' WHERE id = ?",
+                [job.id]
+              );
+
+              resolve({
+                job_id: job.id,
+                command: job.command
+              });
+            }
+          );
+        }
+      );
+    });
+  });
+
+  app.post("/logs", async (req) => {
+    const { job_id, message } = req.body as {
+      job_id: string;
+      message: string;
+    };
+
+    db.run(
+      "INSERT INTO logs (job_id, message) VALUES (?, ?)",
+      [job_id, message]
+    );
+
+    const clients = (app as any).wsClients.get(job_id) || [];
+    for (const conn of clients) {
+      try {
+        conn.socket.send(message);
+      } catch {}
+    }
+
+    return { ok: true };
+  });
+
+  app.post("/finish", async (req) => {
+    const { job_id, status } = req.body as {
+      job_id: string;
+      status?: string;
+    };
+
+    db.run(
+      "UPDATE jobs SET status = ? WHERE id = ?",
+      [status || "finished", job_id]
+    );
+
+    return { ok: true };
+  });
+}
+
+
+path: /src/routes/ws.ts
+----------------------------------------
+import { FastifyInstance, FastifyRequest } from "fastify";
+import { WebSocket } from "ws";
+
+type WSConnection = {
+  socket: WebSocket;
+};
+
+const clients = new Map<string, WSConnection[]>();
+
+export default async function (app: FastifyInstance) {
+
+  app.get(
+    "/ws/:job_id",
+    { websocket: true } as any, // 👈 фикс для TS
+    (connection: WSConnection, req: FastifyRequest<{ Params: { job_id: string } }>) => {
+
+      const jobId = req.params.job_id;
+
+      if (!clients.has(jobId)) {
+        clients.set(jobId, []);
+      }
+
+      clients.get(jobId)!.push(connection);
+
+      connection.socket.on("close", () => {
+        const arr = clients.get(jobId) || [];
+        clients.set(jobId, arr.filter(c => c !== connection));
+      });
+    }
+  );
+
+  app.decorate("wsClients", clients);
+}
+
+
+path: /src/server.ts
+----------------------------------------
+import Fastify from "fastify";
+
+const app = Fastify({ logger: true });
+
+app.register(require("@fastify/websocket"));
+
+app.register(require("./routes/ws"));
+app.register(require("./routes/jobs"));
+app.register(require("./routes/worker"));
+
+app.listen({ port: 3000 }, (err) => {
+  if (err) throw err;
+  console.log("Server running on http://localhost:3000");
+});
+
+
+path: /src/types.ts
+----------------------------------------
+export type JobStatus = "pending" | "running" | "finished" | "failed";
+
+export interface Job {
+  id: string;
+  status: JobStatus;
+  command: string;
+}
+
+export interface Token {
+  token: string;
+  job_id: string;
+  used: number;
+}
+
+export interface ClaimResponse {
+  job_id: string;
+  command: string;
+}
+
+export interface LogEntry {
+  job_id: string;
+  message: string;
+}
+
+
+path: /tsconfig.json
+----------------------------------------
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "rootDir": "src",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true
+  }
+}
+
+
+=== SUMMARY ===
+included: 9
+skipped(binary): 1
+skipped(size): 0
+skipped(ext): 0
+totalBytes(approx): 7013
