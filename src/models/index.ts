@@ -90,6 +90,8 @@ const mapRunRow = (row: any): Run => ({
   started_at: row.started_at ?? null,
   finished_at: row.finished_at ?? null,
   last_heartbeat_at: row.last_heartbeat_at ?? null,
+  cancel_requested_at: row.cancel_requested_at ?? null,
+  cancel_reason: row.cancel_reason ?? null,
   created_at: row.created_at,
   updated_at: row.updated_at,
 });
@@ -338,6 +340,20 @@ export class RunModel {
     );
   }
 
+  static async requestCancel(id: string, reason?: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE runs
+      SET
+        cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+        cancel_reason = COALESCE(?, cancel_reason),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [reason ?? 'Run cancelled by user', id],
+    );
+  }
+
   static async finish(
     id: string,
     status: Extract<RunStatus, 'finished' | 'failed' | 'cancelled' | 'lost'>,
@@ -357,6 +373,21 @@ export class RunModel {
       `,
       [status, result ?? null, metrics == null ? null : JSON.stringify(metrics), id],
     );
+  }
+
+  static async listStaleRuns(cutoffIso: string): Promise<Run[]> {
+    const rows = await allAsync<any>(
+      `
+      SELECT *
+      FROM runs
+      WHERE status IN ('created', 'running')
+        AND datetime(COALESCE(last_heartbeat_at, started_at, created_at)) < datetime(?)
+      ORDER BY datetime(COALESCE(last_heartbeat_at, started_at, created_at)) ASC
+      `,
+      [cutoffIso],
+    );
+
+    return rows.map(mapRunRow);
   }
 }
 

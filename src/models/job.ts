@@ -86,6 +86,8 @@ export interface Run {
   started_at?: string | null;
   finished_at?: string | null;
   last_heartbeat_at?: string | null;
+  cancel_requested_at?: string | null;
+  cancel_reason?: string | null;
   created_at: string;
   updated_at: string;
 }

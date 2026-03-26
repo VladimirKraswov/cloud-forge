@@ -8,11 +8,12 @@ import { initDb } from './db/index';
 import { config } from './utils/config';
 
 import artifactsRoutes from './routes/artifacts';
-import wsRoutes from './routes/ws';
+import wsRoutes, { broadcastRunStatus } from './routes/ws';
 import jobsRoutes from './routes/jobs';
 import workerRoutes from './routes/worker';
-import workersRoutes from './routes/workers';
+import workersRoutes from './routes/worker';
 import { ArtifactService } from './services/artifact.service';
+import { RunWatchdogService } from './services/run-watchdog.service';
 
 const app = Fastify({
   logger: {
@@ -27,6 +28,36 @@ const app = Fastify({
     level: 'info',
   },
 });
+
+let watchdogTimer: NodeJS.Timeout | null = null;
+
+const startWatchdog = () => {
+  if (watchdogTimer) {
+    return;
+  }
+
+  watchdogTimer = setInterval(async () => {
+    try {
+      const lostRuns = await RunWatchdogService.sweep();
+
+      for (const runId of lostRuns) {
+        app.log.warn({ runId }, 'Run marked as lost by watchdog');
+        broadcastRunStatus(runId, 'lost');
+      }
+    } catch (err) {
+      app.log.error({ err }, 'Run watchdog sweep failed');
+    }
+  }, config.runWatchdogIntervalSeconds * 1000);
+};
+
+const stopWatchdog = () => {
+  if (!watchdogTimer) {
+    return;
+  }
+
+  clearInterval(watchdogTimer);
+  watchdogTimer = null;
+};
 
 const start = async () => {
   try {
@@ -54,7 +85,7 @@ const start = async () => {
         info: {
           title: 'Cloud Forge API',
           description: 'Distributed Task Orchestration API',
-          version: '2.1.0',
+          version: '2.2.0',
         },
       },
     });
@@ -68,6 +99,12 @@ const start = async () => {
     await app.register(workerRoutes);
     await app.register(workersRoutes);
     await app.register(artifactsRoutes);
+
+    startWatchdog();
+
+    app.addHook('onClose', async () => {
+      stopWatchdog();
+    });
 
     await app.listen({ port: config.port, host: '0.0.0.0' });
 

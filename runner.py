@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Cloud Forge Runner v4
+Cloud Forge Runner v5
 - получает run-config по share token
 - создаёт workspace
 - скачивает attached files
 - запускает код
 - шлёт heartbeat
+- реагирует на should_stop от orchestrator
 - стримит логи
 - загружает артефакты из /workspace/artifacts
 - завершает run через run_id
@@ -22,7 +23,7 @@ import time
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
-print("🚀 Cloud-Forge Runner v4 starting...")
+print("🚀 Cloud-Forge Runner v5 starting...")
 
 try:
     import requests
@@ -35,6 +36,7 @@ except ImportError:
 JOB_CONFIG_URL = os.getenv("JOB_CONFIG_URL")
 RUN_TIMEOUT_SECONDS = int(os.getenv("RUN_TIMEOUT_SECONDS", "600"))
 HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("CLOUD_FORGE_HEARTBEAT_INTERVAL_SECONDS", "10"))
+STOP_GRACE_SECONDS = int(os.getenv("CLOUD_FORGE_STOP_GRACE_SECONDS", "10"))
 
 if not JOB_CONFIG_URL:
     print("❌ JOB_CONFIG_URL environment variable is required")
@@ -142,14 +144,14 @@ def upload_artifacts_directory(run_id: str, artifacts_dir: Path):
     uploaded_files = []
 
     for local_path in files_to_upload:
-        relative_path = local_path.relative_to(artifacts_dir).as_posix()
-        safe_log(run_id, f"⬆️ Uploading artifact: {relative_path}")
+      relative_path = local_path.relative_to(artifacts_dir).as_posix()
+      safe_log(run_id, f"⬆️ Uploading artifact: {relative_path}")
 
-        try:
-            result = upload_run_artifact(run_id, SERVER_URL, local_path, relative_path)
-            uploaded_files.append(result)
-        except Exception as exc:
-            safe_log(run_id, f"❌ Failed to upload artifact {relative_path}: {exc}", "error")
+      try:
+          result = upload_run_artifact(run_id, SERVER_URL, local_path, relative_path)
+          uploaded_files.append(result)
+      except Exception as exc:
+          safe_log(run_id, f"❌ Failed to upload artifact {relative_path}: {exc}", "error")
 
     safe_log(run_id, f"📦 Uploaded artifacts: {len(uploaded_files)}")
 
@@ -157,6 +159,31 @@ def upload_artifacts_directory(run_id: str, artifacts_dir: Path):
         "uploaded_count": len(uploaded_files),
         "uploaded_files": uploaded_files,
     }
+
+
+def terminate_process(proc: subprocess.Popen, run_id: str, reason: str):
+    if proc.poll() is not None:
+        return
+
+    safe_log(run_id, f"🛑 Stopping process: {reason}", "warn")
+
+    try:
+        proc.terminate()
+    except Exception as exc:
+        safe_log(run_id, f"⚠️ Failed to terminate process gracefully: {exc}", "warn")
+
+    deadline = time.time() + STOP_GRACE_SECONDS
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            return
+        time.sleep(0.2)
+
+    safe_log(run_id, "⚠️ Graceful stop timeout reached, killing process", "warn")
+
+    try:
+        proc.kill()
+    except Exception as exc:
+        safe_log(run_id, f"⚠️ Failed to kill process: {exc}", "error")
 
 
 try:
@@ -276,11 +303,14 @@ post_json(
 )
 
 heartbeat_stop_event = threading.Event()
+cancel_requested_event = threading.Event()
+cancel_reason_holder = {"reason": None}
+process_holder = {"process": None}
 
 
 def heartbeat_loop():
     while not heartbeat_stop_event.is_set():
-        post_json(
+        response = post_json(
             "/api/runs/heartbeat",
             {
                 "run_id": run_id,
@@ -292,6 +322,16 @@ def heartbeat_loop():
             timeout=5,
             raise_errors=False,
         )
+
+        if response is not None:
+            try:
+                payload = response.json()
+                if payload.get("should_stop"):
+                    cancel_requested_event.set()
+                    cancel_reason_holder["reason"] = payload.get("stop_reason") or "Stop requested by orchestrator"
+            except Exception:
+                pass
+
         heartbeat_stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
 
 
@@ -311,6 +351,7 @@ process = None
 stdout_thread = None
 stderr_thread = None
 timed_out = False
+cancelled = False
 
 
 def pump_stream(stream, level: str):
@@ -337,28 +378,40 @@ try:
         env=os.environ.copy(),
     )
 
+    process_holder["process"] = process
+
     stdout_thread = threading.Thread(target=pump_stream, args=(process.stdout, "info"), daemon=True)
     stderr_thread = threading.Thread(target=pump_stream, args=(process.stderr, "error"), daemon=True)
     stdout_thread.start()
     stderr_thread.start()
 
-    process.wait(timeout=RUN_TIMEOUT_SECONDS)
+    deadline = time.time() + RUN_TIMEOUT_SECONDS
 
-except subprocess.TimeoutExpired:
-    timed_out = True
-    safe_log(run_id, "⏰ Execution timed out", "error")
-    if process:
-        try:
-            process.kill()
-        except Exception:
-            pass
+    while True:
+        return_code = process.poll()
+        if return_code is not None:
+            break
+
+        if cancel_requested_event.is_set():
+            cancelled = True
+            terminate_process(process, run_id, cancel_reason_holder["reason"] or "Cancellation requested")
+            break
+
+        if time.time() >= deadline:
+            timed_out = True
+            safe_log(run_id, "⏰ Execution timed out", "error")
+            terminate_process(process, run_id, "Execution timeout")
+            break
+
+        time.sleep(1)
+
+    if process.poll() is None:
+        terminate_process(process, run_id, "Process still running after control loop")
+
 except Exception as exc:
     safe_log(run_id, f"❌ Error during execution: {exc}", "error")
     if process:
-        try:
-            process.kill()
-        except Exception:
-            pass
+        terminate_process(process, run_id, "Unhandled runner exception")
 
 if stdout_thread:
     stdout_thread.join(timeout=5)
@@ -370,16 +423,18 @@ heartbeat_thread.join(timeout=2)
 
 artifact_upload_summary = upload_artifacts_directory(run_id, artifacts_dir)
 
-if timed_out:
+exit_code = process.returncode if process is not None else None
+
+if cancelled:
+    final_status = "cancelled"
+    final_result = cancel_reason_holder["reason"] or "Run cancelled by orchestrator"
+elif timed_out:
     final_status = "failed"
     final_result = f"Execution timed out after {RUN_TIMEOUT_SECONDS} seconds"
-    exit_code = None
 elif process is None:
     final_status = "failed"
     final_result = "Process did not start"
-    exit_code = None
 else:
-    exit_code = process.returncode
     final_status = "finished" if exit_code == 0 else "failed"
     final_result = f"Process exited with code {exit_code}"
 
@@ -391,6 +446,7 @@ metrics = {
     "worker_id": WORKER_ID,
     "worker_name": WORKER_NAME,
     "artifact_upload": artifact_upload_summary,
+    "cancelled": cancelled,
 }
 
 post_json(

@@ -67,6 +67,9 @@ const isTokenExhausted = (token: ShareToken): boolean => {
   return token.claim_count >= token.max_claims;
 };
 
+const isRunTerminal = (status: RunStatus): boolean =>
+  ['finished', 'failed', 'cancelled', 'lost'].includes(status);
+
 const normalizeWorkerStatus = (worker: Worker): Worker => {
   if (!worker.last_seen_at) {
     return { ...worker, status: 'offline' };
@@ -265,6 +268,10 @@ export class JobService {
       throw new Error('Run not found');
     }
 
+    if (isRunTerminal(run.status)) {
+      throw new Error(`Run already ${run.status}`);
+    }
+
     await WorkerModel.upsertHeartbeat({
       id: worker.id,
       name: worker.name,
@@ -285,7 +292,7 @@ export class JobService {
       host?: string | null;
       capabilities?: Record<string, unknown> | null;
     },
-  ) {
+  ): Promise<{ should_stop: boolean; stop_reason?: string }> {
     const run = await RunModel.findById(runId);
     if (!run) {
       throw new Error('Run not found');
@@ -300,7 +307,39 @@ export class JobService {
       status: 'busy',
     });
 
-    await RunModel.touchHeartbeat(runId);
+    if (!isRunTerminal(run.status)) {
+      await RunModel.touchHeartbeat(runId);
+    }
+
+    if (run.status === 'cancelled') {
+      return {
+        should_stop: true,
+        stop_reason: run.cancel_reason || 'Run cancelled',
+      };
+    }
+
+    if (run.status === 'lost') {
+      return {
+        should_stop: true,
+        stop_reason: 'Run marked as lost by orchestrator',
+      };
+    }
+
+    if (run.cancel_requested_at) {
+      return {
+        should_stop: true,
+        stop_reason: run.cancel_reason || 'Run cancellation requested',
+      };
+    }
+
+    if (run.status === 'finished' || run.status === 'failed') {
+      return {
+        should_stop: true,
+        stop_reason: `Run already ${run.status}`,
+      };
+    }
+
+    return { should_stop: false };
   }
 
   static async addRunLog(runId: string, message: string, level: LogLevel = 'info') {
@@ -310,6 +349,43 @@ export class JobService {
     }
 
     await LogModel.add(runId, message, level);
+  }
+
+  static async cancelRun(runId: string, reason?: string) {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    if (run.status === 'cancelled') {
+      return {
+        run_id: runId,
+        status: 'cancelled' as const,
+        final: true,
+      };
+    }
+
+    if (run.status === 'finished' || run.status === 'failed' || run.status === 'lost') {
+      throw new Error(`Cannot cancel run in terminal status: ${run.status}`);
+    }
+
+    if (run.status === 'created') {
+      await this.finishRun(runId, 'cancelled', reason || 'Run cancelled before start');
+      return {
+        run_id: runId,
+        status: 'cancelled' as const,
+        final: true,
+      };
+    }
+
+    await RunModel.requestCancel(runId, reason || 'Run cancelled by user');
+
+    return {
+      run_id: runId,
+      status: run.status,
+      cancel_requested: true,
+      final: false,
+    };
   }
 
   static async finishRun(
@@ -323,11 +399,43 @@ export class JobService {
       throw new Error('Run not found');
     }
 
+    if (isRunTerminal(run.status)) {
+      return;
+    }
+
     await RunModel.finish(runId, status, result, metrics);
 
     if (run.worker_id) {
       await WorkerModel.release(run.worker_id);
     }
+  }
+
+  static async markStaleRunsLost() {
+    const cutoff = new Date(Date.now() - config.workerOfflineTimeoutSeconds * 1000).toISOString();
+    const staleRuns = await RunModel.listStaleRuns(cutoff);
+
+    const lostRunIds: string[] = [];
+
+    for (const run of staleRuns) {
+      if (isRunTerminal(run.status)) {
+        continue;
+      }
+
+      await this.finishRun(
+        run.id,
+        'lost',
+        'Worker heartbeat timed out',
+        {
+          reason: 'heartbeat_timeout',
+          cutoff,
+          last_heartbeat_at: run.last_heartbeat_at,
+        },
+      );
+
+      lostRunIds.push(run.id);
+    }
+
+    return lostRunIds;
   }
 
   static async registerRunArtifact(data: {

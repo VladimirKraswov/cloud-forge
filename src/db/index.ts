@@ -74,6 +74,8 @@ export const initDb = async (): Promise<void> => {
       started_at DATETIME,
       finished_at DATETIME,
       last_heartbeat_at DATETIME,
+      cancel_requested_at DATETIME,
+      cancel_reason TEXT,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -107,6 +109,8 @@ export const initDb = async (): Promise<void> => {
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_job_id ON runs(job_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_share_token_id ON runs(share_token_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_worker_id ON runs(worker_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_last_heartbeat_at ON runs(last_heartbeat_at)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_workers_last_seen_at ON workers(last_seen_at)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_id ON run_artifacts(run_id)`);

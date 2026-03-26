@@ -24,4 +24,8 @@ export const config = {
     process.env.WORKER_OFFLINE_TIMEOUT_SECONDS || '45',
     10,
   ),
+  runWatchdogIntervalSeconds: parseInt(
+    process.env.RUN_WATCHDOG_INTERVAL_SECONDS || '10',
+    10,
+  ),
 };
