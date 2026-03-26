@@ -11,7 +11,8 @@ import artifactsRoutes from './routes/artifacts';
 import wsRoutes, { broadcastRunStatus } from './routes/ws';
 import jobsRoutes from './routes/jobs';
 import workerRoutes from './routes/worker';
-import workersRoutes from './routes/worker';
+import workersRoutes from './routes/workers';
+import catalogRoutes from './routes/catalog';
 import { ArtifactService } from './services/artifact.service';
 import { RunWatchdogService } from './services/run-watchdog.service';
 
@@ -85,7 +86,7 @@ const start = async () => {
         info: {
           title: 'Cloud Forge API',
           description: 'Distributed Task Orchestration API',
-          version: '2.2.0',
+          version: '2.3.0',
         },
       },
     });
@@ -95,6 +96,7 @@ const start = async () => {
     });
 
     await app.register(wsRoutes);
+    await app.register(catalogRoutes);
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
     await app.register(workersRoutes);

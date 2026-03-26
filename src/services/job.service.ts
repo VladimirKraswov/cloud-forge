@@ -17,6 +17,7 @@ import {
   WorkspaceLayout,
 } from '../models/job';
 import { config } from '../utils/config';
+import { assertValidCreateJobPayload, CreateJobPayload } from '../utils/job-validation';
 
 const WORKSPACE: WorkspaceLayout = {
   root: '/workspace',
@@ -93,54 +94,27 @@ const normalizeWorkerStatus = (worker: Worker): Worker => {
   return { ...worker, status: 'online' };
 };
 
+const toCreateJobData = (payload: CreateJobPayload, id: string) => ({
+  id,
+  title: payload.title,
+  description: payload.description ?? null,
+  owner_id: payload.owner_id ?? null,
+  containers: payload.containers,
+  environments: payload.environments ?? {},
+  attached_files: payload.attached_files ?? [],
+  execution_code: payload.execution_code,
+  execution_language: payload.execution_language,
+  entrypoint: payload.entrypoint ?? null,
+});
+
 export class JobService {
-  static async createJob(data: {
-    title: string;
-    description?: string;
-    owner_id?: string;
-    containers: Job['containers'];
-    environments?: Job['environments'];
-    attached_files?: Job['attached_files'];
-    execution_code: string;
-    execution_language?: Job['execution_language'];
-    entrypoint?: string;
-  }) {
-    if (!data?.title?.trim()) {
-      throw new Error('title is required');
-    }
-
-    if (!Array.isArray(data.containers) || data.containers.length === 0) {
-      throw new Error('At least one container is required');
-    }
-
-    const hasBootstrap = data.containers.some(
-      (container) => container.name === 'bootstrap' || container.is_parent === true,
-    );
-
-    if (!hasBootstrap) {
-      throw new Error('Bootstrap container is required');
-    }
-
-    if (!data.execution_code?.trim()) {
-      throw new Error('execution_code is required');
-    }
-
+  static async createJob(payload: unknown) {
+    const normalized = assertValidCreateJobPayload(payload);
     const id = makeId('job');
 
-    await JobModel.create({
-      id,
-      title: data.title.trim(),
-      description: data.description ?? null,
-      owner_id: data.owner_id ?? null,
-      containers: data.containers,
-      environments: data.environments ?? {},
-      attached_files: data.attached_files ?? [],
-      execution_code: data.execution_code,
-      execution_language: data.execution_language ?? 'python',
-      entrypoint: data.entrypoint ?? null,
-    });
+    await JobModel.create(toCreateJobData(normalized, id));
 
-    return { id };
+    return { id, normalized };
   }
 
   static async listJobs(filters: { search?: string; status?: RunStatus }) {

@@ -2,6 +2,10 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
 import { Container, RunStatus } from '../models/job';
 import { config } from '../utils/config';
+import {
+  JobValidationError,
+  validateCreateJobPayload,
+} from '../utils/job-validation';
 
 interface CreateJobBody {
   title: string;
@@ -39,6 +43,28 @@ const getBaseUrl = (req: FastifyRequest): string => {
 
 export default async function jobsRoutes(app: FastifyInstance) {
   app.post(
+    '/jobs/validate',
+    {
+      schema: {
+        description: 'Validate job payload before creation',
+        body: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
+      const result = validateCreateJobPayload(req.body);
+
+      if (!result.valid) {
+        return reply.code(422).send(result);
+      }
+
+      return reply.send(result);
+    },
+  );
+
+  app.post(
     '/jobs',
     {
       schema: {
@@ -74,9 +100,20 @@ export default async function jobsRoutes(app: FastifyInstance) {
     },
     async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
       try {
-        const { id } = await JobService.createJob(req.body);
-        return reply.code(201).send({ job_id: id });
+        const { id, normalized } = await JobService.createJob(req.body);
+        return reply.code(201).send({
+          job_id: id,
+          normalized,
+        });
       } catch (err) {
+        if (err instanceof JobValidationError) {
+          return reply.code(422).send({
+            valid: false,
+            errors: err.details,
+            warnings: [],
+          });
+        }
+
         const message = err instanceof Error ? err.message : 'Failed to create job';
         req.log.error({ err }, '[POST /jobs] failed');
         return reply.code(400).send({ error: message });
