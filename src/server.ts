@@ -2,21 +2,49 @@ import Fastify from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
+import fastifyMultipart from '@fastify/multipart';
+
 import { initDb } from './db/index';
 import { config } from './utils/config';
-import { logger } from './utils/logger';
 
+import artifactsRoutes from './routes/artifacts';
 import wsRoutes from './routes/ws';
 import jobsRoutes from './routes/jobs';
 import workerRoutes from './routes/worker';
+import { ArtifactService } from './services/artifact.service';
 
 const app = Fastify({
-  logger: logger,
+  logger: {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname',
+      },
+    },
+    level: 'info',
+  },
 });
 
 const start = async () => {
   try {
     await initDb();
+
+    try {
+      await ArtifactService.ensureBucket();
+    } catch (err) {
+      app.log.warn(
+        { err },
+        'Artifacts bucket is not ready yet, it will be retried on first upload/download',
+      );
+    }
+
+    await app.register(fastifyMultipart, {
+      limits: {
+        fileSize: 500 * 1024 * 1024,
+      },
+    });
 
     await app.register(fastifyWebsocket);
 
@@ -25,7 +53,7 @@ const start = async () => {
         info: {
           title: 'Cloud Forge API',
           description: 'Distributed Task Orchestration API',
-          version: '1.0.0',
+          version: '2.0.0',
         },
       },
     });
@@ -37,12 +65,16 @@ const start = async () => {
     await app.register(wsRoutes);
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
+    await app.register(artifactsRoutes);
 
     await app.listen({ port: config.port, host: '0.0.0.0' });
-    app.log.info(`Server running on http://localhost:${config.port}`);
-    app.log.info(`Swagger docs available at http://localhost:${config.port}/docs`);
+
+    console.log(`🚀 Server running on http://localhost:${config.port}`);
+    console.log(`📖 Swagger UI: http://localhost:${config.port}/docs`);
+    console.log(`📦 MinIO Console: http://localhost:9001`);
   } catch (err) {
-    app.log.error(err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('❌ Failed to start server:', message);
     process.exit(1);
   }
 };

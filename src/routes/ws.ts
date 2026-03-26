@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
+import { LogLevel, RunStatus } from '../models/job';
 
 type WSConnection = {
   socket: WebSocket;
@@ -7,58 +8,55 @@ type WSConnection = {
 
 const clients = new Map<string, WSConnection[]>();
 
-export const broadcastJobStatus = (jobId: string, status: string) => {
-  const jobClients = clients.get(jobId) || [];
+const sendToRunClients = (runId: string, payload: Record<string, unknown>) => {
+  const runClients = clients.get(runId) || [];
   const message = JSON.stringify({
-    type: 'status',
-    jobId,
+    ...payload,
+    runId,
+    timestamp: new Date().toISOString(),
+  });
+
+  for (const conn of runClients) {
+    try {
+      conn.socket.send(message);
+    } catch {
+      // ignore failed socket send
+    }
+  }
+};
+
+export const broadcastRunStatus = (runId: string, status: RunStatus) => {
+  sendToRunClients(runId, {
+    type: 'run_status',
     status,
-    timestamp: new Date().toISOString(),
   });
-  for (const conn of jobClients) {
-    try {
-      conn.socket.send(message);
-    } catch {
-      // ignore
-    }
-  }
 };
 
-export const broadcastLog = (jobId: string, logMessage: string) => {
-  const jobClients = clients.get(jobId) || [];
-  const message = JSON.stringify({
-    type: 'log',
-    jobId,
-    message: logMessage,
-    timestamp: new Date().toISOString(),
+export const broadcastRunLog = (runId: string, message: string, level: LogLevel = 'info') => {
+  sendToRunClients(runId, {
+    type: 'run_log',
+    level,
+    message,
   });
-  for (const conn of jobClients) {
-    try {
-      conn.socket.send(message);
-    } catch {
-      // ignore
-    }
-  }
 };
 
-export default async function (app: FastifyInstance) {
+export default async function wsRoutes(app: FastifyInstance) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  app.get('/ws/:job_id', { websocket: true } as any, (connection: any, req: any) => {
-    const jobId = req.params.job_id as string;
+  app.get('/ws/runs/:run_id', { websocket: true } as any, (connection: any, req: any) => {
+    const runId = req.params.run_id as string;
 
-    if (!clients.has(jobId)) {
-      clients.set(jobId, []);
+    if (!clients.has(runId)) {
+      clients.set(runId, []);
     }
-    clients.get(jobId)!.push(connection);
+
+    clients.get(runId)!.push(connection);
 
     connection.socket.on('close', () => {
-      const arr = clients.get(jobId) || [];
+      const list = clients.get(runId) || [];
       clients.set(
-        jobId,
-        arr.filter((c: any) => c !== connection),
+        runId,
+        list.filter((item: any) => item !== connection),
       );
     });
   });
-
-  app.decorate('wsClients', clients);
 }

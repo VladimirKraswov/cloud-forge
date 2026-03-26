@@ -1,10 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import jobsRoutes from '../../src/routes/jobs';
 import workerRoutes from '../../src/routes/worker';
 import { initDb } from '../../src/db/index';
 import db from '../../src/db/index';
-import { vi } from 'vitest';
 
 vi.mock('../../src/services/queue.service', () => ({
   QueueService: {
@@ -13,7 +12,6 @@ vi.mock('../../src/services/queue.service', () => ({
   getQueue: vi.fn(),
 }));
 
-// Mock WebSocket broadcasts
 vi.mock('../../src/routes/ws', () => ({
   broadcastJobStatus: vi.fn(),
   broadcastLog: vi.fn(),
@@ -24,7 +22,7 @@ describe('Integration Tests', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    app = Fastify();
+    app = Fastify({ logger: false });
     await initDb();
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
@@ -51,11 +49,29 @@ describe('Integration Tests', () => {
     const createRes = await app.inject({
       method: 'POST',
       url: '/jobs',
-      payload: { command: 'test command' },
+      payload: {
+        title: 'Integration test job',
+        containers: [
+          {
+            name: 'bootstrap',
+            image: 'python:3.11-slim',
+            is_parent: true,
+          },
+        ],
+        environments: {
+          TEST_ENV: 'integration',
+        },
+        execution_code: 'print("integration test")',
+        execution_language: 'python',
+      },
     });
 
     expect(createRes.statusCode).toBe(201);
-    const { job_id, run_token } = createRes.json();
+
+    const { job_id, run_token } = createRes.json() as {
+      job_id: string;
+      run_token: string;
+    };
 
     const claimRes = await app.inject({
       method: 'POST',
@@ -64,6 +80,15 @@ describe('Integration Tests', () => {
     });
 
     expect(claimRes.statusCode).toBe(200);
-    expect(claimRes.json().job_id).toBe(job_id);
+
+    const claimBody = claimRes.json() as {
+      job_id: string;
+      environments: Record<string, string>;
+      execution_code: string;
+    };
+
+    expect(claimBody.job_id).toBe(job_id);
+    expect(claimBody.environments.TEST_ENV).toBe('integration');
+    expect(claimBody.execution_code).toContain('integration test');
   });
 });

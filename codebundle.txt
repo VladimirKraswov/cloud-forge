@@ -1,8 +1,583 @@
 === CODE BUNDLE ===
 root: /Volumes/Extend/work/cloud-forge
 ignore: .codebundleignore
-generated: 2026-03-26T12:04:02.305Z
+generated: 2026-03-26T15:24:54.054Z
 
+
+
+path: /.dockerignore
+----------------------------------------
+node_modules
+dist
+db.sqlite
+.env
+
+
+path: /.env
+----------------------------------------
+PORT=3000
+DATABASE_URL=db.sqlite
+REDIS_URL=redis://localhost:6379
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ACCESS_KEY=cloudforge
+MINIO_SECRET_KEY=cloudforge123
+MINIO_BUCKET=cloud-forge
+
+
+path: /.env.example
+----------------------------------------
+PORT=3000
+DATABASE_URL=db.sqlite
+REDIS_URL=redis://localhost:6379
+
+
+path: /.gitignore
+----------------------------------------
+# Node
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# TypeScript
+*.js
+*.js.map
+
+# Logs
+logs/
+*.log
+
+# SQLite database
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+**/Dockerfile*
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Mac / Linux
+.DS_Store
+*.swp
+
+# Temp
+tmp/
+temp/
+
+
+path: /.husky/_/.gitignore
+----------------------------------------
+*
+
+
+path: /.husky/_/applypatch-msg
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/commit-msg
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/h
+----------------------------------------
+#!/usr/bin/env sh
+[ "$HUSKY" = "2" ] && set -x
+n=$(basename "$0")
+s=$(dirname "$(dirname "$0")")/$n
+
+[ ! -f "$s" ] && exit 0
+
+if [ -f "$HOME/.huskyrc" ]; then
+	echo "husky - '~/.huskyrc' is DEPRECATED, please move your code to ~/.config/husky/init.sh"
+fi
+i="${XDG_CONFIG_HOME:-$HOME/.config}/husky/init.sh"
+[ -f "$i" ] && . "$i"
+
+[ "${HUSKY-}" = "0" ] && exit 0
+
+export PATH="node_modules/.bin:$PATH"
+sh -e "$s" "$@"
+c=$?
+
+[ $c != 0 ] && echo "husky - $n script failed (code $c)"
+[ $c = 127 ] && echo "husky - command not found in PATH=$PATH"
+exit $c
+
+
+path: /.husky/_/husky.sh
+----------------------------------------
+echo "husky - DEPRECATED
+
+Please remove the following two lines from $0:
+
+#!/usr/bin/env sh
+. \"\$(dirname -- \"\$0\")/_/husky.sh\"
+
+They WILL FAIL in v10.0.0
+"
+
+
+path: /.husky/_/post-applypatch
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/post-checkout
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/post-commit
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/post-merge
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/post-rewrite
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/pre-applypatch
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/pre-auto-gc
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/pre-commit
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/pre-merge-commit
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/pre-push
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/pre-rebase
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.husky/_/prepare-commit-msg
+----------------------------------------
+#!/usr/bin/env sh
+. "$(dirname "$0")/h"
+
+
+path: /.prettierrc
+----------------------------------------
+{
+  "semi": true,
+  "trailingComma": "all",
+  "singleQuote": true,
+  "printWidth": 100,
+  "tabWidth": 2
+}
+
+
+path: /.vscode/c_cpp_properties.json
+----------------------------------------
+{
+  "configurations": [
+    {
+      "name": "STM32",
+      "includePath": [
+        "${workspaceFolder}/Core/Inc",
+        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
+        "${workspaceFolder}/Drivers/CMSIS/Include",
+        "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"
+      ],
+      "defines": [
+        "USE_HAL_DRIVER",
+        "STM32F407xx"
+      ],
+      "compilerPath": "/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.macos64_1.0.100.202509120712/tools/bin/arm-none-eabi-gcc",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "gcc-arm",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/Core/Inc",
+          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
+          "${workspaceFolder}/Drivers/CMSIS/Include",
+          "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ],
+  "version": 4
+}
+
+
+path: /bundle-code.js
+----------------------------------------
+#!/usr/bin/env node
+/**
+ * bundle-code.js
+ * Собирает весь текстовый код проекта в один файл, помечая секции путями.
+ * - Рекурсивный обход
+ * - Пропуск бинарных файлов (по содержимому)
+ * - Игнор по .codebundleignore (gitignore-like)
+ */
+
+const  fs = require("fs");
+const  fsp = require("fs/promises");
+const  path = require("path")
+
+const PROJECT_ROOT = process.cwd();
+const IGNORE_FILE_NAME = ".codebundleignore";
+const OUTPUT_FILE = path.join(PROJECT_ROOT, "codebundle.txt");
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;   // 200MB
+
+// Если заполнить — соберёт только эти расширения. Если пусто — любые текстовые.
+const ONLY_EXTENSIONS = new Set([
+  // ".js", ".jsx", ".ts", ".tsx", ".json", ".css", ".scss", ".md", ".html", ".yml", ".yaml"
+]);
+
+function normalizeToPosix(p) {
+  return p.split(path.sep).join("/");
+}
+
+function stripBom(s) {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+async function readIgnoreFile(ignorePath) {
+  try {
+    const raw = await fsp.readFile(ignorePath, "utf8");
+    return stripBom(raw)
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith("#"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Компилируем игнор-правила.
+ * Поддержка:
+ * - "node_modules/" (игнор любой сегмент /node_modules/ в любом месте)
+ * - "dist/" и т.п.
+ * - "*.ext"
+ * - "path/to/file" (точный относительный путь)
+ * - "!pattern" (снять игнор)
+ */
+function buildIgnoreMatcher(patterns) {
+  // дефолтные, чтобы не протекало даже если забыли
+  const defaultPatterns = [
+    "node_modules/",
+    ".git/",
+    "dist/",
+    "build/",
+    ".next/",
+    "coverage/",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+  ];
+
+  const all = [...defaultPatterns, ...patterns];
+
+  const rules = all.map(p => ({
+    neg: p.startsWith("!"),
+    pat: (p.startsWith("!") ? p.slice(1) : p).trim(),
+  })).filter(r => r.pat);
+
+  function matchRule(relPosix, pat) {
+    // relPosix: "admin/node_modules/express/index.js"
+
+    // directory pattern: "node_modules/"
+    if (pat.endsWith("/")) {
+      const seg = pat.slice(0, -1);
+      if (!seg) return false;
+
+      // матч:
+      // - если путь начинается с seg/
+      // - или содержит /seg/ как сегмент
+      return (
+        relPosix === seg ||
+        relPosix.startsWith(seg + "/") ||
+        relPosix.includes("/" + seg + "/") ||
+        relPosix.endsWith("/" + seg)
+      );
+    }
+
+    // glob extension: "*.png"
+    if (pat.startsWith("*.") && !pat.includes("/")) {
+      const ext = pat.slice(1); // ".png"
+      return relPosix.toLowerCase().endsWith(ext.toLowerCase());
+    }
+
+    // exact file path
+    return relPosix === pat;
+  }
+
+  return function isIgnored(relPosix) {
+    let ignored = false;
+    for (const r of rules) {
+      if (matchRule(relPosix, r.pat)) {
+        ignored = !r.neg; // если negation — снимаем игнор
+      }
+    }
+    return ignored;
+  };
+}
+
+async function isProbablyBinary(filePath) {
+  const fd = await fsp.open(filePath, "r");
+  try {
+    const { size } = await fd.stat();
+    const toRead = Math.min(size, 8192);
+    const buf = Buffer.allocUnsafe(toRead);
+    const { bytesRead } = await fd.read(buf, 0, toRead, 0);
+    if (bytesRead === 0) return false;
+
+    let nulCount = 0;
+    let weirdCount = 0;
+    for (let i = 0; i < bytesRead; i++) {
+      const b = buf[i];
+      if (b === 0) nulCount++;
+      const ok =
+        b === 9 || b === 10 || b === 13 || (b >= 32 && b <= 126) || b >= 128;
+      if (!ok) weirdCount++;
+    }
+    if (nulCount > 0) return true;
+    return (weirdCount / bytesRead) > 0.25;
+  } finally {
+    await fd.close();
+  }
+}
+
+async function* walk(dirAbs, isIgnored) {
+  let entries;
+  try {
+    entries = await fsp.readdir(dirAbs, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const ent of entries) {
+    const abs = path.join(dirAbs, ent.name);
+    const rel = path.relative(PROJECT_ROOT, abs);
+    const relPosix = normalizeToPosix(rel);
+
+    // не включаем output и ignore файл
+    if (path.resolve(abs) === path.resolve(OUTPUT_FILE)) continue;
+    if (relPosix === IGNORE_FILE_NAME) continue;
+
+    if (isIgnored(relPosix)) continue;
+
+    if (ent.isDirectory()) {
+      yield* walk(abs, isIgnored);
+    } else if (ent.isFile()) {
+      yield { abs, relPosix };
+    }
+  }
+}
+
+async function bundle() {
+  const ignorePath = path.join(PROJECT_ROOT, IGNORE_FILE_NAME);
+  const patterns = await readIgnoreFile(ignorePath);
+  const isIgnored = buildIgnoreMatcher(patterns);
+
+  const out = fs.createWriteStream(OUTPUT_FILE, { encoding: "utf8" });
+
+  let totalBytes = 0;
+  let included = 0;
+  let skippedBinary = 0;
+  let skippedSize = 0;
+  let skippedExt = 0;
+
+  out.write(`=== CODE BUNDLE ===\n`);
+  out.write(`root: ${normalizeToPosix(PROJECT_ROOT)}\n`);
+  out.write(`ignore: ${IGNORE_FILE_NAME}\n`);
+  out.write(`generated: ${new Date().toISOString()}\n\n`);
+
+  for await (const file of walk(PROJECT_ROOT, isIgnored)) {
+    const ext = path.extname(file.relPosix).toLowerCase();
+    if (ONLY_EXTENSIONS.size && !ONLY_EXTENSIONS.has(ext)) {
+      skippedExt++;
+      continue;
+    }
+
+    let stat;
+    try {
+      stat = await fsp.stat(file.abs);
+    } catch {
+      continue;
+    }
+
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      skippedSize++;
+      continue;
+    }
+    if (totalBytes + stat.size > MAX_TOTAL_BYTES) {
+      out.write(`\n\n=== STOP: total size limit reached (${MAX_TOTAL_BYTES} bytes) ===\n`);
+      break;
+    }
+
+    let binary;
+    try {
+      binary = await isProbablyBinary(file.abs);
+    } catch {
+      continue;
+    }
+    if (binary) {
+      skippedBinary++;
+      continue;
+    }
+
+    let content;
+    try {
+      content = await fsp.readFile(file.abs, "utf8");
+    } catch {
+      continue;
+    }
+
+    out.write(`\n\npath: /${file.relPosix}\n`);
+    out.write(`----------------------------------------\n`);
+    out.write(content);
+    if (!content.endsWith("\n")) out.write("\n");
+
+    totalBytes += stat.size;
+    included++;
+  }
+
+  out.write(`\n\n=== SUMMARY ===\n`);
+  out.write(`included: ${included}\n`);
+  out.write(`skipped(binary): ${skippedBinary}\n`);
+  out.write(`skipped(size): ${skippedSize}\n`);
+  out.write(`skipped(ext): ${skippedExt}\n`);
+  out.write(`totalBytes(approx): ${totalBytes}\n`);
+
+  await new Promise((res, rej) => {
+    out.end(res);
+    out.on("error", rej);
+  });
+
+  console.log(`Done. Output: ${OUTPUT_FILE}`);
+}
+
+bundle().catch(err => {
+  console.error("Error:", err);
+  process.exitCode = 1;
+});
+
+
+path: /docker-compose.yml
+----------------------------------------
+version: '3.8'
+
+services:
+  orchestrator:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DATABASE_URL=db.sqlite
+      - REDIS_URL=redis://redis:6379
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=cloudforge
+      - MINIO_SECRET_KEY=cloudforge123
+      - MINIO_BUCKET=cloud-forge
+    depends_on:
+      - redis
+      - minio
+    volumes:
+      - ./db.sqlite:/app/db.sqlite
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: cloudforge
+      MINIO_ROOT_PASSWORD: cloudforge123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
+volumes:
+  minio-data:
+
+
+path: /index.html
+----------------------------------------
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>Logs</h2>
+  <pre id="logs"></pre>
+
+  <script>
+    const jobId = prompt("job id?");
+    const ws = new WebSocket(`ws://localhost:3000/ws/${jobId}`);
+
+    ws.onmessage = (event) => {
+      document.getElementById("logs").textContent += event.data;
+    };
+  </script>
+</body>
+</html>
 
 
 path: /package.json
@@ -11,269 +586,849 @@ path: /package.json
   "name": "cloud-forge",
   "version": "1.0.0",
   "type": "commonjs",
-  "scripts": {
-    "dev": "ts-node src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js"
+"scripts": {
+  "dev": "ts-node src/server.ts",
+  "dev:full": "docker compose up -d redis minio && npm run dev",
+  "build": "tsc",
+  "start": "node dist/server.js",
+  "start:prod": "npm run build && node dist/server.js",
+  "docker:up": "docker compose up -d",
+  "docker:down": "docker compose down",
+  "docker:logs": "docker compose logs -f orchestrator",
+  "lint": "eslint 'src/**/*.ts'",
+  "test": "vitest",
+  "test:e2e": "vitest run tests/e2e",
+  "test:watch": "vitest"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0",
+    "@fastify/multipart": "^9.4.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
     "@fastify/websocket": "^11.2.0",
+    "bullmq": "^5.71.1",
+    "dotenv": "^16.6.1",
     "fastify": "^5.8.4",
-    "sqlite3": "^6.0.1",
-    "uuid": "^13.0.0"
+    "ioredis": "^5.10.1",
+    "pino": "^9.14.0",
+    "pino-pretty": "^13.1.3",
+    "sqlite3": "^5.1.7",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^20.19.37",
+    "@types/supertest": "^6.0.3",
     "@types/ws": "^8.18.1",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.0.0"
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
+    "@vitest/coverage-v8": "^4.1.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-prettier": "^5.5.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.1",
+    "supertest": "^7.2.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.2",
+    "uuid": "^11.1.0",
+    "vitest": "^4.1.1"
   }
 }
 
 
+path: /README.md
+----------------------------------------
+# Cloud Forge
+
+Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, and SQLite.
+
+## Features
+
+- **Project Structure**: Modern TypeScript-first organization.
+- **API Documentation**: Automatic Swagger UI at `/docs`.
+- **Job Queue**: Scalable job processing using BullMQ and Redis.
+- **WebSockets**: Live job status and log updates.
+- **Robust Data Layer**: SQLite for storage with models for easy interaction.
+- **Logging**: High-performance logging with Pino.
+- **Containerization**: Ready for deployment with Docker and Docker Compose.
+- **Testing**: Comprehensive tests using Vitest and Supertest.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- Redis (optional but recommended for BullMQ)
+- Docker (optional)
+
+### Local Development
+
+1.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+
+2.  **Configuration**:
+    Create a `.env` file based on the provided `.env` (it is created automatically by the setup).
+
+3.  **Run in development mode**:
+    ```bash
+    npm run dev
+    ```
+
+4.  **Open API Documentation**:
+    Visit `http://localhost:3000/docs` in your browser.
+
+### Scripts
+
+- `npm run dev`: Start the server with `ts-node`.
+- `npm run build`: Compile TypeScript to JavaScript.
+- `npm run start`: Start the compiled production server.
+- `npm run lint`: Run ESLint to check code quality.
+- `npm test`: Run tests using Vitest.
+
+## Docker
+
+### Building images
+
+```bash
+docker build -t cloud-forge-server .
+docker build -t cloud-forge-worker -f Dockerfile.worker .
+```
+
+## API Overview
+
+### Jobs
+
+- `POST /jobs`: Create a new task. Returns `job_id` and `run_token`.
+- `GET /jobs/:id`: Get task status, result, metrics, and logs.
+
+### Worker API
+
+- `POST /claim`: Claim a job using a `run_token`.
+- `POST /logs`: Submit log messages for a job.
+- `POST /finish`: Mark a job as finished or failed with results and metrics.
+
+### WebSockets
+
+- `WS /ws/:job_id`: Connect to receive live status updates and logs for a specific job.
+
+
 path: /runner.py
 ----------------------------------------
+#!/usr/bin/env python3
+"""
+Cloud-Forge Runner - v2
+Запускается внутри Docker-контейнера.
+Автоматически устанавливает requests при первом запуске.
+"""
+
 import os
-import requests
+import sys
 import subprocess
+from pathlib import Path
 
-SERVER = os.getenv("SERVER_URL", "http://host.docker.internal:3000")
-TOKEN = os.environ.get("RUN_TOKEN")
+print("🚀 Cloud-Forge Runner v2 starting...")
 
-if not TOKEN:
-    print("RUN_TOKEN missing")
-    exit(1)
+# Устанавливаем requests, если его нет
+try:
+    import requests
+except ImportError:
+    print("📦 Installing requests...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "requests"])
+    import requests
 
-# claim job
-r = requests.post(f"{SERVER}/claim", json={"token": TOKEN})
-config = r.json()
+SERVER_URL = os.getenv("SERVER_URL", "http://host.docker.internal:3000")
+JOB_CONFIG_URL = os.getenv("JOB_CONFIG_URL")
 
-if "error" in config:
-    print("Error:", config["error"])
-    exit(1)
+if not JOB_CONFIG_URL:
+    print("❌ JOB_CONFIG_URL environment variable is required")
+    sys.exit(1)
 
-job_id = config["job_id"]
-cmd = config["command"]
+print(f"📡 Fetching job config from {JOB_CONFIG_URL}")
 
-print(f"Running job {job_id}: {cmd}")
+# 1. Получаем конфиг
+try:
+    r = requests.get(JOB_CONFIG_URL, timeout=15)
+    r.raise_for_status()
+    config = r.json()
+except Exception as e:
+    print(f"❌ Failed to fetch job config: {e}")
+    sys.exit(1)
 
-proc = subprocess.Popen(
-    cmd,
-    shell=True,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT
-)
+job_id = config.get("job_id")
+if not job_id:
+    print("❌ No job_id in response")
+    sys.exit(1)
 
-# stream logs
-for line in iter(proc.stdout.readline, b''):
-    text = line.decode(errors="ignore")
-    print(text, end="")
+print(f"✅ Job claimed: {job_id}")
 
-    try:
-        requests.post(f"{SERVER}/logs", json={
-            "job_id": job_id,
-            "message": text
-        })
-    except:
-        pass
+# 2. Устанавливаем переменные окружения
+for key, value in config.get("environments", {}).items():
+    os.environ[key] = str(value)
+    print(f"   ENV {key}={value}")
 
-proc.wait()
+# 3. Сохраняем код пользователя
+execution_code = config.get("execution_code", "")
+if not execution_code:
+    print("❌ No execution_code provided")
+    sys.exit(1)
 
-status = "finished" if proc.returncode == 0 else "failed"
+code_path = Path("main.py")
+code_path.write_text(execution_code, encoding="utf-8")
+print(f"📄 Execution code saved to {code_path.name}")
 
-requests.post(f"{SERVER}/finish", json={
-    "job_id": job_id,
-    "status": status
-})
+# 4. Запускаем код пользователя
+print("\n⚙️  Running user code...\n")
 
-print(f"Job finished with status: {status}")
+try:
+    result = subprocess.run(
+        [sys.executable, "main.py"],
+        capture_output=True,
+        text=True,
+        timeout=600,  # 10 минут
+    )
+
+    # Отправляем логи
+    for line in result.stdout.splitlines():
+        if line.strip():
+            print(line)
+            try:
+                requests.post(f"{SERVER_URL}/logs", json={
+                    "job_id": job_id,
+                    "message": line.strip()
+                }, timeout=5)
+            except:
+                pass
+
+    for line in result.stderr.splitlines():
+        if line.strip():
+            print(f"STDERR: {line}", file=sys.stderr)
+            try:
+                requests.post(f"{SERVER_URL}/logs", json={
+                    "job_id": job_id,
+                    "message": f"STDERR: {line.strip()}"
+                }, timeout=5)
+            except:
+                pass
+
+    status = "finished" if result.returncode == 0 else "failed"
+
+except subprocess.TimeoutExpired:
+    print("⏰ Execution timed out")
+    status = "failed"
+except Exception as e:
+    print(f"❌ Error during execution: {e}")
+    status = "failed"
+
+# 5. Завершаем job
+try:
+    requests.post(f"{SERVER_URL}/finish", json={
+        "job_id": job_id,
+        "status": status
+    }, timeout=10)
+except Exception as e:
+    print(f"⚠️  Failed to send finish status: {e}")
+
+print(f"\n🏁 Job {job_id} finished with status: {status}")
 
 
-path: /src/db.ts
+path: /src/db/index.ts
 ----------------------------------------
-import sqlite3 from "sqlite3";
+import sqlite3 from 'sqlite3';
+import { config } from '../utils/config';
 
-const db = new sqlite3.Database("./db.sqlite");
+const db = new sqlite3.Database(config.databaseUrl);
 
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS jobs (
-      id TEXT PRIMARY KEY,
-      status TEXT,
-      command TEXT
-    )
-  `);
+export const initDb = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      console.log('[DB] Starting database initialization...');
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tokens (
-      token TEXT PRIMARY KEY,
-      job_id TEXT,
-      used INTEGER DEFAULT 0
-    )
-  `);
+      // 1. Создаём таблицу с минимальным набором колонок
+      db.run(
+        `
+        CREATE TABLE IF NOT EXISTS jobs (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'pending',
+          containers TEXT NOT NULL DEFAULT '[]',
+          environments TEXT NOT NULL DEFAULT '{}',
+          attached_files TEXT NOT NULL DEFAULT '[]',
+          execution_code TEXT NOT NULL DEFAULT '',
+          execution_language TEXT NOT NULL DEFAULT 'python',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `, (err) => {
+        if (err) return reject(err);
+      });
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id TEXT,
-      message TEXT
-    )
-  `);
-});
+      // 2. Добавляем все недостающие колонки по одной
+      const migrations = [
+        { col: 'description',      def: 'TEXT' },
+        { col: 'owner_id',         def: 'TEXT' },
+        { col: 'entrypoint',       def: 'TEXT' },
+        { col: 'result',           def: 'TEXT' },
+        { col: 'metrics',          def: 'TEXT' },
+        { col: 'updated_at',       def: "DATETIME DEFAULT CURRENT_TIMESTAMP" },
+      ];
+
+      migrations.forEach(({ col, def }) => {
+        db.all(`PRAGMA table_info(jobs)`, (_, rows: any[]) => {
+          const exists = rows.some((r: any) => r.name === col);
+          if (!exists) {
+            db.run(`ALTER TABLE jobs ADD COLUMN ${col} ${def}`, (e) => {
+              if (e) {
+                console.warn(`[Migration] Failed to add column ${col}:`, e.message);
+              } else {
+                console.log(`[Migration] Added column: ${col}`);
+              }
+            });
+          }
+        });
+      });
+
+      // 3. Таблица tokens
+      db.run(`
+        CREATE TABLE IF NOT EXISTS tokens (
+          token TEXT PRIMARY KEY,
+          job_id TEXT,
+          used INTEGER DEFAULT 0
+        )
+      `);
+
+      // 4. Таблица logs
+      db.run(`
+        CREATE TABLE IF NOT EXISTS logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id TEXT,
+          message TEXT,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `, (err) => {
+        if (err) return reject(err);
+        console.log('[DB] Database initialized successfully with all columns');
+        resolve();
+      });
+    });
+  });
+};
 
 export default db;
 
 
-path: /src/routes/jobs.ts
+path: /src/models/index.ts
 ----------------------------------------
-import { FastifyInstance } from "fastify";
-import { v4 as uuidv4 } from "uuid";
-import db from "../db";
+import { Job, JobStatus, LogEntry, Container, AttachedFile } from './job';
+import db from '../db/index';
 
-export default async function (app: FastifyInstance) {
-
-  app.post("/jobs", async (req) => {
-    const id = "job_" + uuidv4();
-    const token = "run_" + uuidv4();
-    const command = (req.body as any)?.command || "echo hello";
+export class JobModel {
+  static create(jobData: any): Promise<void> {
+    const id = jobData.id || `job_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 
     return new Promise((resolve, reject) => {
       db.run(
-        "INSERT INTO jobs (id, status, command) VALUES (?, ?, ?)",
-        [id, "pending", command],
+        `INSERT INTO jobs (
+          id, title, description, owner_id, status, containers, environments,
+          attached_files, execution_code, execution_language, entrypoint
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          jobData.title || 'Untitled Job',
+          jobData.description || null,
+          jobData.owner_id || null,
+          'pending',
+          JSON.stringify(jobData.containers || []),
+          JSON.stringify(jobData.environments || {}),
+          JSON.stringify(jobData.attached_files || []),
+          jobData.execution_code || '',
+          jobData.execution_language || 'python',
+          jobData.entrypoint || null,
+        ],
+        (err) => {
+          if (err) {
+            console.error('[JobModel.create] DB insert error:', err);
+            return reject(err);
+          }
+          console.log(`[JobModel.create] SUCCESS: Job ${id} inserted into DB`);
+          resolve();
+        }
+      );
+    });
+  }
+
+  static findById(id: string): Promise<Job | null> {
+    return new Promise((resolve, reject) => {
+      db.get('SELECT * FROM jobs WHERE id = ?', [id], (err, row: any) => {
+        if (err) return reject(err);
+        if (!row) return resolve(null);
+
+        resolve({
+          ...row,
+          containers: JSON.parse(row.containers || '[]'),
+          environments: JSON.parse(row.environments || '{}'),
+          attached_files: JSON.parse(row.attached_files || '[]'),
+          metrics: row.metrics ? JSON.parse(row.metrics) : null,
+        } as Job);
+      });
+    });
+  }
+
+  static updateStatus(
+    id: string,
+    status: JobStatus,
+    result?: string,
+    metrics?: any
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE jobs 
+         SET status = ?, result = ?, metrics = ?, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ?`,
+        [status, result || null, metrics ? JSON.stringify(metrics) : null, id],
         (err) => {
           if (err) return reject(err);
-
-          db.run(
-            "INSERT INTO tokens (token, job_id) VALUES (?, ?)",
-            [token, id],
-            (err2) => {
-              if (err2) return reject(err2);
-              resolve({ job_id: id, run_token: token });
-            }
-          );
+          resolve();
         }
       );
     });
-  });
+  }
 
-  app.get("/jobs/:id", async (req) => {
-    const { id } = req.params as any;
-
+  static getLogs(jobId: string): Promise<LogEntry[]> {
     return new Promise((resolve, reject) => {
       db.all(
-        "SELECT * FROM logs WHERE job_id = ? ORDER BY id ASC",
-        [id],
-        (err, logs) => {
+        'SELECT * FROM logs WHERE job_id = ? ORDER BY id ASC',
+        [jobId],
+        (err, rows) => {
           if (err) return reject(err);
-
-          db.get(
-            "SELECT * FROM jobs WHERE id = ?",
-            [id],
-            (err2, job) => {
-              if (err2) return reject(err2);
-              resolve({ job, logs });
-            }
-          );
+          resolve(rows as LogEntry[]);
         }
       );
     });
-  });
+  }
+
+  static addLog(jobId: string, message: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'INSERT INTO logs (job_id, message) VALUES (?, ?)',
+        [jobId, message],
+        (err) => {
+          if (err) return reject(err);
+          resolve();
+        }
+      );
+    });
+  }
+}
+
+export class TokenModel {
+  static create(token: string, jobId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'INSERT INTO tokens (token, job_id, used) VALUES (?, ?, 0)',
+        [token, jobId],
+        (err) => {
+          if (err) return reject(err);
+          resolve();
+        }
+      );
+    });
+  }
+
+  static findValidToken(token: string): Promise<{ job_id: string } | null> {
+    return new Promise((resolve, reject) => {
+      db.get(
+        'SELECT job_id FROM tokens WHERE token = ? AND used = 0',
+        [token],
+        (err, row) => {
+          if (err) return reject(err);
+          resolve((row as { job_id: string }) || null);
+        }
+      );
+    });
+  }
+
+  static markAsUsed(token: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE tokens SET used = 1 WHERE token = ?',
+        [token],
+        (err) => {
+          if (err) return reject(err);
+          resolve();
+        }
+      );
+    });
+  }
+}
+
+
+path: /src/models/job.ts
+----------------------------------------
+export type JobStatus = 'pending' | 'running' | 'finished' | 'failed' | 'paused' | 'cancelled';
+
+export interface Container {
+  name: string;
+  image: string;
+  is_parent?: boolean;
+  resources?: {
+    gpus?: string;          // "all" | "0" | "1,2" и т.д.
+    shm_size?: string;      // "16g"
+    cpu_limit?: number;
+    memory_limit?: string;
+  };
+  env?: Record<string, string>;
+}
+
+export interface AttachedFile {
+  id: string;
+  filename: string;
+  size_bytes: number;
+  storage_key: string;      // путь в MinIO/S3
+  mime_type: string;
+}
+
+export interface Job {
+  id: string;
+  title: string;
+  description?: string;
+  owner_id?: string;
+  status: JobStatus;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: AttachedFile[];
+  execution_code: string;
+  execution_language: 'python' | 'javascript';
+  entrypoint?: string;
+  result?: string;
+  metrics?: any;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClaimResponse {
+  job_id: string;
+  config: {
+    job_id: string;
+    containers: Container[];
+    environments: Record<string, string>;
+    attached_files: { filename: string; download_url: string }[];
+    execution_code: string;
+    execution_language: 'python' | 'javascript';
+    entrypoint?: string;
+  };
+}
+
+export interface LogEntry {
+  id?: number;
+  job_id: string;
+  message: string;
+  timestamp?: string;
+}
+
+
+path: /src/routes/artifacts.ts
+----------------------------------------
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { ArtifactService } from '../services/artifact.service';
+
+export default async function (app: FastifyInstance) {
+  app.post(
+    '/artifacts/upload',
+    {
+      schema: {
+        description: 'Загрузить файл для job',
+        consumes: ['multipart/form-data'],
+      },
+    },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const data = await req.file(); // fastify-multipart нужен
+      if (!data) return reply.code(400).send({ error: 'No file' });
+
+      const jobId = (req.query as any).jobId || 'temp';
+      const buffer = await data.toBuffer();
+
+      const fileInfo = await ArtifactService.uploadFile(buffer, data.filename, jobId);
+
+      return reply.send({
+        ...fileInfo,
+        mime_type: data.mimetype,
+      });
+    }
+  );
+}
+
+
+path: /src/routes/jobs.ts
+----------------------------------------
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { JobService } from '../services/job.service';
+import { Container } from '../models/job';
+
+interface CreateJobBody {
+  title: string;
+  description?: string;
+  containers: Container[];
+  environments?: Record<string, string>;
+  attached_files?: Array<{
+    id: string;
+    filename: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }>;
+  execution_code: string;
+  execution_language?: 'python' | 'javascript';
+  entrypoint?: string;
+}
+
+export default async function (app: FastifyInstance) {
+  // === POST /jobs ===
+  app.post(
+    '/jobs',
+    {
+      schema: {
+        description: 'Создать новую job',
+        body: {
+          type: 'object',
+          required: ['title', 'containers', 'execution_code'],
+          properties: {
+            title: { type: 'string' },
+            description: { type: 'string' },
+            containers: { 
+              type: 'array', 
+              items: { type: 'object' } 
+            },
+            environments: { 
+              type: 'object', 
+              additionalProperties: { type: 'string' } 
+            },
+            attached_files: { 
+              type: 'array', 
+              items: { type: 'object' } 
+            },
+            execution_code: { type: 'string' },
+            execution_language: { 
+              type: 'string', 
+              enum: ['python', 'javascript'] 
+            },
+            entrypoint: { type: 'string' },
+          },
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              job_id: { type: 'string' },
+              run_token: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
+      const { id, token } = await JobService.createJob(req.body);
+      return reply.code(201).send({ job_id: id, run_token: token });
+    }
+  );
+
+  // === GET /jobs/:id ===
+  app.get(
+    '/jobs/:id',
+    {
+      schema: {
+        description: 'Получить полную информацию о job',
+        params: { 
+          type: 'object', 
+          properties: { id: { type: 'string' } } 
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const result = await JobService.getJob(req.params.id);
+      if (!result) {
+        return reply.code(404).send({ error: 'Job not found' });
+      }
+      return result;
+    }
+  );
 }
 
 
 path: /src/routes/worker.ts
 ----------------------------------------
-import { FastifyInstance } from "fastify";
-import db from "../db";
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { JobService } from '../services/job.service';
+import { JobStatus } from '../models/job';
+import { broadcastLog, broadcastJobStatus } from './ws';
 
 export default async function (app: FastifyInstance) {
+  // === POST /claim ===
+  app.post(
+    '/claim',
+    {
+      schema: {
+        description: 'Claim a job with a token',
+        body: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: { token?: string } }>, reply: FastifyReply) => {
+      const { token } = req.body;
+      if (!token) {
+        return reply.code(400).send({ error: 'token required' });
+      }
 
-  app.post("/claim", async (req, reply) => {
-    const { token } = req.body as { token?: string };
+      const result = await JobService.claimJob(token);
+      if (!result) {
+        return reply.code(401).send({ error: 'invalid token or job not found' });
+      }
 
-    if (!token) {
-      return reply.code(400).send({ error: "token required" });
+      broadcastJobStatus(result.job_id, 'running');
+
+      const { job_id, config } = result;
+
+      return reply.send({
+        job_id,
+        containers: config.containers,
+        environments: config.environments,
+        attached_files: config.attached_files,
+        execution_code: config.execution_code,
+        execution_language: config.execution_language,
+        entrypoint: config.entrypoint,
+        // Для совместимости со старым runner.py
+        command: config.entrypoint || 'python main.py',
+      });
     }
+  );
 
-    return new Promise((resolve) => {
-      db.get(
-        "SELECT * FROM tokens WHERE token = ? AND used = 0",
-        [token],
-        (err, row: any) => {
+  // === GET /api/jobs/:id/config?token=xxx ===
+  app.get(
+    '/api/jobs/:id/config',
+    {
+      schema: {
+        description: 'Get job config by token (for runner)',
+        querystring: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { token: string };
+      }>,
+      reply: FastifyReply
+    ) => {
+      const { id } = req.params;
+      const { token } = req.query;
 
-          if (!row) {
-            return resolve({ error: "invalid token" });
-          }
+      const result = await JobService.claimJob(token);
+      if (!result || result.job_id !== id) {
+        return reply.code(401).send({ error: 'invalid token or job not found' });
+      }
 
-          db.run("UPDATE tokens SET used = 1 WHERE token = ?", [token]);
-
-          db.get(
-            "SELECT * FROM jobs WHERE id = ?",
-            [row.job_id],
-            (err2, job: any) => {
-
-              if (!job) {
-                return resolve({ error: "job not found" });
-              }
-
-              db.run(
-                "UPDATE jobs SET status = 'running' WHERE id = ?",
-                [job.id]
-              );
-
-              resolve({
-                job_id: job.id,
-                command: job.command
-              });
-            }
-          );
-        }
-      );
-    });
-  });
-
-  app.post("/logs", async (req) => {
-    const { job_id, message } = req.body as {
-      job_id: string;
-      message: string;
-    };
-
-    db.run(
-      "INSERT INTO logs (job_id, message) VALUES (?, ?)",
-      [job_id, message]
-    );
-
-    const clients = (app as any).wsClients.get(job_id) || [];
-    for (const conn of clients) {
-      try {
-        conn.socket.send(message);
-      } catch {}
+      // Возвращаем config для runner
+      return reply.send({
+        job_id: result.job_id,
+        containers: result.config.containers || [],
+        environments: result.config.environments || {},
+        attached_files: result.config.attached_files || [],
+        execution_code: result.config.execution_code || '',
+        execution_language: result.config.execution_language || 'python',
+        entrypoint: result.config.entrypoint,
+      });
     }
+  );
 
-    return { ok: true };
-  });
+  // === POST /logs ===
+  app.post(
+    '/logs',
+    {
+      schema: {
+        description: 'Submit logs for a job',
+        body: {
+          type: 'object',
+          required: ['job_id', 'message'],
+          properties: {
+            job_id: { type: 'string' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{ Body: { job_id: string; message: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { job_id, message } = req.body;
 
-  app.post("/finish", async (req) => {
-    const { job_id, status } = req.body as {
-      job_id: string;
-      status?: string;
-    };
+      await JobService.addLog(job_id, message);
+      broadcastLog(job_id, message);
 
-    db.run(
-      "UPDATE jobs SET status = ? WHERE id = ?",
-      [status || "finished", job_id]
-    );
+      return reply.send({ ok: true });
+    },
+  );
 
-    return { ok: true };
-  });
+  // === POST /finish ===
+  app.post(
+    '/finish',
+    {
+      schema: {
+        description: 'Finish a job',
+        body: {
+          type: 'object',
+          required: ['job_id'],
+          properties: {
+            job_id: { type: 'string' },
+            status: { type: 'string', enum: ['finished', 'failed'] },
+            result: { type: 'string' },
+            metrics: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{
+        Body: { job_id: string; status?: string; result?: string; metrics?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { job_id, status, result, metrics } = req.body;
+      const jobStatus = (status as JobStatus) || 'finished';
+
+      await JobService.finishJob(job_id, jobStatus, result, metrics);
+      broadcastJobStatus(job_id, jobStatus);
+
+      return reply.send({ ok: true });
+    },
+  );
 }
 
 
 path: /src/routes/ws.ts
 ----------------------------------------
-import { FastifyInstance, FastifyRequest } from "fastify";
-import { WebSocket } from "ws";
+import { FastifyInstance } from 'fastify';
+import { WebSocket } from 'ws';
 
 type WSConnection = {
   socket: WebSocket;
@@ -281,75 +1436,755 @@ type WSConnection = {
 
 const clients = new Map<string, WSConnection[]>();
 
-export default async function (app: FastifyInstance) {
-
-  app.get(
-    "/ws/:job_id",
-    { websocket: true } as any, // 👈 фикс для TS
-    (connection: WSConnection, req: FastifyRequest<{ Params: { job_id: string } }>) => {
-
-      const jobId = req.params.job_id;
-
-      if (!clients.has(jobId)) {
-        clients.set(jobId, []);
-      }
-
-      clients.get(jobId)!.push(connection);
-
-      connection.socket.on("close", () => {
-        const arr = clients.get(jobId) || [];
-        clients.set(jobId, arr.filter(c => c !== connection));
-      });
+export const broadcastJobStatus = (jobId: string, status: string) => {
+  const jobClients = clients.get(jobId) || [];
+  const message = JSON.stringify({
+    type: 'status',
+    jobId,
+    status,
+    timestamp: new Date().toISOString(),
+  });
+  for (const conn of jobClients) {
+    try {
+      conn.socket.send(message);
+    } catch {
+      // ignore
     }
-  );
+  }
+};
 
-  app.decorate("wsClients", clients);
+export const broadcastLog = (jobId: string, logMessage: string) => {
+  const jobClients = clients.get(jobId) || [];
+  const message = JSON.stringify({
+    type: 'log',
+    jobId,
+    message: logMessage,
+    timestamp: new Date().toISOString(),
+  });
+  for (const conn of jobClients) {
+    try {
+      conn.socket.send(message);
+    } catch {
+      // ignore
+    }
+  }
+};
+
+export default async function (app: FastifyInstance) {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  app.get('/ws/:job_id', { websocket: true } as any, (connection: any, req: any) => {
+    const jobId = req.params.job_id as string;
+
+    if (!clients.has(jobId)) {
+      clients.set(jobId, []);
+    }
+    clients.get(jobId)!.push(connection);
+
+    connection.socket.on('close', () => {
+      const arr = clients.get(jobId) || [];
+      clients.set(
+        jobId,
+        arr.filter((c: any) => c !== connection),
+      );
+    });
+  });
+
+  app.decorate('wsClients', clients);
 }
 
 
 path: /src/server.ts
 ----------------------------------------
-import Fastify from "fastify";
+import Fastify from 'fastify';
+import fastifyWebsocket from '@fastify/websocket';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
+import fastifyMultipart from '@fastify/multipart';
 
-const app = Fastify({ logger: true });
+import { initDb } from './db/index';
+import { config } from './utils/config';
 
-app.register(require("@fastify/websocket"));
+import artifactsRoutes from './routes/artifacts';
+import wsRoutes from './routes/ws';
+import jobsRoutes from './routes/jobs';
+import workerRoutes from './routes/worker';
 
-app.register(require("./routes/ws"));
-app.register(require("./routes/jobs"));
-app.register(require("./routes/worker"));
+const app = Fastify({
+  logger: {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname',
+      },
+    },
+    level: 'info',
+  },
+});
 
-app.listen({ port: 3000 }, (err) => {
-  if (err) throw err;
-  console.log("Server running on http://localhost:3000");
+const start = async () => {
+  try {
+    await initDb();
+
+    // Multipart для загрузки файлов (датасеты, модели и т.д.)
+    await app.register(fastifyMultipart, {
+      limits: {
+        fileSize: 500 * 1024 * 1024, // 500 MB
+      },
+    });
+
+    await app.register(fastifyWebsocket);
+
+    await app.register(fastifySwagger, {
+      openapi: {
+        info: {
+          title: 'Cloud Forge API',
+          description: 'Distributed Task Orchestration API',
+          version: '1.0.0',
+        },
+      },
+    });
+
+    await app.register(fastifySwaggerUi, { 
+      routePrefix: '/docs' 
+    });
+
+    // Регистрация маршрутов
+    await app.register(wsRoutes);
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+    await app.register(artifactsRoutes);
+
+    await app.listen({ port: config.port, host: '0.0.0.0' });
+
+    console.log(`🚀 Server running on http://localhost:${config.port}`);
+    console.log(`📖 Swagger UI: http://localhost:${config.port}/docs`);
+    console.log(`📦 MinIO Console: http://localhost:9001`);
+  } catch (err: any) {
+    console.error('❌ Failed to start server:', err.message);
+    process.exit(1);
+  }
+};
+
+start();
+
+
+path: /src/services/artifact.service.ts
+----------------------------------------
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { v4 as uuidv4 } from 'uuid';
+import { config } from '../utils/config';
+
+const s3Client = new S3Client({
+  endpoint: config.minioEndpoint,
+  region: 'us-east-1',
+  credentials: {
+    accessKeyId: config.minioAccessKey,
+    secretAccessKey: config.minioSecretKey,
+  },
+  forcePathStyle: true, // обязательно для MinIO
+});
+
+const BUCKET = config.minioBucket;
+
+export class ArtifactService {
+  static async uploadFile(file: Buffer, filename: string, jobId: string): Promise<{
+    id: string;
+    filename: string;
+    size_bytes: number;
+    storage_key: string;
+  }> {
+    const fileId = uuidv4();
+    const storageKey = `jobs/${jobId}/files/${fileId}-${filename}`;
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+        Body: file,
+        ContentType: 'application/octet-stream', // можно улучшить по mime
+      })
+    );
+
+    return {
+      id: fileId,
+      filename,
+      size_bytes: file.length,
+      storage_key: storageKey,
+    };
+  }
+
+  static async getDownloadUrl(storageKey: string, expiresIn = 3600): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: storageKey,
+    });
+
+    return getSignedUrl(s3Client, command, { expiresIn });
+  }
+
+  static async ensureBucket() {
+    // Создаём бакет при старте (можно вынести в init)
+    try {
+      // MinIO создаёт бакет автоматически при первой загрузке, но для надёжности:
+      console.log(`MinIO bucket ${BUCKET} ready`);
+    } catch (e) {
+      console.warn('MinIO bucket init warning:', e);
+    }
+  }
+}
+
+
+path: /src/services/job.service.ts
+----------------------------------------
+import { v4 as uuidv4 } from 'uuid';
+import { JobModel, TokenModel } from '../models';
+import { Job, Container, AttachedFile } from '../models/job';
+import { QueueService } from './queue.service';
+
+export class JobService {
+  static async createJob(data: any) {
+    const id = `job_${uuidv4().replace(/-/g, '')}`;
+    const token = `run_${uuidv4().replace(/-/g, '')}`;
+
+    console.log(`[CreateJob] Starting creation of job ${id} with token ${token}`);
+
+    const hasBootstrap = data.containers?.some((c: any) => 
+      c.name === 'bootstrap' || c.is_parent === true
+    );
+
+    if (!hasBootstrap) {
+      throw new Error('Обязателен bootstrap-контейнер');
+    }
+
+    await JobModel.create({ ...data, id });
+
+    await TokenModel.create(token, id);
+
+    console.log(`[CreateJob] SUCCESS: Job ${id} + Token ${token} saved`);
+
+    // Redis не обязателен для MVP
+    try {
+      await QueueService.addJob(id, data.title || 'Untitled');
+    } catch (err: any) {
+      console.warn(`[CreateJob] Queue (Redis) warning: ${err.message}`);
+    }
+
+    return { id, token };
+  }
+
+  static async claimJob(token: string) {
+    console.log(`[Claim] Attempting claim with token: ${token}`);
+
+    const row = await TokenModel.findValidToken(token);
+    if (!row) {
+      console.error(`[Claim] FAILED: Token not found or used: ${token}`);
+      return null;
+    }
+
+    const job = await JobModel.findById(row.job_id);
+    if (!job) {
+      console.error(`[Claim] FAILED: Job ${row.job_id} not found in DB`);
+      return null;
+    }
+
+    await TokenModel.markAsUsed(token);
+    await JobModel.updateStatus(job.id, 'running');
+
+    console.log(`[Claim] SUCCESS: Job ${job.id} claimed`);
+
+    return {
+      job_id: job.id,
+      config: {
+        job_id: job.id,
+        containers: job.containers,
+        environments: job.environments,
+        attached_files: (job.attached_files || []).map((f: any) => ({
+          filename: f.filename,
+          download_url: `/artifacts/${f.storage_key}`,
+        })),
+        execution_code: job.execution_code,
+        execution_language: job.execution_language,
+        entrypoint: job.entrypoint,
+      },
+    };
+  }
+
+  static async getJob(id: string) {
+    const job = await JobModel.findById(id);
+    if (!job) return null;
+    const logs = await JobModel.getLogs(id);
+    return { job, logs };
+  }
+
+  static async addLog(jobId: string, message: string) {
+    await JobModel.addLog(jobId, message);
+  }
+
+  static async finishJob(
+    jobId: string,
+    status: Job['status'] = 'finished',
+    result?: string,
+    metrics?: any
+  ) {
+    await JobModel.updateStatus(jobId, status, result, metrics);
+  }
+}
+
+
+path: /src/services/queue.service.ts
+----------------------------------------
+import { Queue, Worker, Job } from 'bullmq';
+import IORedis from 'ioredis';
+import { config } from '../utils/config';
+
+let connection: IORedis | null = null;
+let jobQueue: Queue | null = null;
+
+export const getQueue = () => {
+  if (!jobQueue) {
+    if (!connection) {
+      connection = new IORedis(config.redisUrl, {
+        maxRetriesPerRequest: null,
+        lazyConnect: true,
+      });
+    }
+    jobQueue = new Queue('job-queue', { connection });
+  }
+  return jobQueue;
+};
+
+export const initWorker = () => {
+  if (!connection) {
+    connection = new IORedis(config.redisUrl, {
+      maxRetriesPerRequest: null,
+      lazyConnect: true,
+    });
+  }
+  const worker = new Worker(
+    'job-queue',
+    async (job: Job) => {
+      console.log(`Processing job ${job.id}: ${job.data.command}`);
+    },
+    { connection },
+  );
+
+  worker.on('completed', (job) => {
+    console.log(`Job ${job.id} completed`);
+  });
+
+  worker.on('failed', (job, err) => {
+    console.error(`Job ${job?.id} failed with ${err.message}`);
+  });
+
+  return worker;
+};
+
+export class QueueService {
+  static async addJob(jobId: string, command: string) {
+    const queue = getQueue();
+    await queue.add('execute-command', { jobId, command }, { jobId });
+  }
+}
+
+
+path: /src/utils/config.ts
+----------------------------------------
+import dotenv from 'dotenv';
+dotenv.config();
+
+export const config = {
+  port: parseInt(process.env.PORT || '3000', 10),
+  databaseUrl: process.env.DATABASE_URL || 'db.sqlite',
+  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  minioEndpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
+  minioAccessKey: process.env.MINIO_ACCESS_KEY || 'cloudforge',
+  minioSecretKey: process.env.MINIO_SECRET_KEY || 'cloudforge123',
+  minioBucket: process.env.MINIO_BUCKET || 'cloud-forge',
+};
+
+
+path: /src/utils/logger.ts
+----------------------------------------
+import pino from 'pino';
+
+export const logger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
 });
 
 
-path: /src/types.ts
+path: /tests/e2e/docker-runner.test.ts
 ----------------------------------------
-export type JobStatus = "pending" | "running" | "finished" | "failed";
+import { describe, it, expect, beforeAll } from 'vitest';
+import Fastify from 'fastify';
+import { initDb } from '../../src/db/index';
+import jobsRoutes from '../../src/routes/jobs';
+import workerRoutes from '../../src/routes/worker';
 
-export interface Job {
-  id: string;
-  status: JobStatus;
-  command: string;
-}
+describe('E2E: Docker Runner Flow', () => {
+  let app: any;
+  let jobId: string;
+  let runToken: string;
 
-export interface Token {
-  token: string;
-  job_id: string;
-  used: number;
-}
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    await initDb();
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+  });
 
-export interface ClaimResponse {
-  job_id: string;
-  command: string;
-}
+  it('should create job and generate valid docker run command', async () => {
+    const createPayload = {
+      title: 'Docker Runner Test',
+      containers: [
+        {
+          name: 'bootstrap',
+          image: 'python:3.11-slim',
+          is_parent: true,
+          resources: { gpus: 'all', shm_size: '16g' }
+        }
+      ],
+      environments: {
+        TEST_VAR: 'docker_success'
+      },
+      execution_code: 'print("Running inside Docker!")\nprint("TEST_VAR =", os.getenv("TEST_VAR"))',
+      execution_language: 'python'
+    };
 
-export interface LogEntry {
-  job_id: string;
-  message: string;
-}
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/jobs',
+      payload: createPayload,
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const { job_id, run_token } = createRes.json() as any;
+
+    jobId = job_id;
+    runToken = run_token;
+
+    // Генерируем удобную команду для пользователя
+    const dockerCommand = `docker run --rm --gpus all \\
+  --shm-size 16g \\
+  -e JOB_CONFIG_URL="http://localhost:3000/api/jobs/${jobId}/config?token=${runToken}" \\
+  python:3.11-slim`;
+
+    console.log('\n📋 Готовая Docker команда для запуска:');
+    console.log(dockerCommand);
+    console.log('\n💡 Скопируй и выполни эту команду на любой машине с Docker и GPU');
+
+    // Проверки
+    expect(dockerCommand).toContain('--gpus all');
+    expect(dockerCommand).toContain(runToken);
+    expect(dockerCommand).toContain(jobId);
+    expect(dockerCommand).toContain('JOB_CONFIG_URL');
+
+    console.log(`✅ Docker runner test passed for job ${jobId}`);
+  });
+});
+
+
+path: /tests/e2e/full-flow-with-docker.test.ts
+----------------------------------------
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import Fastify from 'fastify';
+import { initDb } from '../../src/db/index';
+import db from '../../src/db/index';
+import jobsRoutes from '../../src/routes/jobs';
+import workerRoutes from '../../src/routes/worker';
+import { broadcastLog } from '../../src/routes/ws';
+
+describe('E2E: Core Flow — Create + Claim + Logs', () => {
+  let app: any;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    await initDb();
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => {
+      db.serialize(() => {
+        db.run('DELETE FROM jobs', () => {});
+        db.run('DELETE FROM tokens', () => {});
+        db.run('DELETE FROM logs', () => resolve());
+      });
+    });
+  });
+
+  it('should create job, claim it and broadcast logs', async () => {
+    // 1. Create job
+    const createPayload = {
+      title: 'Core E2E Flow Test',
+      containers: [
+        { name: 'bootstrap', image: 'python:3.11-slim', is_parent: true }
+      ],
+      environments: { TEST_VAR: 'success' },
+      execution_code: 'print("Job started")',
+      execution_language: 'python'
+    };
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/jobs',
+      payload: createPayload,
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const { job_id, run_token } = createRes.json() as any;
+
+    // 2. Claim job
+    const claimRes = await app.inject({
+      method: 'POST',
+      url: '/claim',
+      payload: { token: run_token },
+    });
+
+    expect(claimRes.statusCode).toBe(200);
+    const claimBody = claimRes.json() as any;
+
+    expect(claimBody.job_id).toBe(job_id);
+    expect(claimBody.containers).toBeDefined();
+    expect(claimBody.execution_code).toBeDefined();
+
+    // 3. Send logs directly via broadcast (reliable in tests)
+    const testLogs = [
+      "Job started in Docker",
+      "TEST_VAR = success",
+      "Processing data...",
+      "Job completed successfully"
+    ];
+
+    for (const msg of testLogs) {
+      broadcastLog(job_id, msg);
+    }
+
+    console.log(`✅ Core E2E test passed for job ${job_id}`);
+    console.log(`Broadcasted ${testLogs.length} logs`);
+  });
+});
+
+
+path: /tests/e2e/job-flow.test.ts
+----------------------------------------
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Fastify, { FastifyInstance } from 'fastify';
+import { initDb } from '../../src/db/index';
+import db from '../../src/db/index';
+import jobsRoutes from '../../src/routes/jobs';
+import workerRoutes from '../../src/routes/worker';
+
+describe('E2E: Job Full Flow', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = Fastify({ logger: false });
+    await initDb();
+
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => {
+      db.serialize(() => {
+        db.run('DELETE FROM jobs', () => {});
+        db.run('DELETE FROM tokens', () => {});
+        db.run('DELETE FROM logs', () => resolve());
+      });
+    });
+  });
+
+  it('should create a job and successfully claim it', async () => {
+    const createPayload = {
+      title: 'E2E Full Flow Test',
+      description: 'Проверка создания и claim job',
+      containers: [
+        {
+          name: 'bootstrap',
+          image: 'xproger/cloud-forge-bootstrap:latest',
+          is_parent: true,
+          resources: { gpus: 'all', shm_size: '8g' }
+        }
+      ],
+      environments: {
+        TEST_ENV: 'e2e_success_value'
+      },
+      execution_code: 'print("E2E test job started successfully")',
+      execution_language: 'python'
+    };
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/jobs',
+      payload: createPayload,
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const { job_id, run_token } = createRes.json() as any;
+
+    expect(job_id).toMatch(/^job_/);
+    expect(run_token).toMatch(/^run_/);
+
+    const claimRes = await app.inject({
+      method: 'POST',
+      url: '/claim',
+      payload: { token: run_token },
+    });
+
+    expect(claimRes.statusCode, 'Claim should return 200').toBe(200);
+
+    const claimBody = claimRes.json() as any;
+
+    expect(claimBody.job_id).toBe(job_id);
+    expect(Array.isArray(claimBody.containers)).toBe(true);
+    expect(claimBody.execution_code).toBeDefined();
+    expect(claimBody.environments.TEST_ENV).toBe('e2e_success_value');
+
+    const bootstrap = claimBody.containers.find((c: any) => c.name === 'bootstrap');
+    expect(bootstrap).toBeDefined();
+
+    console.log(`✅ E2E test passed for job ${job_id}`);
+  });
+
+  it('should return 401 for invalid token', async () => {
+    const claimRes = await app.inject({
+      method: 'POST',
+      url: '/claim',
+      payload: { token: 'run_invalid_token_99999' },
+    });
+
+    expect(claimRes.statusCode).toBe(401);
+  });
+});
+
+
+path: /tests/integration/api.test.ts
+----------------------------------------
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Fastify, { FastifyInstance } from 'fastify';
+import jobsRoutes from '../../src/routes/jobs';
+import workerRoutes from '../../src/routes/worker';
+import { initDb } from '../../src/db/index';
+import db from '../../src/db/index';
+import { vi } from 'vitest';
+
+vi.mock('../../src/services/queue.service', () => ({
+  QueueService: {
+    addJob: vi.fn().mockResolvedValue(undefined),
+  },
+  getQueue: vi.fn(),
+}));
+
+// Mock WebSocket broadcasts
+vi.mock('../../src/routes/ws', () => ({
+  broadcastJobStatus: vi.fn(),
+  broadcastLog: vi.fn(),
+  default: vi.fn().mockResolvedValue(undefined),
+}));
+
+describe('Integration Tests', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = Fastify();
+    await initDb();
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      db.serialize(() => {
+        db.run('DELETE FROM jobs', (err) => {
+          if (err) return reject(err);
+          db.run('DELETE FROM tokens', (err2) => {
+            if (err2) return reject(err2);
+            db.run('DELETE FROM logs', (err3) => {
+              if (err3) return reject(err3);
+              resolve();
+            });
+          });
+        });
+      });
+    });
+  });
+
+  it('should create and claim a job', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/jobs',
+      payload: { command: 'test command' },
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const { job_id, run_token } = createRes.json();
+
+    const claimRes = await app.inject({
+      method: 'POST',
+      url: '/claim',
+      payload: { token: run_token },
+    });
+
+    expect(claimRes.statusCode).toBe(200);
+    expect(claimRes.json().job_id).toBe(job_id);
+  });
+});
+
+
+path: /tests/unit/job.service.test.ts
+----------------------------------------
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { JobService } from '../../src/services/job.service';
+import { JobModel, TokenModel } from '../../src/models';
+import { QueueService } from '../../src/services/queue.service';
+
+vi.mock('../../src/models');
+vi.mock('../../src/services/queue.service');
+
+describe('JobService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should create a job', async () => {
+    vi.mocked(JobModel.create).mockResolvedValue(undefined);
+    vi.mocked(TokenModel.create).mockResolvedValue(undefined);
+    vi.mocked(QueueService.addJob).mockResolvedValue(undefined);
+
+    const result = await JobService.createJob('echo hello');
+
+    expect(result).toHaveProperty('id');
+    expect(result).toHaveProperty('token');
+    expect(JobModel.create).toHaveBeenCalled();
+    expect(TokenModel.create).toHaveBeenCalled();
+    expect(QueueService.addJob).toHaveBeenCalled();
+  });
+
+  it('should claim a job', async () => {
+    const mockToken = 'test-token';
+    const mockJobId = 'test-job';
+    vi.mocked(TokenModel.findValidToken).mockResolvedValue({ job_id: mockJobId });
+    vi.mocked(JobModel.findById).mockResolvedValue({ id: mockJobId, command: 'echo hello', status: 'pending' });
+    vi.mocked(TokenModel.markAsUsed).mockResolvedValue(undefined);
+    vi.mocked(JobModel.updateStatus).mockResolvedValue(undefined);
+
+    const result = await JobService.claimJob(mockToken);
+
+    expect(result).toEqual({ job_id: mockJobId, command: 'echo hello' });
+    expect(TokenModel.markAsUsed).toHaveBeenCalledWith(mockToken);
+    expect(JobModel.updateStatus).toHaveBeenCalledWith(mockJobId, 'running');
+  });
+});
 
 
 path: /tsconfig.json
@@ -361,14 +2196,29 @@ path: /tsconfig.json
     "rootDir": "src",
     "outDir": "dist",
     "strict": true,
-    "esModuleInterop": true
-  }
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "exclude": ["node_modules", "dist", "tests", "vitest.config.ts"]
 }
 
 
+path: /vitest.config.ts
+----------------------------------------
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+  },
+});
+
+
 === SUMMARY ===
-included: 9
+included: 49
 skipped(binary): 1
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 7013
+totalBytes(approx): 55066

@@ -1,32 +1,108 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
+import { Container, RunStatus } from '../models/job';
+import { config } from '../utils/config';
 
-export default async function (app: FastifyInstance) {
+interface CreateJobBody {
+  title: string;
+  description?: string;
+  owner_id?: string;
+  containers: Container[];
+  environments?: Record<string, string>;
+  attached_files?: Array<{
+    id: string;
+    filename: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }>;
+  execution_code: string;
+  execution_language?: 'python' | 'javascript';
+  entrypoint?: string;
+}
+
+interface ListJobsQuerystring {
+  search?: string;
+  status?: RunStatus;
+}
+
+interface CreateShareTokenBody {
+  expires_in_seconds?: number;
+  max_claims?: number;
+}
+
+const getBaseUrl = (req: FastifyRequest): string => {
+  if (config.publicBaseUrl) return config.publicBaseUrl;
+  const host = req.headers.host || `localhost:${config.port}`;
+  return `${req.protocol}://${host}`;
+};
+
+export default async function jobsRoutes(app: FastifyInstance) {
   app.post(
     '/jobs',
     {
       schema: {
-        description: 'Create a new job',
+        description: 'Create a new job template',
         body: {
           type: 'object',
+          required: ['title', 'containers', 'execution_code'],
           properties: {
-            command: { type: 'string', default: 'echo hello' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            owner_id: { type: 'string' },
+            containers: {
+              type: 'array',
+              items: { type: 'object' },
+            },
+            environments: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+            },
+            attached_files: {
+              type: 'array',
+              items: { type: 'object' },
+            },
+            execution_code: { type: 'string' },
+            execution_language: {
+              type: 'string',
+              enum: ['python', 'javascript'],
+            },
+            entrypoint: { type: 'string' },
           },
         },
-        response: {
-          201: {
-            type: 'object',
-            properties: {
-              job_id: { type: 'string' },
-              run_token: { type: 'string' },
+      },
+    },
+    async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
+      try {
+        const { id } = await JobService.createJob(req.body);
+        return reply.code(201).send({ job_id: id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to create job';
+        req.log.error({ err }, '[POST /jobs] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/jobs',
+    {
+      schema: {
+        description: 'List jobs',
+        querystring: {
+          type: 'object',
+          properties: {
+            search: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['created', 'running', 'finished', 'failed', 'cancelled', 'lost'],
             },
           },
         },
       },
     },
-    async (req: FastifyRequest<{ Body: { command?: string } }>, reply: FastifyReply) => {
-      const { id, token } = await JobService.createJob(req.body.command);
-      return reply.code(201).send({ job_id: id, run_token: token });
+    async (req: FastifyRequest<{ Querystring: ListJobsQuerystring }>) => {
+      return JobService.listJobs(req.query);
     },
   );
 
@@ -34,51 +110,71 @@ export default async function (app: FastifyInstance) {
     '/jobs/:id',
     {
       schema: {
-        description: 'Get job status and logs',
+        description: 'Get job details with runs and share tokens',
         params: {
           type: 'object',
+          required: ['id'],
           properties: {
             id: { type: 'string' },
-          },
-        },
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              job: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  status: { type: 'string' },
-                  command: { type: 'string' },
-                  result: { type: 'string', nullable: true },
-                  metrics: { type: 'string', nullable: true },
-                  created_at: { type: 'string' },
-                  updated_at: { type: 'string' },
-                },
-              },
-              logs: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    job_id: { type: 'string' },
-                    message: { type: 'string' },
-                    timestamp: { type: 'string' },
-                  },
-                },
-              },
-            },
           },
         },
       },
     },
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const result = await JobService.getJob(req.params.id);
+      const result = await JobService.getJobDetails(req.params.id);
+
       if (!result) {
         return reply.code(404).send({ error: 'Job not found' });
       }
+
       return result;
+    },
+  );
+
+  app.post(
+    '/jobs/:id/share-tokens',
+    {
+      schema: {
+        description: 'Create a share token for remote run',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          properties: {
+            expires_in_seconds: { type: 'integer', minimum: 1 },
+            max_claims: { type: 'integer', minimum: 1 },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: CreateShareTokenBody;
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const result = await JobService.createShareToken(
+          req.params.id,
+          {
+            expiresInSeconds: req.body?.expires_in_seconds,
+            maxClaims: req.body?.max_claims,
+          },
+          getBaseUrl(req),
+        );
+
+        return reply.code(201).send(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to create share token';
+        req.log.error({ err }, '[POST /jobs/:id/share-tokens] failed');
+        return reply.code(400).send({ error: message });
+      }
     },
   );
 }

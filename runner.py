@@ -1,54 +1,293 @@
+#!/usr/bin/env python3
+"""
+Cloud Forge Runner v3
+- получает run-config по share token
+- создаёт workspace
+- скачивает attached files
+- запускает код
+- стримит логи в orchestrator
+- завершает run через run_id
+"""
+
 import os
-import requests
+import sys
+import json
+import time
+import socket
+import shutil
+import threading
 import subprocess
+from pathlib import Path
+from urllib.parse import urlsplit, urljoin
 
-SERVER = os.getenv("SERVER_URL", "http://host.docker.internal:3000")
-TOKEN = os.environ.get("RUN_TOKEN")
+print("🚀 Cloud-Forge Runner v3 starting...")
 
-if not TOKEN:
-    print("RUN_TOKEN missing")
-    exit(1)
+try:
+    import requests
+except ImportError:
+    print("📦 Installing requests...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "requests"])
+    import requests
 
-# claim job
-r = requests.post(f"{SERVER}/claim", json={"token": TOKEN})
-config = r.json()
 
-if "error" in config:
-    print("Error:", config["error"])
-    exit(1)
+JOB_CONFIG_URL = os.getenv("JOB_CONFIG_URL")
+RUN_TIMEOUT_SECONDS = int(os.getenv("RUN_TIMEOUT_SECONDS", "600"))
 
-job_id = config["job_id"]
-cmd = config["command"]
+if not JOB_CONFIG_URL:
+    print("❌ JOB_CONFIG_URL environment variable is required")
+    sys.exit(1)
 
-print(f"Running job {job_id}: {cmd}")
+parsed_job_url = urlsplit(JOB_CONFIG_URL)
+SERVER_URL = os.getenv("SERVER_URL") or f"{parsed_job_url.scheme}://{parsed_job_url.netloc}"
 
-proc = subprocess.Popen(
-    cmd,
-    shell=True,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT
+print(f"📡 Fetching run config from {JOB_CONFIG_URL}")
+
+
+def post_json(path: str, payload: dict, timeout: int = 10, raise_errors: bool = False):
+    url = urljoin(SERVER_URL, path)
+    try:
+        response = requests.post(url, json=payload, timeout=timeout)
+        if raise_errors:
+            response.raise_for_status()
+        return response
+    except Exception as exc:
+        if raise_errors:
+            raise
+        print(f"⚠️ POST {url} failed: {exc}")
+        return None
+
+
+def safe_log(run_id: str, message: str, level: str = "info"):
+    print(message)
+    post_json(
+        "/api/runs/logs",
+        {
+            "run_id": run_id,
+            "message": message,
+            "level": level,
+        },
+        timeout=5,
+        raise_errors=False,
+    )
+
+
+def download_file(url: str, destination: Path):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with requests.get(url, stream=True, timeout=60) as response:
+        response.raise_for_status()
+        with open(destination, "wb") as output:
+            for chunk in response.iter_content(chunk_size=1024 * 128):
+                if chunk:
+                    output.write(chunk)
+
+
+try:
+    response = requests.get(JOB_CONFIG_URL, timeout=20)
+    response.raise_for_status()
+    payload = response.json()
+except Exception as exc:
+    print(f"❌ Failed to fetch run config: {exc}")
+    sys.exit(1)
+
+run_id = payload.get("run_id")
+job_id = payload.get("job_id")
+config = payload.get("config") or {}
+
+if not run_id or not job_id:
+    print("❌ Invalid run config: missing run_id or job_id")
+    sys.exit(1)
+
+workspace = config.get("workspace") or {}
+workspace_root = Path(workspace.get("root", "/workspace"))
+code_dir = Path(workspace.get("code_dir", str(workspace_root / "code")))
+input_dir = Path(workspace.get("input_dir", str(workspace_root / "input")))
+output_dir = Path(workspace.get("output_dir", str(workspace_root / "output")))
+artifacts_dir = Path(workspace.get("artifacts_dir", str(workspace_root / "artifacts")))
+tmp_dir = Path(workspace.get("tmp_dir", str(workspace_root / "tmp")))
+
+for directory in [workspace_root, code_dir, input_dir, output_dir, artifacts_dir, tmp_dir]:
+    directory.mkdir(parents=True, exist_ok=True)
+
+safe_log(run_id, f"✅ Run claimed: {run_id}")
+safe_log(run_id, f"📁 Workspace root: {workspace_root}")
+
+environments = config.get("environments") or {}
+for key, value in environments.items():
+    os.environ[str(key)] = str(value)
+
+os.environ["CLOUD_FORGE_RUN_ID"] = run_id
+os.environ["CLOUD_FORGE_JOB_ID"] = job_id
+os.environ["CLOUD_FORGE_WORKSPACE_ROOT"] = str(workspace_root)
+os.environ["CLOUD_FORGE_CODE_DIR"] = str(code_dir)
+os.environ["CLOUD_FORGE_INPUT_DIR"] = str(input_dir)
+os.environ["CLOUD_FORGE_OUTPUT_DIR"] = str(output_dir)
+os.environ["CLOUD_FORGE_ARTIFACTS_DIR"] = str(artifacts_dir)
+os.environ["CLOUD_FORGE_TMP_DIR"] = str(tmp_dir)
+os.environ["CLOUD_FORGE_SERVER_URL"] = SERVER_URL
+
+attached_files = config.get("attached_files") or []
+for file_info in attached_files:
+    filename = file_info.get("filename")
+    mount_path = file_info.get("mount_path")
+    download_path = file_info.get("download_path")
+
+    if not filename or not mount_path or not download_path:
+        continue
+
+    absolute_url = urljoin(SERVER_URL, download_path)
+    destination = Path(mount_path)
+
+    safe_log(run_id, f"⬇️ Downloading attached file: {filename}")
+    try:
+        download_file(absolute_url, destination)
+    except Exception as exc:
+        safe_log(run_id, f"❌ Failed to download {filename}: {exc}", "error")
+        post_json(
+            "/api/runs/finish",
+            {
+                "run_id": run_id,
+                "status": "failed",
+                "result": f"Failed to download attached file: {filename}",
+            },
+            timeout=10,
+            raise_errors=False,
+        )
+        sys.exit(1)
+
+execution_language = config.get("execution_language", "python")
+execution_code = config.get("execution_code", "")
+entrypoint = config.get("entrypoint")
+
+if not execution_code and not entrypoint:
+    safe_log(run_id, "❌ No execution_code or entrypoint provided", "error")
+    post_json(
+        "/api/runs/finish",
+        {
+            "run_id": run_id,
+            "status": "failed",
+            "result": "No execution_code or entrypoint provided",
+        },
+        timeout=10,
+        raise_errors=False,
+    )
+    sys.exit(1)
+
+if execution_language == "javascript":
+    code_file = code_dir / "main.js"
+else:
+    code_file = code_dir / "main.py"
+
+if execution_code:
+    code_file.write_text(execution_code, encoding="utf-8")
+    safe_log(run_id, f"📄 Execution code saved to {code_file}")
+
+post_json(
+    "/api/runs/start",
+    {
+        "run_id": run_id,
+        "worker_name": socket.gethostname(),
+    },
+    timeout=10,
+    raise_errors=False,
 )
 
-# stream logs
-for line in iter(proc.stdout.readline, b''):
-    text = line.decode(errors="ignore")
-    print(text, end="")
+if entrypoint:
+    command = ["/bin/sh", "-lc", entrypoint]
+elif execution_language == "javascript":
+    command = ["node", str(code_file)]
+else:
+    command = [sys.executable, str(code_file)]
 
+safe_log(run_id, f"⚙️ Starting process: {' '.join(command)}")
+
+process = None
+stdout_thread = None
+stderr_thread = None
+timed_out = False
+
+
+def pump_stream(stream, level: str):
     try:
-        requests.post(f"{SERVER}/logs", json={
-            "job_id": job_id,
-            "message": text
-        })
-    except:
-        pass
+        for raw_line in iter(stream.readline, ""):
+            line = raw_line.rstrip("\n")
+            if line:
+                safe_log(run_id, line, level)
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
 
-proc.wait()
 
-status = "finished" if proc.returncode == 0 else "failed"
+try:
+    process = subprocess.Popen(
+        command,
+        cwd=str(workspace_root),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        env=os.environ.copy(),
+    )
 
-requests.post(f"{SERVER}/finish", json={
-    "job_id": job_id,
-    "status": status
-})
+    stdout_thread = threading.Thread(target=pump_stream, args=(process.stdout, "info"), daemon=True)
+    stderr_thread = threading.Thread(target=pump_stream, args=(process.stderr, "error"), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
 
-print(f"Job finished with status: {status}")
+    process.wait(timeout=RUN_TIMEOUT_SECONDS)
+
+except subprocess.TimeoutExpired:
+    timed_out = True
+    safe_log(run_id, "⏰ Execution timed out", "error")
+    if process:
+      try:
+          process.kill()
+      except Exception:
+          pass
+except Exception as exc:
+    safe_log(run_id, f"❌ Error during execution: {exc}", "error")
+    if process:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+if stdout_thread:
+    stdout_thread.join(timeout=5)
+if stderr_thread:
+    stderr_thread.join(timeout=5)
+
+if timed_out:
+    final_status = "failed"
+    final_result = f"Execution timed out after {RUN_TIMEOUT_SECONDS} seconds"
+    exit_code = None
+elif process is None:
+    final_status = "failed"
+    final_result = "Process did not start"
+    exit_code = None
+else:
+    exit_code = process.returncode
+    final_status = "finished" if exit_code == 0 else "failed"
+    final_result = f"Process exited with code {exit_code}"
+
+metrics = {
+    "execution_language": execution_language,
+    "timeout_seconds": RUN_TIMEOUT_SECONDS,
+    "exit_code": exit_code,
+    "workspace_root": str(workspace_root),
+}
+
+post_json(
+    "/api/runs/finish",
+    {
+        "run_id": run_id,
+        "status": final_status,
+        "result": final_result,
+        "metrics": metrics,
+    },
+    timeout=15,
+    raise_errors=False,
+)
+
+print(f"🏁 Run {run_id} finished with status: {final_status}")

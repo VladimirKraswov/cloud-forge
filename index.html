@@ -1,16 +1,48 @@
 <!DOCTYPE html>
-<html>
-<body>
-  <h2>Logs</h2>
-  <pre id="logs"></pre>
+<html lang="en">
+  <body>
+    <h2>Run Logs</h2>
+    <pre id="logs"></pre>
 
-  <script>
-    const jobId = prompt("job id?");
-    const ws = new WebSocket(`ws://localhost:3000/ws/${jobId}`);
+    <script>
+      const logsEl = document.getElementById('logs');
+      const runId = prompt('run id?');
 
-    ws.onmessage = (event) => {
-      document.getElementById("logs").textContent += event.data;
-    };
-  </script>
-</body>
+      const append = (line) => {
+        logsEl.textContent += line;
+      };
+
+      if (!runId) {
+        append('run id is required\n');
+      } else {
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const host = window.location.host || 'localhost:3000';
+        const ws = new WebSocket(`${protocol}://${host}/ws/runs/${encodeURIComponent(runId)}`);
+
+        ws.onopen = () => append('[ws] connected\n');
+        ws.onclose = () => append('[ws] disconnected\n');
+        ws.onerror = () => append('[ws] error\n');
+
+        ws.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+
+            if (payload.type === 'run_log') {
+              append(`[${payload.level}] ${payload.message}\n`);
+              return;
+            }
+
+            if (payload.type === 'run_status') {
+              append(`[status] ${payload.status} (${payload.timestamp})\n`);
+              return;
+            }
+
+            append(`${event.data}\n`);
+          } catch {
+            append(`${event.data}\n`);
+          }
+        };
+      }
+    </script>
+  </body>
 </html>
