@@ -10,6 +10,8 @@ export type RunStatus =
 
 export type LogLevel = 'info' | 'warn' | 'error';
 
+export type WorkerStatus = 'online' | 'busy' | 'offline';
+
 export interface Container {
   name: string;
   image: string;
@@ -75,6 +77,7 @@ export interface Run {
   id: string;
   job_id: string;
   share_token_id: string;
+  worker_id?: string | null;
   status: RunStatus;
   worker_name?: string | null;
   result?: string | null;
@@ -82,6 +85,7 @@ export interface Run {
   config_snapshot: RunConfigSnapshot;
   started_at?: string | null;
   finished_at?: string | null;
+  last_heartbeat_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,4 +109,27 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp?: string;
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  host?: string | null;
+  status: WorkerStatus;
+  current_run_id?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  last_seen_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RunArtifact {
+  id: string;
+  run_id: string;
+  filename: string;
+  relative_path: string;
+  size_bytes: number;
+  storage_key: string;
+  mime_type: string;
+  created_at: string;
 }

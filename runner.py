@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 """
-Cloud Forge Runner v3
+Cloud Forge Runner v4
 - получает run-config по share token
 - создаёт workspace
 - скачивает attached files
 - запускает код
-- стримит логи в orchestrator
+- шлёт heartbeat
+- стримит логи
+- загружает артефакты из /workspace/artifacts
 - завершает run через run_id
 """
 
-import os
-import sys
 import json
-import time
+import mimetypes
+import os
 import socket
-import shutil
-import threading
 import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
-from urllib.parse import urlsplit, urljoin
+from urllib.parse import urljoin, urlsplit
 
-print("🚀 Cloud-Forge Runner v3 starting...")
+print("🚀 Cloud-Forge Runner v4 starting...")
 
 try:
     import requests
@@ -32,6 +34,7 @@ except ImportError:
 
 JOB_CONFIG_URL = os.getenv("JOB_CONFIG_URL")
 RUN_TIMEOUT_SECONDS = int(os.getenv("RUN_TIMEOUT_SECONDS", "600"))
+HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("CLOUD_FORGE_HEARTBEAT_INTERVAL_SECONDS", "10"))
 
 if not JOB_CONFIG_URL:
     print("❌ JOB_CONFIG_URL environment variable is required")
@@ -40,7 +43,33 @@ if not JOB_CONFIG_URL:
 parsed_job_url = urlsplit(JOB_CONFIG_URL)
 SERVER_URL = os.getenv("SERVER_URL") or f"{parsed_job_url.scheme}://{parsed_job_url.netloc}"
 
+HOSTNAME = socket.gethostname()
+WORKER_ID = os.getenv("CLOUD_FORGE_WORKER_ID") or f"worker-{HOSTNAME}"
+WORKER_NAME = os.getenv("CLOUD_FORGE_WORKER_NAME") or WORKER_ID
+WORKER_HOST = os.getenv("CLOUD_FORGE_WORKER_HOST") or HOSTNAME
+
 print(f"📡 Fetching run config from {JOB_CONFIG_URL}")
+
+
+def load_capabilities():
+    raw = os.getenv("CLOUD_FORGE_WORKER_CAPABILITIES")
+    if not raw:
+        return {
+            "hostname": HOSTNAME,
+            "platform": sys.platform,
+            "python_version": sys.version.split()[0],
+        }
+
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"raw_capabilities": parsed}
+    except Exception:
+        return {"raw_capabilities": raw}
+
+
+WORKER_CAPABILITIES = load_capabilities()
 
 
 def post_json(path: str, payload: dict, timeout: int = 10, raise_errors: bool = False):
@@ -81,6 +110,55 @@ def download_file(url: str, destination: Path):
                     output.write(chunk)
 
 
+def upload_run_artifact(run_id: str, server_url: str, local_path: Path, relative_path: str):
+    content_type = mimetypes.guess_type(local_path.name)[0] or "application/octet-stream"
+    with open(local_path, "rb") as file_handle:
+        response = requests.post(
+            urljoin(server_url, f"/artifacts/upload-run?runId={run_id}&relativePath={relative_path}"),
+            files={"file": (local_path.name, file_handle, content_type)},
+            timeout=120,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+def upload_artifacts_directory(run_id: str, artifacts_dir: Path):
+    if not artifacts_dir.exists() or not artifacts_dir.is_dir():
+        safe_log(run_id, f"📦 Artifacts directory does not exist: {artifacts_dir}")
+        return {
+            "uploaded_count": 0,
+            "uploaded_files": [],
+        }
+
+    files_to_upload = [path for path in artifacts_dir.rglob("*") if path.is_file()]
+
+    if not files_to_upload:
+        safe_log(run_id, "📦 No artifacts found to upload")
+        return {
+            "uploaded_count": 0,
+            "uploaded_files": [],
+        }
+
+    uploaded_files = []
+
+    for local_path in files_to_upload:
+        relative_path = local_path.relative_to(artifacts_dir).as_posix()
+        safe_log(run_id, f"⬆️ Uploading artifact: {relative_path}")
+
+        try:
+            result = upload_run_artifact(run_id, SERVER_URL, local_path, relative_path)
+            uploaded_files.append(result)
+        except Exception as exc:
+            safe_log(run_id, f"❌ Failed to upload artifact {relative_path}: {exc}", "error")
+
+    safe_log(run_id, f"📦 Uploaded artifacts: {len(uploaded_files)}")
+
+    return {
+        "uploaded_count": len(uploaded_files),
+        "uploaded_files": uploaded_files,
+    }
+
+
 try:
     response = requests.get(JOB_CONFIG_URL, timeout=20)
     response.raise_for_status()
@@ -117,6 +195,9 @@ for key, value in environments.items():
 
 os.environ["CLOUD_FORGE_RUN_ID"] = run_id
 os.environ["CLOUD_FORGE_JOB_ID"] = job_id
+os.environ["CLOUD_FORGE_WORKER_ID"] = WORKER_ID
+os.environ["CLOUD_FORGE_WORKER_NAME"] = WORKER_NAME
+os.environ["CLOUD_FORGE_WORKER_HOST"] = WORKER_HOST
 os.environ["CLOUD_FORGE_WORKSPACE_ROOT"] = str(workspace_root)
 os.environ["CLOUD_FORGE_CODE_DIR"] = str(code_dir)
 os.environ["CLOUD_FORGE_INPUT_DIR"] = str(input_dir)
@@ -185,11 +266,37 @@ post_json(
     "/api/runs/start",
     {
         "run_id": run_id,
-        "worker_name": socket.gethostname(),
+        "worker_id": WORKER_ID,
+        "worker_name": WORKER_NAME,
+        "worker_host": WORKER_HOST,
+        "capabilities": WORKER_CAPABILITIES,
     },
     timeout=10,
     raise_errors=False,
 )
+
+heartbeat_stop_event = threading.Event()
+
+
+def heartbeat_loop():
+    while not heartbeat_stop_event.is_set():
+        post_json(
+            "/api/runs/heartbeat",
+            {
+                "run_id": run_id,
+                "worker_id": WORKER_ID,
+                "worker_name": WORKER_NAME,
+                "worker_host": WORKER_HOST,
+                "capabilities": WORKER_CAPABILITIES,
+            },
+            timeout=5,
+            raise_errors=False,
+        )
+        heartbeat_stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
+
+
+heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+heartbeat_thread.start()
 
 if entrypoint:
     command = ["/bin/sh", "-lc", entrypoint]
@@ -241,10 +348,10 @@ except subprocess.TimeoutExpired:
     timed_out = True
     safe_log(run_id, "⏰ Execution timed out", "error")
     if process:
-      try:
-          process.kill()
-      except Exception:
-          pass
+        try:
+            process.kill()
+        except Exception:
+            pass
 except Exception as exc:
     safe_log(run_id, f"❌ Error during execution: {exc}", "error")
     if process:
@@ -257,6 +364,11 @@ if stdout_thread:
     stdout_thread.join(timeout=5)
 if stderr_thread:
     stderr_thread.join(timeout=5)
+
+heartbeat_stop_event.set()
+heartbeat_thread.join(timeout=2)
+
+artifact_upload_summary = upload_artifacts_directory(run_id, artifacts_dir)
 
 if timed_out:
     final_status = "failed"
@@ -276,6 +388,9 @@ metrics = {
     "timeout_seconds": RUN_TIMEOUT_SECONDS,
     "exit_code": exit_code,
     "workspace_root": str(workspace_root),
+    "worker_id": WORKER_ID,
+    "worker_name": WORKER_NAME,
+    "artifact_upload": artifact_upload_summary,
 }
 
 post_json(

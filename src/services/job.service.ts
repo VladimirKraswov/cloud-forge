@@ -1,13 +1,22 @@
 import { v4 as uuidv4 } from 'uuid';
-import { JobModel, LogModel, RunModel, ShareTokenModel } from '../models';
+import {
+  JobModel,
+  LogModel,
+  RunArtifactModel,
+  RunModel,
+  ShareTokenModel,
+  WorkerModel,
+} from '../models';
 import {
   AttachedFile,
   Job,
   LogLevel,
   RunStatus,
   ShareToken,
+  Worker,
   WorkspaceLayout,
 } from '../models/job';
+import { config } from '../utils/config';
 
 const WORKSPACE: WorkspaceLayout = {
   root: '/workspace',
@@ -56,6 +65,29 @@ const isTokenExpired = (token: ShareToken): boolean => {
 const isTokenExhausted = (token: ShareToken): boolean => {
   if (token.max_claims == null) return false;
   return token.claim_count >= token.max_claims;
+};
+
+const normalizeWorkerStatus = (worker: Worker): Worker => {
+  if (!worker.last_seen_at) {
+    return { ...worker, status: 'offline' };
+  }
+
+  const lastSeenMs = new Date(worker.last_seen_at).getTime();
+  if (Number.isNaN(lastSeenMs)) {
+    return { ...worker, status: 'offline' };
+  }
+
+  const ageSeconds = (Date.now() - lastSeenMs) / 1000;
+
+  if (ageSeconds > config.workerOfflineTimeoutSeconds) {
+    return { ...worker, status: 'offline' };
+  }
+
+  if (worker.current_run_id) {
+    return { ...worker, status: 'busy' };
+  }
+
+  return { ...worker, status: 'online' };
 };
 
 export class JobService {
@@ -219,13 +251,56 @@ export class JobService {
     };
   }
 
-  static async markRunStarted(runId: string, workerName?: string) {
+  static async markRunStarted(
+    runId: string,
+    worker: {
+      id: string;
+      name: string;
+      host?: string | null;
+      capabilities?: Record<string, unknown> | null;
+    },
+  ) {
     const run = await RunModel.findById(runId);
     if (!run) {
       throw new Error('Run not found');
     }
 
-    await RunModel.markRunning(runId, workerName);
+    await WorkerModel.upsertHeartbeat({
+      id: worker.id,
+      name: worker.name,
+      host: worker.host ?? null,
+      current_run_id: runId,
+      capabilities: worker.capabilities ?? null,
+      status: 'busy',
+    });
+
+    await RunModel.markRunning(runId, worker.id, worker.name);
+  }
+
+  static async heartbeatRun(
+    runId: string,
+    worker: {
+      id: string;
+      name: string;
+      host?: string | null;
+      capabilities?: Record<string, unknown> | null;
+    },
+  ) {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    await WorkerModel.upsertHeartbeat({
+      id: worker.id,
+      name: worker.name,
+      host: worker.host ?? null,
+      current_run_id: runId,
+      capabilities: worker.capabilities ?? null,
+      status: 'busy',
+    });
+
+    await RunModel.touchHeartbeat(runId);
   }
 
   static async addRunLog(runId: string, message: string, level: LogLevel = 'info') {
@@ -249,13 +324,77 @@ export class JobService {
     }
 
     await RunModel.finish(runId, status, result, metrics);
+
+    if (run.worker_id) {
+      await WorkerModel.release(run.worker_id);
+    }
+  }
+
+  static async registerRunArtifact(data: {
+    run_id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }) {
+    const run = await RunModel.findById(data.run_id);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    const artifactId = makeId('ra');
+
+    await RunArtifactModel.create({
+      id: artifactId,
+      run_id: data.run_id,
+      filename: data.filename,
+      relative_path: data.relative_path,
+      size_bytes: data.size_bytes,
+      storage_key: data.storage_key,
+      mime_type: data.mime_type,
+    });
+
+    return {
+      id: artifactId,
+      run_id: data.run_id,
+      filename: data.filename,
+      relative_path: data.relative_path,
+      size_bytes: data.size_bytes,
+      storage_key: data.storage_key,
+      mime_type: data.mime_type,
+    };
   }
 
   static async getRun(runId: string) {
     const run = await RunModel.findById(runId);
     if (!run) return null;
 
-    const logs = await LogModel.listByRunId(runId);
-    return { run, logs };
+    const [logs, artifacts, worker] = await Promise.all([
+      LogModel.listByRunId(runId),
+      RunArtifactModel.listByRunId(runId),
+      run.worker_id ? WorkerModel.findById(run.worker_id) : Promise.resolve(null),
+    ]);
+
+    return {
+      run,
+      logs,
+      worker: worker ? normalizeWorkerStatus(worker) : null,
+      artifacts: artifacts.map((artifact) => ({
+        ...artifact,
+        download_path: `/artifacts/download?key=${encodeURIComponent(artifact.storage_key)}`,
+      })),
+    };
+  }
+
+  static async listWorkers() {
+    const workers = await WorkerModel.list();
+    return workers.map(normalizeWorkerStatus);
+  }
+
+  static async getWorker(workerId: string) {
+    const worker = await WorkerModel.findById(workerId);
+    if (!worker) return null;
+    return normalizeWorkerStatus(worker);
   }
 }

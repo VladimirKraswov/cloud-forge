@@ -1,8 +1,14 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ArtifactService } from '../services/artifact.service';
+import { JobService } from '../services/job.service';
 
-interface UploadArtifactQuerystring {
+interface UploadJobArtifactQuerystring {
   jobId: string;
+}
+
+interface UploadRunArtifactQuerystring {
+  runId: string;
+  relativePath?: string;
 }
 
 interface DownloadArtifactQuerystring {
@@ -11,7 +17,7 @@ interface DownloadArtifactQuerystring {
 
 export default async function artifactsRoutes(app: FastifyInstance) {
   app.post(
-    '/artifacts/upload',
+    '/artifacts/upload-job',
     {
       schema: {
         description: 'Upload a file and attach it to a job',
@@ -26,7 +32,7 @@ export default async function artifactsRoutes(app: FastifyInstance) {
       },
     },
     async (
-      req: FastifyRequest<{ Querystring: UploadArtifactQuerystring }>,
+      req: FastifyRequest<{ Querystring: UploadJobArtifactQuerystring }>,
       reply: FastifyReply,
     ) => {
       const file = await req.file();
@@ -37,7 +43,7 @@ export default async function artifactsRoutes(app: FastifyInstance) {
 
       const buffer = await file.toBuffer();
 
-      const uploaded = await ArtifactService.uploadFile(
+      const uploaded = await ArtifactService.uploadJobFile(
         buffer,
         file.filename,
         req.query.jobId,
@@ -47,6 +53,59 @@ export default async function artifactsRoutes(app: FastifyInstance) {
       return reply.send({
         ...uploaded,
         mime_type: file.mimetype,
+      });
+    },
+  );
+
+  app.post(
+    '/artifacts/upload-run',
+    {
+      schema: {
+        description: 'Upload artifact produced by a run',
+        consumes: ['multipart/form-data'],
+        querystring: {
+          type: 'object',
+          required: ['runId'],
+          properties: {
+            runId: { type: 'string' },
+            relativePath: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{ Querystring: UploadRunArtifactQuerystring }>,
+      reply: FastifyReply,
+    ) => {
+      const file = await req.file();
+
+      if (!file) {
+        return reply.code(400).send({ error: 'No file uploaded' });
+      }
+
+      const buffer = await file.toBuffer();
+      const relativePath = req.query.relativePath || file.filename;
+
+      const uploaded = await ArtifactService.uploadRunArtifact(
+        buffer,
+        file.filename,
+        req.query.runId,
+        relativePath,
+        file.mimetype,
+      );
+
+      const artifact = await JobService.registerRunArtifact({
+        run_id: req.query.runId,
+        filename: uploaded.filename,
+        relative_path: uploaded.relative_path,
+        size_bytes: uploaded.size_bytes,
+        storage_key: uploaded.storage_key,
+        mime_type: file.mimetype,
+      });
+
+      return reply.send({
+        ...artifact,
+        download_path: `/artifacts/download?key=${encodeURIComponent(artifact.storage_key)}`,
       });
     },
   );

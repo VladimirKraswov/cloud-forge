@@ -11,6 +11,7 @@ import artifactsRoutes from './routes/artifacts';
 import wsRoutes from './routes/ws';
 import jobsRoutes from './routes/jobs';
 import workerRoutes from './routes/worker';
+import workersRoutes from './routes/workers';
 import { ArtifactService } from './services/artifact.service';
 
 const app = Fastify({
@@ -53,7 +54,7 @@ const start = async () => {
         info: {
           title: 'Cloud Forge API',
           description: 'Distributed Task Orchestration API',
-          version: '2.0.0',
+          version: '2.1.0',
         },
       },
     });
@@ -65,6 +66,7 @@ const start = async () => {
     await app.register(wsRoutes);
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
+    await app.register(workersRoutes);
     await app.register(artifactsRoutes);
 
     await app.listen({ port: config.port, host: '0.0.0.0' });

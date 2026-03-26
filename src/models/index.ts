@@ -5,9 +5,12 @@ import {
   LogEntry,
   LogLevel,
   Run,
+  RunArtifact,
   RunConfigSnapshot,
   RunStatus,
   ShareToken,
+  Worker,
+  WorkerStatus,
 } from './job';
 
 const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
@@ -62,6 +65,7 @@ const mapRunRow = (row: any): Run => ({
   id: row.id,
   job_id: row.job_id,
   share_token_id: row.share_token_id,
+  worker_id: row.worker_id ?? null,
   status: row.status,
   worker_name: row.worker_name ?? null,
   result: row.result ?? null,
@@ -85,6 +89,7 @@ const mapRunRow = (row: any): Run => ({
   }),
   started_at: row.started_at ?? null,
   finished_at: row.finished_at ?? null,
+  last_heartbeat_at: row.last_heartbeat_at ?? null,
   created_at: row.created_at,
   updated_at: row.updated_at,
 });
@@ -100,6 +105,29 @@ const mapShareTokenRow = (row: any): ShareToken => ({
   last_claimed_at: row.last_claimed_at ?? null,
   created_at: row.created_at,
   updated_at: row.updated_at,
+});
+
+const mapWorkerRow = (row: any): Worker => ({
+  id: row.id,
+  name: row.name,
+  host: row.host ?? null,
+  status: row.status as WorkerStatus,
+  current_run_id: row.current_run_id ?? null,
+  capabilities: parseJson<Record<string, unknown> | null>(row.capabilities, null),
+  last_seen_at: row.last_seen_at ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapRunArtifactRow = (row: any): RunArtifact => ({
+  id: row.id,
+  run_id: row.run_id,
+  filename: row.filename,
+  relative_path: row.relative_path,
+  size_bytes: row.size_bytes,
+  storage_key: row.storage_key,
+  mime_type: row.mime_type,
+  created_at: row.created_at,
 });
 
 export class JobModel {
@@ -276,18 +304,37 @@ export class RunModel {
     return rows.map(mapRunRow);
   }
 
-  static async markRunning(id: string, workerName?: string): Promise<void> {
+  static async markRunning(
+    id: string,
+    workerId: string,
+    workerName?: string,
+  ): Promise<void> {
     await runAsync(
       `
       UPDATE runs
       SET
-        status = 'running',
+        worker_id = ?,
         worker_name = COALESCE(?, worker_name),
+        status = 'running',
         started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+        last_heartbeat_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
-      [workerName ?? null, id],
+      [workerId, workerName ?? null, id],
+    );
+  }
+
+  static async touchHeartbeat(id: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE runs
+      SET
+        last_heartbeat_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [id],
     );
   }
 
@@ -326,5 +373,109 @@ export class LogModel {
       `SELECT * FROM logs WHERE run_id = ? ORDER BY id ASC`,
       [runId],
     );
+  }
+}
+
+export class WorkerModel {
+  static async upsertHeartbeat(data: {
+    id: string;
+    name: string;
+    host?: string | null;
+    current_run_id?: string | null;
+    capabilities?: Record<string, unknown> | null;
+    status: WorkerStatus;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO workers (
+        id, name, host, status, current_run_id, capabilities, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        host = excluded.host,
+        status = excluded.status,
+        current_run_id = excluded.current_run_id,
+        capabilities = excluded.capabilities,
+        last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        data.id,
+        data.name,
+        data.host ?? null,
+        data.status,
+        data.current_run_id ?? null,
+        data.capabilities ? JSON.stringify(data.capabilities) : null,
+      ],
+    );
+  }
+
+  static async release(workerId: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE workers
+      SET
+        status = 'online',
+        current_run_id = NULL,
+        last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [workerId],
+    );
+  }
+
+  static async findById(id: string): Promise<Worker | null> {
+    const row = await getAsync<any>('SELECT * FROM workers WHERE id = ?', [id]);
+    return row ? mapWorkerRow(row) : null;
+  }
+
+  static async list(): Promise<Worker[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM workers ORDER BY datetime(last_seen_at) DESC, datetime(created_at) DESC`,
+    );
+    return rows.map(mapWorkerRow);
+  }
+}
+
+export class RunArtifactModel {
+  static async create(data: {
+    id: string;
+    run_id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO run_artifacts (
+        id, run_id, filename, relative_path, size_bytes, storage_key, mime_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        data.id,
+        data.run_id,
+        data.filename,
+        data.relative_path,
+        data.size_bytes,
+        data.storage_key,
+        data.mime_type,
+      ],
+    );
+  }
+
+  static async listByRunId(runId: string): Promise<RunArtifact[]> {
+    const rows = await allAsync<any>(
+      `
+      SELECT * FROM run_artifacts
+      WHERE run_id = ?
+      ORDER BY datetime(created_at) ASC, id ASC
+      `,
+      [runId],
+    );
+
+    return rows.map(mapRunArtifactRow);
   }
 }

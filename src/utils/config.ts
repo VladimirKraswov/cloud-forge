@@ -16,4 +16,12 @@ export const config = {
   minioSecretKey: process.env.MINIO_SECRET_KEY || 'cloudforge123',
   minioBucket: process.env.MINIO_BUCKET || 'cloud-forge',
   publicBaseUrl: normalizeBaseUrl(process.env.PUBLIC_BASE_URL),
+  workerHeartbeatIntervalSeconds: parseInt(
+    process.env.WORKER_HEARTBEAT_INTERVAL_SECONDS || '10',
+    10,
+  ),
+  workerOfflineTimeoutSeconds: parseInt(
+    process.env.WORKER_OFFLINE_TIMEOUT_SECONDS || '45',
+    10,
+  ),
 };

@@ -47,10 +47,25 @@ export const initDb = async (): Promise<void> => {
   `);
 
   await runAsync(`
+    CREATE TABLE IF NOT EXISTS workers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      host TEXT,
+      status TEXT NOT NULL DEFAULT 'online',
+      current_run_id TEXT,
+      capabilities TEXT,
+      last_seen_at DATETIME,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await runAsync(`
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,
       job_id TEXT NOT NULL,
       share_token_id TEXT NOT NULL,
+      worker_id TEXT,
       status TEXT NOT NULL DEFAULT 'created',
       worker_name TEXT,
       result TEXT,
@@ -58,6 +73,7 @@ export const initDb = async (): Promise<void> => {
       config_snapshot TEXT NOT NULL,
       started_at DATETIME,
       finished_at DATETIME,
+      last_heartbeat_at DATETIME,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -73,11 +89,27 @@ export const initDb = async (): Promise<void> => {
     )
   `);
 
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS run_artifacts (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      storage_key TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_job_id ON share_tokens(job_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_token ON share_tokens(token)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_job_id ON runs(job_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_share_token_id ON runs(share_token_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_worker_id ON runs(worker_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_workers_last_seen_at ON workers(last_seen_at)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_id ON run_artifacts(run_id)`);
 
   console.log('[DB] Database initialized successfully');
 };
