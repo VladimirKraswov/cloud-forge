@@ -1,9 +1,13 @@
-export type JobStatus = "pending" | "running" | "finished" | "failed";
+export type JobStatus = 'pending' | 'running' | 'finished' | 'failed';
 
 export interface Job {
   id: string;
   status: JobStatus;
   command: string;
+  result?: string;
+  metrics?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Token {
@@ -20,4 +24,5 @@ export interface ClaimResponse {
 export interface LogEntry {
   job_id: string;
   message: string;
+  timestamp?: string;
 }

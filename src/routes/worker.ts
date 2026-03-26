@@ -1,84 +1,123 @@
-import { FastifyInstance } from "fastify";
-import db from "../db";
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { JobService } from '../services/job.service';
+import { JobStatus } from '../models/job';
+import { broadcastLog, broadcastJobStatus } from './ws';
 
 export default async function (app: FastifyInstance) {
+  app.post(
+    '/claim',
+    {
+      schema: {
+        description: 'Claim a job with a token',
+        body: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              job_id: { type: 'string' },
+              command: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: { token?: string } }>, reply: FastifyReply) => {
+      const { token } = req.body;
+      if (!token) {
+        return reply.code(400).send({ error: 'token required' });
+      }
 
-  app.post("/claim", async (req, reply) => {
-    const { token } = req.body as { token?: string };
+      const result = await JobService.claimJob(token);
+      if (!result) {
+        return reply.code(401).send({ error: 'invalid token or job not found' });
+      }
 
-    if (!token) {
-      return reply.code(400).send({ error: "token required" });
-    }
+      broadcastJobStatus(result.job_id, 'running');
 
-    return new Promise((resolve) => {
-      db.get(
-        "SELECT * FROM tokens WHERE token = ? AND used = 0",
-        [token],
-        (err, row: any) => {
+      return result;
+    },
+  );
 
-          if (!row) {
-            return resolve({ error: "invalid token" });
-          }
+  app.post(
+    '/logs',
+    {
+      schema: {
+        description: 'Submit logs for a job',
+        body: {
+          type: 'object',
+          required: ['job_id', 'message'],
+          properties: {
+            job_id: { type: 'string' },
+            message: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              ok: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{ Body: { job_id: string; message: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { job_id, message } = req.body;
 
-          db.run("UPDATE tokens SET used = 1 WHERE token = ?", [token]);
+      await JobService.addLog(job_id, message);
+      broadcastLog(job_id, message);
 
-          db.get(
-            "SELECT * FROM jobs WHERE id = ?",
-            [row.job_id],
-            (err2, job: any) => {
+      return reply.send({ ok: true });
+    },
+  );
 
-              if (!job) {
-                return resolve({ error: "job not found" });
-              }
+  app.post(
+    '/finish',
+    {
+      schema: {
+        description: 'Finish a job',
+        body: {
+          type: 'object',
+          required: ['job_id'],
+          properties: {
+            job_id: { type: 'string' },
+            status: { type: 'string', enum: ['finished', 'failed'] },
+            result: { type: 'string' },
+            metrics: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              ok: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{
+        Body: { job_id: string; status?: string; result?: string; metrics?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { job_id, status, result, metrics } = req.body;
+      const jobStatus = (status as JobStatus) || 'finished';
 
-              db.run(
-                "UPDATE jobs SET status = 'running' WHERE id = ?",
-                [job.id]
-              );
+      await JobService.finishJob(job_id, jobStatus, result, metrics);
+      broadcastJobStatus(job_id, jobStatus);
 
-              resolve({
-                job_id: job.id,
-                command: job.command
-              });
-            }
-          );
-        }
-      );
-    });
-  });
-
-  app.post("/logs", async (req) => {
-    const { job_id, message } = req.body as {
-      job_id: string;
-      message: string;
-    };
-
-    db.run(
-      "INSERT INTO logs (job_id, message) VALUES (?, ?)",
-      [job_id, message]
-    );
-
-    const clients = (app as any).wsClients.get(job_id) || [];
-    for (const conn of clients) {
-      try {
-        conn.socket.send(message);
-      } catch {}
-    }
-
-    return { ok: true };
-  });
-
-  app.post("/finish", async (req) => {
-    const { job_id, status } = req.body as {
-      job_id: string;
-      status?: string;
-    };
-
-    db.run(
-      "UPDATE jobs SET status = ? WHERE id = ?",
-      [status || "finished", job_id]
-    );
-
-    return { ok: true };
-  });
+      return reply.send({ ok: true });
+    },
+  );
 }

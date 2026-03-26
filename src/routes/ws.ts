@@ -1,29 +1,64 @@
-import { FastifyInstance } from "fastify";
-import { WebSocket } from "ws";
+import { FastifyInstance } from 'fastify';
+import { WebSocket } from 'ws';
 
 type WSConnection = {
   socket: WebSocket;
 };
 
-// Map job_id -> подключения
 const clients = new Map<string, WSConnection[]>();
 
+export const broadcastJobStatus = (jobId: string, status: string) => {
+  const jobClients = clients.get(jobId) || [];
+  const message = JSON.stringify({
+    type: 'status',
+    jobId,
+    status,
+    timestamp: new Date().toISOString(),
+  });
+  for (const conn of jobClients) {
+    try {
+      conn.socket.send(message);
+    } catch {
+      // ignore
+    }
+  }
+};
+
+export const broadcastLog = (jobId: string, logMessage: string) => {
+  const jobClients = clients.get(jobId) || [];
+  const message = JSON.stringify({
+    type: 'log',
+    jobId,
+    message: logMessage,
+    timestamp: new Date().toISOString(),
+  });
+  for (const conn of jobClients) {
+    try {
+      conn.socket.send(message);
+    } catch {
+      // ignore
+    }
+  }
+};
+
 export default async function (app: FastifyInstance) {
-  // Используем any для TS, чтобы не ругался на websocket route
-  app.get("/ws/:job_id", { websocket: true } as any, (connection: any, req: any) => {
-    // job_id берём из params
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  app.get('/ws/:job_id', { websocket: true } as any, (connection: any, req: any) => {
     const jobId = req.params.job_id as string;
 
-    if (!clients.has(jobId)) clients.set(jobId, []);
+    if (!clients.has(jobId)) {
+      clients.set(jobId, []);
+    }
     clients.get(jobId)!.push(connection);
 
-    // remove connection on close
-    connection.socket.on("close", () => {
+    connection.socket.on('close', () => {
       const arr = clients.get(jobId) || [];
-      clients.set(jobId, arr.filter((c: any) => c !== connection));
+      clients.set(
+        jobId,
+        arr.filter((c: any) => c !== connection),
+      );
     });
   });
 
-  // Добавляем Map в Fastify
-  app.decorate("wsClients", clients);
+  app.decorate('wsClients', clients);
 }
