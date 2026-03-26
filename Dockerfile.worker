@@ -1,32 +1,28 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.title="Cloud Forge Worker"
-LABEL org.opencontainers.image.description="Standalone runner for Cloud Forge remote jobs"
-LABEL org.opencontainers.image.source="https://github.com/cloudforge/cloudforge"
-LABEL org.opencontainers.image.vendor="Cloud Forge"
-LABEL org.opencontainers.image.licenses="MIT"
+ARG VERSION=0.1.0
 
-# Install Node.js for JS execution support
-RUN apt-get update && apt-get install -y \
-    curl \
+LABEL org.opencontainers.image.title="Cloud Forge Worker" \
+      org.opencontainers.image.description="Standalone runner for Cloud Forge remote jobs" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/cloudforge/cloudforge" \
+      org.opencontainers.image.vendor="Cloud Forge" \
+      org.opencontainers.image.licenses="MIT"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy SDKs to be available for the runner
 COPY sdk/ /app/sdk/
-
-# Copy the runner script
 COPY runner.py /app/runner.py
-RUN chmod +x /app/runner.py
 
-# Install requests for the runner
-RUN pip install --no-cache-dir requests
+RUN chmod +x /app/runner.py \
+    && pip install --no-cache-dir requests
 
-# Workspace for job execution
 WORKDIR /workspace
 
-# Run the runner
 ENTRYPOINT ["python3", "/app/runner.py"]

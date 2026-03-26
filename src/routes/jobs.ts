@@ -157,7 +157,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
     '/jobs/:id',
     {
       schema: {
-        description: 'Get job details with runs and share tokens',
+        description: 'Get job details with stats and share tokens',
         params: {
           type: 'object',
           required: ['id'],

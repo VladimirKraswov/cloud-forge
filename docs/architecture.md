@@ -20,7 +20,7 @@ The Worker is a standalone, publishable Docker image designed to run on remote m
 
 ### MVP Execution Model (Single-Container)
 **Status: Current Implementation**
-- The worker image is published to a registry (e.g., `cloudforge/worker:0.1.0`).
+- The worker image is published to a registry (e.g., `xproger/cloud-forge-worker:0.1.0`).
 - Users run jobs on remote machines using a single `docker run` command.
 - **The user code executes directly inside the worker container.**
 - The worker fetches the job configuration, sets up the environment, executes the code, and streams logs/artifacts back to the orchestrator.
@@ -41,8 +41,4 @@ The Worker is a standalone, publishable Docker image designed to run on remote m
 2. **Share Job**: Generate a `ShareToken`. The orchestrator provides a `docker run` command.
 3. **Execute**: Run the command on a remote machine.
    ```bash
-   docker run --rm -e JOB_CONFIG_URL="https://forge.example.com/api/run-config?token=cf_..." cloudforge/worker:0.1.0
-   ```
-4. **Claim**: Worker fetches the full Job Snapshot from the Orchestrator.
-5. **Run**: Worker executes the code, sends heartbeats, and uploads logs/artifacts.
-6. **Finish**: Worker notifies completion and shuts down.
+   docker run --rm -e JOB_CONFIG_URL="https://forge.example.com/api/run-config?token=cf_..." xproger/cloud-forge-worker:0.1.0

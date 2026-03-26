@@ -89,7 +89,7 @@ export const containerPresets: ContainerPreset[] = [
     support_level: 'supported',
     container: {
       name: 'bootstrap',
-      image: 'xproger/cloud-forge-worker:py311',
+      image: 'xproger/cloud-forge-worker:0.1.0',
       is_parent: true,
       resources: {
         shm_size: '2g',
@@ -105,7 +105,7 @@ export const containerPresets: ContainerPreset[] = [
     support_level: 'supported',
     container: {
       name: 'bootstrap',
-      image: 'xproger/cloud-forge-worker:node20',
+      image: 'xproger/cloud-forge-worker:0.1.0',
       is_parent: true,
       resources: {
         shm_size: '1g',

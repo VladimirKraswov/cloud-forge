@@ -1,97 +1,158 @@
 # Cloud Forge
 
-Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, and SQLite.
+Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, SQLite, Redis, and MinIO.
 
 ## Architecture
 
 Cloud Forge consists of two main components:
 
-1.  **Orchestrator Stack**: The central control plane (Backend, Redis, MinIO, SQLite). Manages jobs, runs, and worker coordination.
-2.  **Worker Image**: A standalone, publishable Docker image that executes jobs on remote machines.
+1. **Orchestrator Stack**  
+   Central control plane: Fastify backend, SQLite, Redis, MinIO, REST API, WebSocket API.
 
-### MVP Execution Model
-In the current MVP phase, user code executes **directly inside the worker container**. While Job configurations support multiple containers, the worker does not yet orchestrate them on the remote host. This is planned for the "Future Mode" phase.
+2. **Worker Image**  
+   A standalone publishable Docker image that executes jobs on remote machines.
+
+## Current execution model
+
+### MVP mode
+In the current MVP phase, user code executes **directly inside the published worker container**.
+
+That means:
+- the orchestrator stores job configuration and creates runs;
+- the worker downloads run config from the orchestrator;
+- the worker executes Python or JavaScript code inside itself;
+- logs, heartbeats, cancellation, and artifacts are sent back to the orchestrator.
+
+### Future mode
+Job definitions can already contain multiple containers, but **remote multi-container orchestration is not implemented yet**.  
+Those presets are marked in the catalog as `future`.
 
 ## Features
 
-- **UI-Ready API**: Comprehensive CRUD for jobs, paginated lists, and dashboard statistics.
-- **Remote Execution**: Secure job claiming via share tokens.
-- **Live Monitoring**: Heartbeats, logs, and status updates via WebSockets.
-- **Artifact Management**: S3-compatible storage for persistent run outputs.
-- **Health Checks**: Live and Ready probes for orchestration stack reliability.
+- UI-ready REST API
+- Job CRUD with validation
+- Share-token based remote execution
+- Live logs and run status via WebSocket
+- Run artifacts in S3-compatible storage
+- Dashboard endpoints
+- Health checks for deployment
+- Publishable worker Docker image
 
-## Getting Started
+## Getting started
 
-### Prerequisites
-
+### Requirements
 - Node.js 20+
 - Docker & Docker Compose
 
-### Local Development
+### Local development
 
-1.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
+1. Install dependencies:
+   ```bash
+   npm install
+````
 
-2.  **Run Infrastructure**:
-    ```bash
-    docker compose up -d redis minio
-    ```
+2. Start infrastructure:
 
-3.  **Run Orchestrator**:
-    ```bash
-    npm run dev
-    ```
+   ```bash
+   docker compose up -d redis minio
+   ```
 
-4.  **Open Documentation**:
-    Visit `http://localhost:3000/docs`.
+3. Start orchestrator:
 
-## API Overview
+   ```bash
+   npm run dev
+   ```
 
-### Jobs CRUD
-- `POST /jobs`: Create a job template.
-- `GET /jobs`: List jobs (paginated, searchable).
-- `GET /jobs/:id`: Get job details and counters.
-- `PATCH /jobs/:id`: Update job configuration.
-- `DELETE /jobs/:id`: Delete job (allowed only if no active runs).
-- `POST /jobs/:id/clone`: Create a copy of a job.
-- `POST /jobs/validate`: Dry-run validation of a job payload.
+4. Open API docs:
 
-### Share Tokens
-- `POST /jobs/:id/share-tokens`: Create a token for remote execution.
-- `GET /jobs/:id/share-tokens`: List tokens for a job.
-- `GET /share-tokens/:id`: Get token details and remote run command.
-- `POST /share-tokens/:id/revoke`: Revoke a token.
+   ```text
+   http://localhost:3000/docs
+   ```
+
+## API overview
+
+### Jobs
+
+* `POST /jobs` — create job template
+* `GET /jobs` — list jobs with pagination/filtering
+* `GET /jobs/:id` — get job details and stats
+* `PATCH /jobs/:id` — update job
+* `DELETE /jobs/:id` — delete job if it has no active runs
+* `POST /jobs/:id/clone` — clone job
+* `POST /jobs/validate` — validate job payload
+* `GET /jobs/:id/runs` — paginated runs list for job
+
+### Share tokens
+
+* `POST /jobs/:id/share-tokens` — create remote execution token
+* `GET /jobs/:id/share-tokens` — list share tokens for a job
+* `GET /share-tokens/:id` — get share token details
+* `POST /share-tokens/:id/revoke` — revoke token
 
 ### Dashboard
-- `GET /dashboard/summary`: System-wide statistics.
-- `GET /dashboard/active-runs`: Currently executing tasks.
-- `GET /dashboard/active-workers`: Online worker status.
-- `GET /dashboard/recent-events`: Feed of recent terminal run changes.
+
+* `GET /dashboard/summary`
+* `GET /dashboard/active-runs`
+* `GET /dashboard/active-workers`
+* `GET /dashboard/recent-events`
 
 ### Worker API
-- `GET /api/run-config?token=...`: Claim a run and fetch full configuration.
-- `POST /api/runs/start`: Notify run start.
-- `POST /api/runs/heartbeat`: Send heartbeat and check for stop requests.
-- `POST /api/runs/logs`: Stream execution logs.
-- `POST /api/runs/finish`: Finalize run with status and metrics.
-- `GET /api/runs/:id`: Get detailed run history, logs, and artifacts.
 
-### WebSockets
-- `WS /ws/runs/:run_id`: Real-time logs and status updates.
+* `GET /api/run-config?token=...`
+* `POST /api/runs/start`
+* `POST /api/runs/heartbeat`
+* `POST /api/runs/logs`
+* `POST /api/runs/finish`
+* `POST /api/runs/:id/cancel`
+* `GET /api/runs/:id`
 
-## Docker & Deployment
+### WebSocket
 
-### Orchestrator Stack
-Deploy the full orchestration stack using Docker Compose:
+* `WS /ws/runs/:run_id`
+
+### Health
+
+* `GET /health/live`
+* `GET /health/ready`
+
+## Deployment
+
+### Orchestrator stack
+
+Run the orchestrator stack with Docker Compose:
+
 ```bash
 docker compose up -d
 ```
 
-### Worker Image
-Build and publish the worker image:
+### Worker image
+
+The worker image should be published with a **fixed version tag**.
+
+Example:
+
+```bash
+xproger/cloud-forge-worker:0.1.0
+```
+
+Build locally:
+
 ```bash
 npm run worker:build
+```
+
+Publish:
+
+```bash
 npm run worker:publish
+```
+
+## Example remote execution command
+
+The orchestrator should return a command like:
+
+```bash
+docker run --rm \
+  -e JOB_CONFIG_URL="https://your-domain/api/run-config?token=cf_xxx" \
+  xproger/cloud-forge-worker:0.1.0
 ```

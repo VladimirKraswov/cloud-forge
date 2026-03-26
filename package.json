@@ -1,22 +1,22 @@
 {
   "name": "cloud-forge",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "commonjs",
-"scripts": {
-  "dev": "ts-node src/server.ts",
-  "dev:full": "docker compose up -d redis minio && npm run dev",
-  "build": "tsc",
-  "start": "node dist/server.js",
-  "start:prod": "npm run build && node dist/server.js",
-  "docker:up": "docker compose up -d",
-  "docker:down": "docker compose down",
-  "docker:logs": "docker compose logs -f orchestrator",
-    "worker:build": "docker build -t cloudforge/worker:${npm_package_version} -t cloudforge/worker:latest -f Dockerfile.worker .",
-    "worker:publish": "docker push cloudforge/worker:${npm_package_version} && docker push cloudforge/worker:latest",
-  "lint": "eslint 'src/**/*.ts'",
-  "test": "vitest",
-  "test:e2e": "vitest run tests/e2e",
-  "test:watch": "vitest"
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "dev:full": "docker compose up -d redis minio && npm run dev",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:prod": "npm run build && node dist/server.js",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f orchestrator",
+    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f Dockerfile.worker .",
+    "worker:publish": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker push \"$WORKER_IMAGE:$WORKER_TAG\" && docker push \"$WORKER_IMAGE:latest\"",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest",
+    "test:e2e": "vitest run tests/e2e",
+    "test:watch": "vitest"
   },
   "lint-staged": {
     "src/**/*.ts": [

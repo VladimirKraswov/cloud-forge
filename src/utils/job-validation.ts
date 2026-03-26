@@ -43,6 +43,16 @@ const asString = (value: unknown): string | null => {
   return trimmed.length ? trimmed : null;
 };
 
+const isKnownJavascriptBootstrapImage = (image: string): boolean => {
+  const normalized = image.toLowerCase();
+
+  return (
+    normalized.includes('node') ||
+    normalized.includes('cloud-forge-worker') ||
+    normalized.includes('cloudforge/worker')
+  );
+};
+
 const normalizeContainer = (
   value: unknown,
   index: number,
@@ -167,7 +177,14 @@ const normalizeAttachedFile = (
     errors.push(`attached_files[${index}].size_bytes must be a non-negative number`);
   }
 
-  if (!id || !filename || !storageKey || !mimeType || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
+  if (
+    !id ||
+    !filename ||
+    !storageKey ||
+    !mimeType ||
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes < 0
+  ) {
     return null;
   }
 
@@ -197,7 +214,8 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
   const ownerId = payload.owner_id == null ? null : asString(payload.owner_id);
   const executionCode = asString(payload.execution_code);
   const entrypoint = payload.entrypoint == null ? null : asString(payload.entrypoint);
-  const executionLanguageRaw = payload.execution_language == null ? 'python' : String(payload.execution_language).trim();
+  const executionLanguageRaw =
+    payload.execution_language == null ? 'python' : String(payload.execution_language).trim();
   const executionLanguage = executionLanguageRaw as ExecutionLanguage;
 
   if (!title) {
@@ -306,7 +324,11 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
     attachedFileNames.add(file.filename);
   }
 
-  if (containers.length > 0 && bootstrapContainers.length === 1 && containers[0].name !== 'bootstrap') {
+  if (
+    containers.length > 0 &&
+    bootstrapContainers.length === 1 &&
+    containers[0].name !== 'bootstrap'
+  ) {
     warnings.push('bootstrap container was moved to the first position');
   }
 
@@ -316,8 +338,10 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
 
   if (executionLanguage === 'javascript' && containers.length > 0) {
     const bootstrap = containers.find((container) => container.name === 'bootstrap');
-    if (bootstrap && !bootstrap.image.toLowerCase().includes('node')) {
-      warnings.push('javascript job usually requires a Node.js-ready bootstrap image');
+    if (bootstrap && !isKnownJavascriptBootstrapImage(bootstrap.image)) {
+      warnings.push(
+        'javascript job usually requires a Node.js-ready bootstrap image or the published Cloud Forge worker image',
+      );
     }
   }
 

@@ -6,7 +6,6 @@ import db from '../../src/db/index';
 import jobsRoutes from '../../src/routes/jobs';
 import workerRoutes from '../../src/routes/worker';
 import artifactsRoutes from '../../src/routes/artifacts';
-import { ArtifactService } from '../../src/services/artifact.service';
 
 // Mock ArtifactService to avoid real MinIO calls in this e2e test
 vi.mock('../../src/services/artifact.service', () => ({
@@ -16,10 +15,11 @@ vi.mock('../../src/services/artifact.service', () => ({
       id: 'mock_artifact_id',
       filename: 'output.txt',
       relative_path: 'output.txt',
-      size_bytes: 12,
+      size_bytes: 14,
       storage_key: 'runs/run_id/artifacts/mock_artifact_id/output.txt',
     }),
     getDownloadUrl: vi.fn().mockResolvedValue('http://mock-minio/download'),
+    uploadJobFile: vi.fn(),
   },
 }));
 
@@ -50,7 +50,6 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
   });
 
   it('should complete the full happy path flow', async () => {
-    // 0. Validate Job Payload
     const validateRes = await app.inject({
       method: 'POST',
       url: '/jobs/validate',
@@ -67,10 +66,10 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         execution_language: 'javascript',
       },
     });
+
     expect(validateRes.statusCode).toBe(200);
     expect(validateRes.json().valid).toBe(true);
 
-    // 1. Create Job
     const createJobRes = await app.inject({
       method: 'POST',
       url: '/jobs',
@@ -87,10 +86,10 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         execution_language: 'javascript',
       },
     });
-    expect(createJobRes.statusCode).toBe(201);
-    const { job_id } = createJobRes.json();
 
-    // 1.1 Patch Job
+    expect(createJobRes.statusCode).toBe(201);
+    const { job_id } = createJobRes.json() as { job_id: string };
+
     const patchRes = await app.inject({
       method: 'PATCH',
       url: `/jobs/${job_id}`,
@@ -98,18 +97,18 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         description: 'Updated description',
       },
     });
+
     expect(patchRes.statusCode).toBe(200);
 
-    // 1.2 Clone Job
     const cloneRes = await app.inject({
       method: 'POST',
       url: `/jobs/${job_id}/clone`,
     });
+
     expect(cloneRes.statusCode).toBe(201);
-    const { id: cloned_job_id } = cloneRes.json();
+    const { id: cloned_job_id } = cloneRes.json() as { id: string };
     expect(cloned_job_id).not.toBe(job_id);
 
-    // 2. Create Share Token
     const createTokenRes = await app.inject({
       method: 'POST',
       url: `/jobs/${job_id}/share-tokens`,
@@ -118,24 +117,34 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         max_claims: 1,
       },
     });
+
     expect(createTokenRes.statusCode).toBe(201);
-    const { share_token, docker_image, docker_command } = createTokenRes.json();
+
+    const {
+      share_token,
+      docker_image,
+      docker_command,
+    } = createTokenRes.json() as {
+      share_token: { token: string };
+      docker_image: string;
+      docker_command: string;
+    };
+
     const token = share_token.token;
 
-    expect(docker_image).toBe('cloudforge/worker:latest');
-    expect(docker_command).toContain('cloudforge/worker:latest');
+    expect(docker_image).toBe('xproger/cloud-forge-worker:0.1.0');
+    expect(docker_command).toContain('xproger/cloud-forge-worker:0.1.0');
     expect(docker_command).toContain(token);
 
-    // 3. Fetch Run Config (Claim Token)
     const claimRes = await app.inject({
       method: 'GET',
       url: '/api/run-config',
       query: { token },
     });
-    expect(claimRes.statusCode).toBe(200);
-    const { run_id } = claimRes.json();
 
-    // 4. Start Run
+    expect(claimRes.statusCode).toBe(200);
+    const { run_id } = claimRes.json() as { run_id: string };
+
     const startRes = await app.inject({
       method: 'POST',
       url: '/api/runs/start',
@@ -145,9 +154,9 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         worker_name: 'Smoke Worker',
       },
     });
+
     expect(startRes.statusCode).toBe(200);
 
-    // 5. Send Logs
     const logRes = await app.inject({
       method: 'POST',
       url: '/api/runs/logs',
@@ -157,9 +166,9 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         level: 'info',
       },
     });
+
     expect(logRes.statusCode).toBe(200);
 
-    // 6. Heartbeat
     const hbRes = await app.inject({
       method: 'POST',
       url: '/api/runs/heartbeat',
@@ -169,21 +178,25 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         worker_name: 'Smoke Worker',
       },
     });
+
     expect(hbRes.statusCode).toBe(200);
     expect(hbRes.json().should_stop).toBe(false);
 
-    // 7. Upload Artifact
     const artifactRes = await app.inject({
       method: 'POST',
       url: '/artifacts/upload-run',
       query: { runId: run_id, relativePath: 'output.txt' },
-      // Simplified multipart simulation for inject
       headers: { 'content-type': 'multipart/form-data; boundary=bound' },
-      payload: '--bound\r\nContent-Disposition: form-data; name="file"; filename="output.txt"\r\nContent-Type: text/plain\r\n\r\nhello artifact\r\n--bound--\r\n',
+      payload:
+        '--bound\r\n' +
+        'Content-Disposition: form-data; name="file"; filename="output.txt"\r\n' +
+        'Content-Type: text/plain\r\n\r\n' +
+        'hello artifact\r\n' +
+        '--bound--\r\n',
     });
+
     expect(artifactRes.statusCode).toBe(200);
 
-    // 8. Finish Run
     const finishRes = await app.inject({
       method: 'POST',
       url: '/api/runs/finish',
@@ -194,43 +207,48 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         metrics: { duration_ms: 500 },
       },
     });
+
     expect(finishRes.statusCode).toBe(200);
 
-    // 9. Verify Final Run Status
     const runDetailsRes = await app.inject({
       method: 'GET',
       url: `/api/runs/${run_id}`,
     });
+
     expect(runDetailsRes.statusCode).toBe(200);
-    const runDetails = runDetailsRes.json();
+    const runDetails = runDetailsRes.json() as {
+      run: { status: string };
+      logs: Array<{ message: string }>;
+      artifacts: Array<{ filename: string }>;
+    };
+
     expect(runDetails.run.status).toBe('finished');
     expect(runDetails.logs.length).toBeGreaterThan(0);
     expect(runDetails.logs[0].message).toBe('Job started');
     expect(runDetails.artifacts.length).toBeGreaterThan(0);
     expect(runDetails.artifacts[0].filename).toBe('output.txt');
 
-    // 10. Verify Delete Policy (Variant A: cannot delete with active runs)
-    // First, create an active run
     const activeTokenRes = await app.inject({
       method: 'POST',
       url: `/jobs/${job_id}/share-tokens`,
       payload: { max_claims: 1 },
     });
-    const activeToken = activeTokenRes.json().share_token.token;
+
+    const activeToken = (activeTokenRes.json() as { share_token: { token: string } }).share_token
+      .token;
+
     await app.inject({
       method: 'GET',
       url: '/api/run-config',
       query: { token: activeToken },
     });
-    // This creates a run in 'created' status
 
     const deleteRes = await app.inject({
       method: 'DELETE',
       url: `/jobs/${job_id}`,
     });
+
     expect(deleteRes.statusCode).toBe(400);
     expect(deleteRes.json().error).toContain('active runs');
-
-    console.log(`✅ Smoke E2E test passed for run ${run_id}`);
   });
 });
