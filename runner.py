@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """
-Cloud Forge Runner v5
+Cloud Forge Runner v6
 - получает run-config по share token
 - создаёт workspace
+- раскладывает Python/JS SDK
+- создаёт runtime/control файлы для SDK
 - скачивает attached files
 - запускает код
 - шлёт heartbeat
 - реагирует на should_stop от orchestrator
 - стримит логи
 - загружает артефакты из /workspace/artifacts
+- не дублирует артефакты, уже отправленные через SDK
 - завершает run через run_id
 """
 
 import json
 import mimetypes
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -23,7 +27,7 @@ import time
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
-print("🚀 Cloud-Forge Runner v5 starting...")
+print("🚀 Cloud-Forge Runner v6 starting...")
 
 try:
     import requests
@@ -124,39 +128,116 @@ def upload_run_artifact(run_id: str, server_url: str, local_path: Path, relative
         return response.json()
 
 
-def upload_artifacts_directory(run_id: str, artifacts_dir: Path):
+def read_json(path: Path, fallback):
+    try:
+        if not path.exists():
+            return fallback
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+
+
+def write_json(path: Path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def locate_sdk_source(relative_path: str) -> Path:
+    base_dir = Path(__file__).resolve().parent
+    candidates = [
+        base_dir / "sdk" / relative_path,
+        Path("/app/sdk") / relative_path,
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(f"SDK source not found: {relative_path}")
+
+
+def install_sdk(workspace_root: Path):
+    sdk_dir = workspace_root / ".cloudforge-sdk"
+    sdk_dir.mkdir(parents=True, exist_ok=True)
+
+    python_source = locate_sdk_source("python/cloudforge.py")
+    javascript_source = locate_sdk_source("javascript/cloudforge.js")
+
+    shutil.copy2(python_source, sdk_dir / "cloudforge.py")
+    shutil.copy2(javascript_source, sdk_dir / "cloudforge.js")
+
+    return sdk_dir
+
+
+def update_control_file(
+    control_path: Path,
+    *,
+    cancel_requested: bool,
+    cancel_reason: str | None = None,
+):
+    write_json(
+        control_path,
+        {
+            "cancel_requested": cancel_requested,
+            "cancel_reason": cancel_reason,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+    )
+
+
+def load_uploaded_relative_paths(uploaded_artifacts_path: Path):
+    data = read_json(uploaded_artifacts_path, [])
+    if not isinstance(data, list):
+        return set()
+    return {str(item) for item in data}
+
+
+def upload_artifacts_directory(run_id: str, artifacts_dir: Path, uploaded_artifacts_path: Path):
     if not artifacts_dir.exists() or not artifacts_dir.is_dir():
         safe_log(run_id, f"📦 Artifacts directory does not exist: {artifacts_dir}")
         return {
             "uploaded_count": 0,
+            "skipped_count": 0,
             "uploaded_files": [],
         }
 
     files_to_upload = [path for path in artifacts_dir.rglob("*") if path.is_file()]
+    already_uploaded = load_uploaded_relative_paths(uploaded_artifacts_path)
 
     if not files_to_upload:
         safe_log(run_id, "📦 No artifacts found to upload")
         return {
             "uploaded_count": 0,
+            "skipped_count": 0,
             "uploaded_files": [],
         }
 
     uploaded_files = []
+    skipped_count = 0
 
     for local_path in files_to_upload:
-      relative_path = local_path.relative_to(artifacts_dir).as_posix()
-      safe_log(run_id, f"⬆️ Uploading artifact: {relative_path}")
+        relative_path = local_path.relative_to(artifacts_dir).as_posix()
 
-      try:
-          result = upload_run_artifact(run_id, SERVER_URL, local_path, relative_path)
-          uploaded_files.append(result)
-      except Exception as exc:
-          safe_log(run_id, f"❌ Failed to upload artifact {relative_path}: {exc}", "error")
+        if relative_path in already_uploaded:
+            skipped_count += 1
+            continue
 
-    safe_log(run_id, f"📦 Uploaded artifacts: {len(uploaded_files)}")
+        safe_log(run_id, f"⬆️ Uploading artifact: {relative_path}")
+
+        try:
+            result = upload_run_artifact(run_id, SERVER_URL, local_path, relative_path)
+            uploaded_files.append(result)
+        except Exception as exc:
+            safe_log(run_id, f"❌ Failed to upload artifact {relative_path}: {exc}", "error")
+
+    safe_log(
+        run_id,
+        f"📦 Uploaded artifacts: {len(uploaded_files)}, skipped already uploaded: {skipped_count}",
+    )
 
     return {
         "uploaded_count": len(uploaded_files),
+        "skipped_count": skipped_count,
         "uploaded_files": uploaded_files,
     }
 
@@ -209,16 +290,44 @@ input_dir = Path(workspace.get("input_dir", str(workspace_root / "input")))
 output_dir = Path(workspace.get("output_dir", str(workspace_root / "output")))
 artifacts_dir = Path(workspace.get("artifacts_dir", str(workspace_root / "artifacts")))
 tmp_dir = Path(workspace.get("tmp_dir", str(workspace_root / "tmp")))
+state_dir = workspace_root / ".cloudforge"
+runtime_path = state_dir / "runtime.json"
+control_path = state_dir / "control.json"
+uploaded_artifacts_path = state_dir / "uploaded-artifacts.json"
 
-for directory in [workspace_root, code_dir, input_dir, output_dir, artifacts_dir, tmp_dir]:
+for directory in [workspace_root, code_dir, input_dir, output_dir, artifacts_dir, tmp_dir, state_dir]:
     directory.mkdir(parents=True, exist_ok=True)
+
+sdk_dir = install_sdk(workspace_root)
+update_control_file(control_path, cancel_requested=False, cancel_reason=None)
+write_json(uploaded_artifacts_path, [])
 
 safe_log(run_id, f"✅ Run claimed: {run_id}")
 safe_log(run_id, f"📁 Workspace root: {workspace_root}")
+safe_log(run_id, f"📚 SDK installed to: {sdk_dir}")
 
 environments = config.get("environments") or {}
 for key, value in environments.items():
     os.environ[str(key)] = str(value)
+
+runtime_payload = {
+    "run_id": run_id,
+    "job_id": job_id,
+    "server_url": SERVER_URL,
+    "worker_id": WORKER_ID,
+    "worker_name": WORKER_NAME,
+    "worker_host": WORKER_HOST,
+    "workspace": {
+        "root": str(workspace_root),
+        "code_dir": str(code_dir),
+        "input_dir": str(input_dir),
+        "output_dir": str(output_dir),
+        "artifacts_dir": str(artifacts_dir),
+        "tmp_dir": str(tmp_dir),
+        "sdk_dir": str(sdk_dir),
+    },
+}
+write_json(runtime_path, runtime_payload)
 
 os.environ["CLOUD_FORGE_RUN_ID"] = run_id
 os.environ["CLOUD_FORGE_JOB_ID"] = job_id
@@ -232,6 +341,24 @@ os.environ["CLOUD_FORGE_OUTPUT_DIR"] = str(output_dir)
 os.environ["CLOUD_FORGE_ARTIFACTS_DIR"] = str(artifacts_dir)
 os.environ["CLOUD_FORGE_TMP_DIR"] = str(tmp_dir)
 os.environ["CLOUD_FORGE_SERVER_URL"] = SERVER_URL
+os.environ["CLOUD_FORGE_RUNTIME_PATH"] = str(runtime_path)
+os.environ["CLOUD_FORGE_CONTROL_PATH"] = str(control_path)
+os.environ["CLOUD_FORGE_UPLOADED_ARTIFACTS_PATH"] = str(uploaded_artifacts_path)
+
+existing_pythonpath = os.environ.get("PYTHONPATH", "")
+existing_node_path = os.environ.get("NODE_PATH", "")
+
+python_paths = [str(sdk_dir)]
+node_paths = [str(sdk_dir)]
+
+if existing_pythonpath:
+    python_paths.append(existing_pythonpath)
+
+if existing_node_path:
+    node_paths.append(existing_node_path)
+
+os.environ["PYTHONPATH"] = os.pathsep.join(python_paths)
+os.environ["NODE_PATH"] = os.pathsep.join(node_paths)
 
 attached_files = config.get("attached_files") or []
 for file_info in attached_files:
@@ -305,7 +432,6 @@ post_json(
 heartbeat_stop_event = threading.Event()
 cancel_requested_event = threading.Event()
 cancel_reason_holder = {"reason": None}
-process_holder = {"process": None}
 
 
 def heartbeat_loop():
@@ -325,10 +451,17 @@ def heartbeat_loop():
 
         if response is not None:
             try:
-                payload = response.json()
-                if payload.get("should_stop"):
+                heartbeat_payload = response.json()
+                if heartbeat_payload.get("should_stop"):
                     cancel_requested_event.set()
-                    cancel_reason_holder["reason"] = payload.get("stop_reason") or "Stop requested by orchestrator"
+                    cancel_reason_holder["reason"] = (
+                        heartbeat_payload.get("stop_reason") or "Stop requested by orchestrator"
+                    )
+                    update_control_file(
+                        control_path,
+                        cancel_requested=True,
+                        cancel_reason=cancel_reason_holder["reason"],
+                    )
             except Exception:
                 pass
 
@@ -378,8 +511,6 @@ try:
         env=os.environ.copy(),
     )
 
-    process_holder["process"] = process
-
     stdout_thread = threading.Thread(target=pump_stream, args=(process.stdout, "info"), daemon=True)
     stderr_thread = threading.Thread(target=pump_stream, args=(process.stderr, "error"), daemon=True)
     stdout_thread.start()
@@ -421,7 +552,7 @@ if stderr_thread:
 heartbeat_stop_event.set()
 heartbeat_thread.join(timeout=2)
 
-artifact_upload_summary = upload_artifacts_directory(run_id, artifacts_dir)
+artifact_upload_summary = upload_artifacts_directory(run_id, artifacts_dir, uploaded_artifacts_path)
 
 exit_code = process.returncode if process is not None else None
 
@@ -447,6 +578,7 @@ metrics = {
     "worker_name": WORKER_NAME,
     "artifact_upload": artifact_upload_summary,
     "cancelled": cancelled,
+    "sdk_dir": str(sdk_dir),
 }
 
 post_json(
