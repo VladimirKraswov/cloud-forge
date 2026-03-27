@@ -28,6 +28,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/aler
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
 import { cn } from '@/shared/utils/cn';
+import { z } from 'zod';
 import {
   OPEN_BUILD_DIALOG_EVENT,
   useBootstrapBuildTracker,
@@ -116,6 +117,32 @@ const stageRank: Record<BuildStageId, number> = {
   failed: 6,
 };
 
+const baseInfoSchema = z.object({
+  name: z
+    .string()
+    .min(1, 'Image name is required')
+    .regex(
+      /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/,
+      'Invalid image name. Use lowercase, numbers, dots, underscores, or dashes.',
+    ),
+  tag: z
+    .string()
+    .min(1, 'Tag is required')
+    .regex(
+      /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/,
+      'Invalid tag. Use lowercase, numbers, dots, underscores, or dashes.',
+    ),
+  baseImage: z.string().min(1, 'Base image is required'),
+  extraPackages: z.string(),
+});
+
+const credentialsSchema = z.object({
+  dockerUser: z.string().min(1, 'Docker Hub username is required'),
+  dockerPass: z.string().min(1, 'Docker Hub password is required'),
+});
+
+const buildFormSchema = baseInfoSchema.merge(credentialsSchema);
+
 function rankStage(current: BuildStageId, next: BuildStageId): BuildStageId {
   return stageRank[next] > stageRank[current] ? next : current;
 }
@@ -166,14 +193,17 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
     }
 
     if (
-      /load metadata for docker\.io|from docker\.io|resolve docker\.io|pull token/.test(lower)
+      /load metadata for|from docker\.io|resolve docker\.io|pull token|pulling from|pulling fs layer/.test(
+        lower,
+      )
     ) {
       stageId = rankStage(stageId, 'pulling');
     }
 
-    const layerMatch = line.match(
-      /sha256:([a-f0-9]+).*?(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)\s*\/\s*(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)/i,
-    );
+    const layerMatch =
+      line.match(
+        /sha256:([a-f0-9]+).*?(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)\s*\/\s*(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)/i,
+      ) || line.match(/([a-z0-9]{12}):\s*Pulling\s*fs\s*layer/i);
 
     if (layerMatch) {
       const [, digest, , , totalValueRaw, totalUnit] = layerMatch;
@@ -194,7 +224,7 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
     }
 
     if (
-      /building docker image|copy runner\.py|copy sdk|run pip|run apt-get|run chmod|run python|run python3|run mkdir|exporting to image|load build definition from dockerfile|transferring dockerfile/.test(
+      /building docker image|copy runner\.py|copy sdk|run pip|run apt-get|run chmod|run python|run python3|run mkdir|exporting to image|load build definition from dockerfile|transferring dockerfile|step\s*\d+\/\d+/.test(
         lower,
       )
     ) {
@@ -202,7 +232,7 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
     }
 
     if (
-      /push refers to repository|pushing|layer already exists|digest:\s*sha256|pushed|publishing/.test(
+      /push refers to repository|pushing|layer already exists|digest:\s*sha256|pushed|publishing|preparing\s*to\s*push/.test(
         lower,
       )
     ) {
@@ -406,11 +436,20 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   const largestLayer = insights.largeLayers[0];
   const hasHugeLayers = Boolean(largestLayer && largestLayer.bytes >= 5 * 1024 ** 3);
 
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
   const handlePreview = async () => {
-    if (!formData.name || !formData.baseImage || !formData.tag) {
-      toast.error('Please fill in all required fields');
+    const result = baseInfoSchema.safeParse(formData);
+    if (!result.success) {
+      const errors: Record<string, string> = {};
+      result.error.errors.forEach((err) => {
+        if (err.path[0]) errors[err.path[0].toString()] = err.message;
+      });
+      setFormErrors(errors);
+      toast.error('Please fix validation errors');
       return;
     }
+    setFormErrors({});
 
     setLoading(true);
 
@@ -430,10 +469,17 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   };
 
   const handleStartBuild = async () => {
-    if (!formData.dockerUser || !formData.dockerPass) {
-      toast.error('Docker Hub credentials are required to publish');
+    const result = buildFormSchema.safeParse(formData);
+    if (!result.success) {
+      const errors: Record<string, string> = {};
+      result.error.errors.forEach((err) => {
+        if (err.path[0]) errors[err.path[0].toString()] = err.message;
+      });
+      setFormErrors(errors);
+      toast.error('Please fix validation errors');
       return;
     }
+    setFormErrors({});
 
     setLoading(true);
 
@@ -522,40 +568,61 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
           <div className="space-y-5 py-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="name">Image name</Label>
+                <Label htmlFor="name" className={cn(formErrors.name && 'text-destructive')}>
+                  Image name
+                </Label>
                 <Input
                   id="name"
                   placeholder="qwen-7b-train"
+                  className={cn(formErrors.name && 'border-destructive')}
                   value={formData.name}
                   onChange={(event) =>
                     setFormData((prev) => ({ ...prev, name: event.target.value }))
                   }
                 />
+                {formErrors.name && (
+                  <p className="text-xs text-destructive font-medium">{formErrors.name}</p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tag">Tag / Version</Label>
+                <Label htmlFor="tag" className={cn(formErrors.tag && 'text-destructive')}>
+                  Tag / Version
+                </Label>
                 <Input
                   id="tag"
                   placeholder="0.1.0"
+                  className={cn(formErrors.tag && 'border-destructive')}
                   value={formData.tag}
                   onChange={(event) =>
                     setFormData((prev) => ({ ...prev, tag: event.target.value }))
                   }
                 />
+                {formErrors.tag && (
+                  <p className="text-xs text-destructive font-medium">{formErrors.tag}</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="baseImage">Base Docker image</Label>
+              <Label
+                htmlFor="baseImage"
+                className={cn(formErrors.baseImage && 'text-destructive')}
+              >
+                Base Docker image
+              </Label>
               <Input
                 id="baseImage"
                 placeholder="igortet/model-qwen-7b"
+                className={cn(formErrors.baseImage && 'border-destructive')}
                 value={formData.baseImage}
                 onChange={(event) =>
                   setFormData((prev) => ({ ...prev, baseImage: event.target.value }))
                 }
               />
+              {formErrors.baseImage && (
+                <p className="text-xs text-destructive font-medium">{formErrors.baseImage}</p>
+              )}
               <p className="text-xs text-muted-foreground">
                 If this base image already contains model weights, the first build can
                 take a long time and download tens of GB.
@@ -623,28 +690,46 @@ datasets>=3.6.0`}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="dockerUser">Username</Label>
+                <Label
+                  htmlFor="dockerUser"
+                  className={cn(formErrors.dockerUser && 'text-destructive')}
+                >
+                  Username
+                </Label>
                 <Input
                   id="dockerUser"
                   placeholder="username"
+                  className={cn(formErrors.dockerUser && 'border-destructive')}
                   value={formData.dockerUser}
                   onChange={(event) =>
                     setFormData((prev) => ({ ...prev, dockerUser: event.target.value }))
                   }
                 />
+                {formErrors.dockerUser && (
+                  <p className="text-xs text-destructive font-medium">{formErrors.dockerUser}</p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dockerPass">Password / Access token</Label>
+                <Label
+                  htmlFor="dockerPass"
+                  className={cn(formErrors.dockerPass && 'text-destructive')}
+                >
+                  Password / Access token
+                </Label>
                 <Input
                   id="dockerPass"
                   type="password"
                   placeholder="••••••••"
+                  className={cn(formErrors.dockerPass && 'border-destructive')}
                   value={formData.dockerPass}
                   onChange={(event) =>
                     setFormData((prev) => ({ ...prev, dockerPass: event.target.value }))
                   }
                 />
+                {formErrors.dockerPass && (
+                  <p className="text-xs text-destructive font-medium">{formErrors.dockerPass}</p>
+                )}
               </div>
             </div>
 
