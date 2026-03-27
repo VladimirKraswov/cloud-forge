@@ -1,7 +1,7 @@
 === CODE BUNDLE ===
 root: /Volumes/Extend/work/cloud-forge/src
 ignore: .codebundleignore
-generated: 2026-03-27T12:01:11.786Z
+generated: 2026-03-27T15:58:47.387Z
 
 
 
@@ -267,48 +267,188 @@ bundle().catch(err => {
 
 path: /catalog/presets.ts
 ----------------------------------------
-import { AttachedFile, Container, ExecutionLanguage } from '../models/job';
+// catalog/presets.ts
+import { ContainerPreset } from '../models/job';
 import { config } from '../utils/config';
+import { jobTemplates } from './templates';
+// Базовый официальный bootstrap-образ
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
 
-export interface JobDraftTemplate {
-  title: string;
-  description: string;
-  containers: Container[];
-  environments: Record<string, string>;
-  attached_files: AttachedFile[];
-  execution_code: string;
-  execution_language: ExecutionLanguage;
-  entrypoint?: string | null;
-}
+export { jobTemplates };
 
-export interface ContainerPreset {
-  id: string;
-  name: string;
-  category: 'bootstrap' | 'runtime' | 'model' | 'service';
-  description: string;
-  recommended_for: string[];
-  container: Container;
-  support_level: 'supported' | 'future';
-}
+export const containerPresets: ContainerPreset[] = [
+  {
+    id: 'bootstrap-python',
+    name: 'Cloud Forge Bootstrap (Python)',
+    category: 'bootstrap',
+    description: 'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK.',
+    recommended_for: ['python', 'remote-run', 'sdk', 'hello-world'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
+      is_parent: true,
+      resources: {
+        shm_size: '2g',
+        cpu_limit: 2,
+        memory_limit: '4g',
+      },
+    },
+  },
+  {
+    id: 'bootstrap-node',
+    name: 'Cloud Forge Bootstrap (Node.js)',
+    category: 'bootstrap',
+    description: 'Официальный bootstrap-контейнер для JavaScript/Node.js job.',
+    recommended_for: ['javascript', 'node', 'automation'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
+      is_parent: true,
+      resources: {
+        shm_size: '1g',
+        cpu_limit: 2,
+        memory_limit: '4g',
+      },
+    },
+  },
 
-export interface JobTemplate {
-  id: string;
-  name: string;
-  description: string;
-  tags: string[];
-  draft: JobDraftTemplate;
-  support_level: 'supported' | 'future';
-}
+  // ── Custom Model Workers (для больших моделей) ─────────────────────
+  {
+    id: 'custom-model-worker',
+    name: 'Custom Model Worker',
+    category: 'bootstrap',
+    description: 'Self-contained bootstrap-образ с большой моделью внутри (50GB+).',
+    recommended_for: ['llm', 'finetune', 'gpu'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0', // ← Замени на свой актуальный образ при необходимости
+      is_parent: true,
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '64g',
+        cpu_limit: 8,
+      },
+    },
+  },
+
+  {
+    id: 'qwen-7b-finetune-worker',
+    name: 'Qwen 7B Fine-tune Worker',
+    category: 'bootstrap',
+    description: 'Bootstrap с предзагруженной моделью Qwen 7B для fine-tuning.',
+    recommended_for: ['finetune', 'qwen', 'llm', 'gpu'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0',
+      is_parent: true,
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '64g',
+        cpu_limit: 8,
+      },
+    },
+  },
+
+  // Runtime пресеты
+  {
+    id: 'pytorch-cu121',
+    name: 'PyTorch CUDA 12.1',
+    category: 'runtime',
+    description: 'Контейнер с PyTorch и CUDA для обучения и инференса.',
+    recommended_for: ['pytorch', 'training', 'gpu'],
+    support_level: 'future',
+    container: {
+      name: 'pytorch',
+      image: 'pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime',
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '32g',
+      },
+    },
+  },
+  {
+    id: 'vllm-runtime',
+    name: 'vLLM Runtime',
+    category: 'runtime',
+    description: 'Контейнер для высокопроизводительного инференса LLM через vLLM.',
+    recommended_for: ['llm', 'inference', 'vllm'],
+    support_level: 'future',
+    container: {
+      name: 'vllm',
+      image: 'vllm/vllm-openai:latest',
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '32g',
+      },
+    },
+  },
+  {
+    id: 'unsloth-finetune',
+    name: 'Unsloth Fine-tune',
+    category: 'runtime',
+    description: 'Контейнер для быстрого SFT/LoRA fine-tuning с Unsloth.',
+    recommended_for: ['llm', 'finetune', 'unsloth'],
+    support_level: 'future',
+    container: {
+      name: 'unsloth',
+      image: 'unsloth/unsloth:latest',
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '48g',
+      },
+    },
+  },
+];
+
+
+path: /catalog/templates/hello-world.ts
+----------------------------------------
+// catalog/templates/hello-world.ts
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
 
 const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
 
-const HELLO_WORLD_PYTHON = `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+const bootstrapPython: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '2g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
+
+export const helloWorldPython: JobTemplate = {
+  id: 'hello-world-python',
+  name: 'Hello World (Remote Python)',
+  description: 'Минимальный job для проверки удалённого запуска через Docker.',
+  tags: ['python', 'hello-world', 'remote-run', 'sdk', 'supported'],
+  support_level: 'supported',
+  draft: {
+    title: 'Hello World',
+    description: 'Проверочный remote job для публикации bootstrap-образа.',
+    containers: [bootstrapPython],
+    environments: {
+      APP_ENV: 'production',
+    },
+    attached_files: [],
+    execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
 from datetime import datetime
 import json
 
 info("hello world job started")
 info("Cloud Forge SDK is available inside the bootstrap container")
-
 raise_if_cancel_requested()
 
 hello_file = artifacts_path("hello.txt")
@@ -331,38 +471,65 @@ summary_file.write_text(
 info(f"artifact written: {hello_file}")
 info(f"artifact written: {summary_file}")
 info("hello world job finished successfully")
-`;
+`,
+    execution_language: 'python',
+    entrypoint: 'main.py',
+  },
+};
 
-const PYTHON_SAMPLE = `from cloudforge import info, artifacts_path, raise_if_cancel_requested
-from datetime import datetime
-import json
 
-info("python job started")
+path: /catalog/templates/index.ts
+----------------------------------------
+// catalog/templates/index.ts
+import { JobTemplate } from '../../models/job';
 
-raise_if_cancel_requested()
+import { helloWorldPython } from './hello-world';
+import { pythonBasic } from './python-basic';
+import { javascriptBasic } from './javascript-basic';
+import { qwen7bFinetune } from './qwen-7b-finetune';
 
-result_file = artifacts_path("result.txt")
-result_file.parent.mkdir(parents=True, exist_ok=True)
-result_file.write_text("hello from cloud forge", encoding="utf-8")
+export const jobTemplates: JobTemplate[] = [
+  helloWorldPython,
+  pythonBasic,
+  javascriptBasic,
+  qwen7bFinetune,
+];
 
-metadata_file = artifacts_path("metadata.json")
-metadata_file.write_text(
-    json.dumps(
-        {
-            "language": "python",
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "message": "hello from cloud forge",
-        },
-        indent=2,
-    ),
-    encoding="utf-8",
-)
 
-info(f"result written to {result_file}")
-info(f"metadata written to {metadata_file}")
-`;
+path: /catalog/templates/javascript-basic.ts
+----------------------------------------
+// catalog/templates/javascript-basic.ts
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
 
-const JAVASCRIPT_SAMPLE = `const fs = require('fs');
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapNode: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '1g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
+
+export const javascriptBasic: JobTemplate = {
+  id: 'javascript-basic',
+  name: 'JavaScript Basic',
+  description: 'Простой Node.js job с bootstrap-контейнером.',
+  tags: ['javascript', 'node', 'basic', 'sdk'],
+  support_level: 'supported',
+  draft: {
+    title: 'JavaScript Basic Job',
+    description: 'Шаблон базовой JavaScript job для скриптов и автоматизации.',
+    containers: [bootstrapNode],
+    environments: {
+      APP_ENV: 'development',
+    },
+    attached_files: [],
+    execution_code: `const fs = require('fs');
 const path = require('path');
 const {
   info,
@@ -373,7 +540,6 @@ const {
 async function main() {
   await info('javascript job started');
   await info('Cloud Forge SDK is available inside the bootstrap container');
-
   raiseIfCancelRequested();
 
   const resultPath = artifactsPath('result.txt');
@@ -405,239 +571,140 @@ main().catch(async (err) => {
     process.exit(1);
   }
 });
-`;
+`,
+    execution_language: 'javascript',
+    entrypoint: 'main.js',
+  },
+};
 
-export const containerPresets: ContainerPreset[] = [
-  {
-    id: 'bootstrap-python',
-    name: 'Cloud Forge Bootstrap (Python)',
-    category: 'bootstrap',
-    description:
-      'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK и worker runtime.',
-    recommended_for: ['python', 'remote-run', 'sdk', 'hello-world', 'etl', 'data-processing'],
-    support_level: 'supported',
-    container: {
-      name: 'bootstrap',
-      image: OFFICIAL_BOOTSTRAP_IMAGE,
-      is_parent: true,
-      resources: {
-        shm_size: '2g',
-        cpu_limit: 2,
-        memory_limit: '4g',
-      },
-    },
-  },
-  {
-    id: 'bootstrap-node',
-    name: 'Cloud Forge Bootstrap (Node.js)',
-    category: 'bootstrap',
-    description:
-      'Официальный bootstrap-контейнер Cloud Forge для JavaScript/Node.js job с предустановленным SDK и worker runtime.',
-    recommended_for: ['javascript', 'node', 'remote-run', 'sdk', 'automation'],
-    support_level: 'supported',
-    container: {
-      name: 'bootstrap',
-      image: OFFICIAL_BOOTSTRAP_IMAGE,
-      is_parent: true,
-      resources: {
-        shm_size: '1g',
-        cpu_limit: 2,
-        memory_limit: '4g',
-      },
-    },
-  },
-  {
-    id: 'pytorch-cu121',
-    name: 'PyTorch CUDA 12.1',
-    category: 'runtime',
-    description: 'Контейнер с PyTorch и CUDA для обучения и инференса.',
-    recommended_for: ['pytorch', 'training', 'gpu', 'vision'],
-    support_level: 'future',
-    container: {
-      name: 'pytorch',
-      image: 'pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime',
-      resources: {
-        gpus: 'all',
-        shm_size: '16g',
-        memory_limit: '32g',
-      },
-    },
-  },
-  {
-    id: 'vllm-runtime',
-    name: 'vLLM Runtime',
-    category: 'runtime',
-    description: 'Контейнер для инференса LLM через vLLM.',
-    recommended_for: ['llm', 'inference', 'vllm', 'gpu'],
-    support_level: 'future',
-    container: {
-      name: 'vllm',
-      image: 'vllm/vllm-openai:latest',
-      resources: {
-        gpus: 'all',
-        shm_size: '16g',
-        memory_limit: '32g',
-      },
-    },
-  },
-  {
-    id: 'unsloth-finetune',
-    name: 'Unsloth Fine-tune',
-    category: 'runtime',
-    description: 'Контейнер для SFT/LoRA fine-tuning с Unsloth.',
-    recommended_for: ['llm', 'finetune', 'unsloth', 'gpu'],
-    support_level: 'future',
-    container: {
-      name: 'unsloth',
-      image: 'unsloth/unsloth:latest',
-      resources: {
-        gpus: 'all',
-        shm_size: '16g',
-        memory_limit: '48g',
-      },
-    },
-  },
-  {
-    id: 'qwen-7b-model',
-    name: 'Qwen 7B Model Store',
-    category: 'model',
-    description: 'Контейнер-носитель с предзагруженной моделью семейства Qwen 7B.',
-    recommended_for: ['llm', 'qwen', 'inference', 'training'],
-    support_level: 'future',
-    container: {
-      name: 'model-qwen-7b',
-      image: 'igortet/model-qwen-7b:latest',
-      resources: {
-        shm_size: '4g',
-      },
-    },
-  },
-];
 
-export const jobTemplates: JobTemplate[] = [
-  {
-    id: 'hello-world-python',
-    name: 'Hello World (Remote Python)',
-    description:
-      'Минимальный job для проверки удаленного запуска через Docker: пишет hello.txt и summary.json через Cloud Forge SDK.',
-    tags: ['python', 'hello-world', 'remote-run', 'sdk', 'supported'],
-    support_level: 'supported',
-    draft: {
-      title: 'Hello World',
-      description:
-        'Проверочный remote job для публикации bootstrap-образа и запуска на любой машине с Docker.',
-      containers: [containerPresets.find((preset) => preset.id === 'bootstrap-python')!.container],
-      environments: {
-        APP_ENV: 'production',
-      },
-      attached_files: [],
-      execution_code: HELLO_WORLD_PYTHON,
-      execution_language: 'python',
-      entrypoint: 'main.py',
-    },
-  },
-  {
-    id: 'python-basic',
-    name: 'Python Basic',
-    description: 'Простой Python job с одним bootstrap-контейнером.',
-    tags: ['python', 'basic', 'sdk'],
-    support_level: 'supported',
-    draft: {
-      title: 'Python Basic Job',
-      description: 'Шаблон базовой Python job для обработки данных или автоматизации.',
-      containers: [containerPresets.find((preset) => preset.id === 'bootstrap-python')!.container],
-      environments: {
-        APP_ENV: 'development',
-      },
-      attached_files: [],
-      execution_code: PYTHON_SAMPLE,
-      execution_language: 'python',
-      entrypoint: 'main.py',
-    },
-  },
-  {
-    id: 'javascript-basic',
-    name: 'JavaScript Basic',
-    description: 'Простой Node.js job с bootstrap-контейнером.',
-    tags: ['javascript', 'node', 'basic', 'sdk'],
-    support_level: 'supported',
-    draft: {
-      title: 'JavaScript Basic Job',
-      description: 'Шаблон базовой JavaScript job для скриптов и автоматизации.',
-      containers: [containerPresets.find((preset) => preset.id === 'bootstrap-node')!.container],
-      environments: {
-        APP_ENV: 'development',
-      },
-      attached_files: [],
-      execution_code: JAVASCRIPT_SAMPLE,
-      execution_language: 'javascript',
-      entrypoint: 'main.js',
-    },
-  },
-  {
-    id: 'pytorch-training',
-    name: 'PyTorch Training',
-    description: 'Стартовая конфигурация для обучения модели на PyTorch.',
-    tags: ['python', 'pytorch', 'training', 'gpu'],
-    support_level: 'future',
-    draft: {
-      title: 'PyTorch Training Job',
-      description: 'Шаблон job для обучения модели с GPU и датасетом.',
-      containers: [
-        containerPresets.find((preset) => preset.id === 'bootstrap-python')!.container,
-        containerPresets.find((preset) => preset.id === 'pytorch-cu121')!.container,
-      ],
-      environments: {
-        CUDA_VISIBLE_DEVICES: '0',
-        TRAIN_BATCH_SIZE: '8',
-        EPOCHS: '3',
-      },
-      attached_files: [],
-      execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+path: /catalog/templates/python-basic.ts
+----------------------------------------
+// catalog/templates/python-basic.ts
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
 
-info("training started")
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapPython: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '2g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
+
+export const pythonBasic: JobTemplate = {
+  id: 'python-basic',
+  name: 'Python Basic',
+  description: 'Простой Python job с одним bootstrap-контейнером.',
+  tags: ['python', 'basic', 'sdk'],
+  support_level: 'supported',
+  draft: {
+    title: 'Python Basic Job',
+    description: 'Шаблон базовой Python job для обработки данных или автоматизации.',
+    containers: [bootstrapPython],
+    environments: {
+      APP_ENV: 'development',
+    },
+    attached_files: [],
+    execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("python job started")
 raise_if_cancel_requested()
 
-checkpoint = artifacts_path("checkpoints/epoch-1.txt")
-checkpoint.parent.mkdir(parents=True, exist_ok=True)
-checkpoint.write_text("demo checkpoint", encoding="utf-8")
+result_file = artifacts_path("result.txt")
+result_file.parent.mkdir(parents=True, exist_ok=True)
+result_file.write_text("hello from cloud forge", encoding="utf-8")
 
-info("training finished")
+metadata_file = artifacts_path("metadata.json")
+metadata_file.write_text(
+    json.dumps(
+        {
+            "language": "python",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "message": "hello from cloud forge",
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
+info(f"result written to {result_file}")
+info(f"metadata written to {metadata_file}")
 `,
-      execution_language: 'python',
-      entrypoint: 'train.py',
-    },
+    execution_language: 'python',
+    entrypoint: 'main.py',
   },
-  {
-    id: 'vllm-inference',
-    name: 'vLLM Inference',
-    description: 'Шаблон для запуска инференса LLM с vLLM и отдельным model-контейнером.',
-    tags: ['python', 'llm', 'vllm', 'inference', 'gpu'],
-    support_level: 'future',
-    draft: {
-      title: 'vLLM Inference Job',
-      description: 'Шаблон для инференса с отдельным runtime и модельным контейнером.',
-      containers: [
-        containerPresets.find((preset) => preset.id === 'bootstrap-python')!.container,
-        containerPresets.find((preset) => preset.id === 'vllm-runtime')!.container,
-        containerPresets.find((preset) => preset.id === 'qwen-7b-model')!.container,
-      ],
-      environments: {
-        MODEL_NAME: 'Qwen/Qwen2.5-7B-Instruct',
-        MAX_TOKENS: '512',
-      },
-      attached_files: [],
-      execution_code: `from cloudforge import info, raise_if_cancel_requested
+};
 
-info("vLLM inference job started")
+
+path: /catalog/templates/qwen-7b-finetune.ts
+----------------------------------------
+// catalog/templates/qwen-7b-finetune.ts
+import { JobTemplate, Container } from '../../models/job';
+
+const qwen7bFinetuneWorker: Container = {
+  name: 'bootstrap',
+  image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0',
+  is_parent: true,
+  resources: {
+    gpus: 'all',
+    shm_size: '16g',
+    memory_limit: '64g',
+    cpu_limit: 8,
+  },
+};
+
+export const qwen7bFinetune: JobTemplate = {
+  id: 'qwen-7b-finetune',
+  name: 'Qwen 7B Fine-tune',
+  description: 'Готовый шаблон для fine-tuning модели Qwen 7B с self-contained bootstrap-образом.',
+  tags: ['llm', 'finetune', 'qwen', 'gpu', 'supported'],
+  support_level: 'supported',
+  draft: {
+    title: 'Qwen 7B Fine-tune',
+    description: 'Модель уже внутри bootstrap-образа. Добавь свой код обучения.',
+    containers: [qwen7bFinetuneWorker],
+    environments: {
+      MODEL_DIR: '/models/qwen-7b',
+      HF_HOME: '/workspace/.cache/huggingface',
+      OUTPUT_DIR: '/workspace/artifacts/output',
+    },
+    attached_files: [],
+    execution_code: `# Ваш код fine-tuning здесь
+from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("Qwen 7B fine-tuning job started")
 raise_if_cancel_requested()
-info("connect to vLLM runtime and execute prompts here")
+
+# Пример использования Unsloth или transformers:
+# from unsloth import FastLanguageModel
+# model, tokenizer = FastLanguageModel.from_pretrained("/models/qwen-7b")
+
+info("Fine-tuning completed successfully")
+
+summary_file = artifacts_path("training_summary.json")
+summary_file.write_text(
+    json.dumps({
+        "status": "completed",
+        "model": "Qwen-7B",
+        "finished_at": datetime.utcnow().isoformat() + "Z"
+    }, indent=2),
+    encoding="utf-8"
+)
 `,
-      execution_language: 'python',
-      entrypoint: 'main.py',
-    },
+    execution_language: 'python',
+    entrypoint: null,
   },
-];
+};
 
 
 path: /db/index.ts
@@ -753,6 +820,21 @@ export const initDb = async (): Promise<void> => {
       storage_key TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS custom_bootstrap_images (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      base_image TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      extra_packages TEXT,
+      full_image_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      error TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -1540,6 +1622,39 @@ export interface RunArtifact {
   created_at: string;
 }
 
+// === CATALOG TYPES ===
+// Эти типы используются в catalog/presets.ts и templates/
+
+export interface JobDraftTemplate {
+  title: string;
+  description: string;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: AttachedFile[];
+  execution_code: string;
+  execution_language: ExecutionLanguage;
+  entrypoint?: string | null;
+}
+
+export interface ContainerPreset {
+  id: string;
+  name: string;
+  category: 'bootstrap' | 'runtime' | 'model' | 'service';
+  description: string;
+  recommended_for: string[];
+  container: Container;
+  support_level: 'supported' | 'future';
+}
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  draft: JobDraftTemplate;
+  support_level: 'supported' | 'future';
+}
+
 
 path: /routes/artifacts.ts
 ----------------------------------------
@@ -1680,10 +1795,136 @@ export default async function artifactsRoutes(app: FastifyInstance) {
 }
 
 
+path: /routes/bootstrap-images.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { BootstrapBuilderService } from '../services/bootstrap-builder.service';
+import { v4 as uuidv4 } from 'uuid';
+import db from '../db';
+
+export default async function bootstrapImageRoutes(app: FastifyInstance) {
+  // Build endpoint
+  app.post(
+    '/api/bootstrap-images/build',
+    {
+      schema: {
+        description: 'Build and publish a custom bootstrap image',
+        body: {
+          type: 'object',
+          required: ['name', 'baseImage', 'tag', 'dockerUser', 'dockerPass'],
+          properties: {
+            name: { type: 'string' },
+            baseImage: { type: 'string' },
+            tag: { type: 'string' },
+            extraPackages: { type: 'string' },
+            dockerUser: { type: 'string' },
+            dockerPass: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: {
+      name: string;
+      baseImage: string;
+      tag: string;
+      extraPackages?: string;
+      dockerUser: string;
+      dockerPass: string;
+    } }>, reply: FastifyReply) => {
+      const id = `build_${uuidv4().replace(/-/g, '')}`;
+      const { name, baseImage, tag, extraPackages, dockerUser, dockerPass } = req.body;
+
+      // Start asynchronous build
+      BootstrapBuilderService.buildAndPush({
+        id,
+        name,
+        baseImage,
+        tag,
+        extraPackages: extraPackages || '',
+        dockerUser,
+        dockerPass,
+      });
+
+      return reply.code(201).send({ id, status: 'building' });
+    },
+  );
+
+  // Status/Logs endpoint
+  app.get(
+    '/api/bootstrap-images/build/:id',
+    {
+      schema: {
+        description: 'Get build status and logs',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const progress = BootstrapBuilderService.getProgress(req.params.id);
+      if (!progress) {
+        return reply.code(404).send({ error: 'Build session not found' });
+      }
+      return reply.send(progress);
+    },
+  );
+
+  // List custom images
+  app.get(
+    '/api/bootstrap-images',
+    {
+      schema: {
+        description: 'List all custom bootstrap images',
+      },
+    },
+    async () => {
+      return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM custom_bootstrap_images ORDER BY created_at DESC`, (err, rows) => {
+          if (err) reject(err);
+          else resolve({ items: rows });
+        });
+      });
+    },
+  );
+
+  // Preview Dockerfile endpoint
+  app.post(
+    '/api/bootstrap-images/preview',
+    {
+      schema: {
+        description: 'Preview the Dockerfile based on build options',
+        body: {
+          type: 'object',
+          required: ['baseImage'],
+          properties: {
+            baseImage: { type: 'string' },
+            extraPackages: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: {
+      baseImage: string;
+      extraPackages?: string;
+    } }>) => {
+      const { baseImage, extraPackages } = req.body;
+      const dockerfile = BootstrapBuilderService.generateDockerfile(baseImage, extraPackages || '');
+      return { dockerfile };
+    },
+  );
+}
+
+
 path: /routes/catalog.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { containerPresets, jobTemplates } from '../catalog/presets';
+import db from '../db';
+import { ContainerPreset } from '../models/job';
 
 export default async function catalogRoutes(app: FastifyInstance) {
   app.get(
@@ -1694,9 +1935,42 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async () => {
+      // Fetch custom bootstrap images from database
+      const customImages: any[] = await new Promise((resolve, reject) => {
+        db.all(
+          `SELECT * FROM custom_bootstrap_images WHERE status = 'completed'`,
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          },
+        );
+      });
+
+      // Map to ContainerPreset format
+      const customPresets: ContainerPreset[] = customImages.map((img) => ({
+        id: img.id,
+        name: `${img.name} (Custom)`,
+        category: 'bootstrap',
+        description: `Custom bootstrap image based on ${img.base_image}`,
+        recommended_for: ['custom', 'ml'],
+        support_level: 'supported',
+        container: {
+          name: 'bootstrap',
+          image: img.full_image_name,
+          is_parent: true,
+          resources: {
+            shm_size: '2g',
+            cpu_limit: 2,
+            memory_limit: '4g',
+          },
+        },
+      }));
+
+      const allPresets = [...containerPresets, ...customPresets];
+
       return {
-        items: containerPresets,
-        total: containerPresets.length,
+        items: allPresets,
+        total: allPresets.length,
       };
     },
   );
@@ -2815,6 +3089,7 @@ import tokensRoutes from './routes/tokens';
 import dashboardRoutes from './routes/dashboard';
 import catalogRoutes from './routes/catalog';
 import healthRoutes from './routes/health';
+import bootstrapImageRoutes from './routes/bootstrap-images';
 import { ArtifactService } from './services/artifact.service';
 import { RunWatchdogService } from './services/run-watchdog.service';
 
@@ -2876,7 +3151,7 @@ const start = async () => {
     }
 
     await app.register(cors, {
-      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174'],
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     });
@@ -2906,6 +3181,7 @@ const start = async () => {
     await app.register(healthRoutes);
     await app.register(wsRoutes);
     await app.register(catalogRoutes);
+    await app.register(bootstrapImageRoutes);
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
     await app.register(workersRoutes);
@@ -3082,6 +3358,167 @@ export class ArtifactService {
     });
 
     return getSignedUrl(s3Client, command, { expiresIn });
+  }
+}
+
+
+path: /services/bootstrap-builder.service.ts
+----------------------------------------
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { spawn } from 'child_process';
+import { v4 as uuidv4 } from 'uuid';
+import db from '../db';
+
+export interface BuildOptions {
+  id: string;
+  name: string;
+  baseImage: string;
+  extraPackages: string;
+  tag: string;
+  dockerUser: string;
+  dockerPass: string;
+}
+
+export interface BuildProgress {
+  status: 'building' | 'pushing' | 'completed' | 'failed';
+  logs: string[];
+}
+
+const buildStatus = new Map<string, BuildProgress>();
+
+export class BootstrapBuilderService {
+  static getProgress(id: string) {
+    return buildStatus.get(id);
+  }
+
+  static generateDockerfile(baseImage: string, extraPackages: string): string {
+    const packages = extraPackages.trim().split(/\s+/).filter(Boolean).join(' ');
+    return `FROM ${baseImage}
+
+WORKDIR /app
+COPY runner.py /app/runner.py
+COPY sdk/ /app/sdk/
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir requests ${packages}
+
+WORKDIR /workspace
+ENTRYPOINT ["python3", "/app/runner.py"]
+`;
+  }
+
+  static async buildAndPush(options: BuildOptions) {
+    const { id, name, baseImage, extraPackages, tag, dockerUser, dockerPass } = options;
+    const fullImageName = `${dockerUser}/${name}:${tag}`;
+    const workspaceDir = path.join(os.tmpdir(), `build-${id}`);
+
+    buildStatus.set(id, { status: 'building', logs: ['Starting build...'] });
+
+    try {
+      // 1. Prepare Workspace
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      fs.writeFileSync(path.join(workspaceDir, 'Dockerfile'), this.generateDockerfile(baseImage, extraPackages));
+
+      // Copy runner.py and sdk/
+      const rootDir = path.resolve(__dirname, '../../');
+      fs.copyFileSync(path.join(rootDir, 'runner.py'), path.join(workspaceDir, 'runner.py'));
+
+      const copyDir = (src: string, dest: string) => {
+        fs.mkdirSync(dest, { recursive: true });
+        for (const item of fs.readdirSync(src)) {
+          const s = path.join(src, item);
+          const d = path.join(dest, item);
+          if (fs.statSync(s).isDirectory()) copyDir(s, d);
+          else fs.copyFileSync(s, d);
+        }
+      };
+      copyDir(path.join(rootDir, 'sdk'), path.join(workspaceDir, 'sdk'));
+
+      // 2. Build
+      await this.runCommand('docker', ['build', '-t', fullImageName, '.'], workspaceDir, id);
+
+      // 3. Login
+      buildStatus.get(id)?.logs.push('Logging into Docker Hub...');
+      await this.runCommand('docker', ['login', '-u', dockerUser, '--password-stdin'], workspaceDir, id, dockerPass);
+
+      // 4. Push
+      buildStatus.get(id)!.status = 'pushing';
+      await this.runCommand('docker', ['push', fullImageName], workspaceDir, id);
+
+      // 5. Success
+      buildStatus.get(id)!.status = 'completed';
+      buildStatus.get(id)!.logs.push('Image published successfully!');
+
+      await this.saveToDb(options, fullImageName);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      buildStatus.get(id)!.status = 'failed';
+      buildStatus.get(id)!.logs.push(`Error: ${errorMsg}`);
+
+      await this.updateStatusInDb(id, 'failed', errorMsg);
+    } finally {
+      // Cleanup
+      try {
+        if (fs.existsSync(workspaceDir)) {
+          fs.rmSync(workspaceDir, { recursive: true, force: true });
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  private static runCommand(command: string, args: string[], cwd: string, id: string, stdin?: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(command, args, { cwd });
+
+      if (stdin) {
+        proc.stdin.write(stdin);
+        proc.stdin.end();
+      }
+
+      proc.stdout.on('data', (data) => {
+        buildStatus.get(id)?.logs.push(data.toString());
+      });
+
+      proc.stderr.on('data', (data) => {
+        buildStatus.get(id)?.logs.push(data.toString());
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`${command} exited with code ${code}`));
+      });
+    });
+  }
+
+  private static async saveToDb(options: BuildOptions, fullImageName: string) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO custom_bootstrap_images (id, name, base_image, tag, extra_packages, full_image_name, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [options.id, options.name, options.baseImage, options.tag, options.extraPackages, fullImageName, 'completed'],
+        (err) => {
+          if (err) reject(err);
+          else resolve(undefined);
+        }
+      );
+    });
+  }
+
+  private static async updateStatusInDb(id: string, status: string, error?: string) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE custom_bootstrap_images SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [status, error || null, id],
+        (err) => {
+          if (err) reject(err);
+          else resolve(undefined);
+        }
+      );
+    });
   }
 }
 
@@ -3275,33 +3712,44 @@ const buildAttachedFilesConfig = (attachedFiles: AttachedFile[]) =>
 
 /**
  * Generates a docker run command for remote execution.
- * The published worker image is expected to contain the Cloud Forge SDK + worker runtime.
+ * Поддерживает кастомный bootstrap.image из job.containers
  */
 const buildDockerCommand = (job: Job, token: string, baseUrl: string): string => {
-  const bootstrap =
-    job.containers.find((container) => container.name === 'bootstrap' || container.is_parent) ||
-    job.containers[0];
+  // Ищем bootstrap-контейнер (приоритет: is_parent → name === 'bootstrap' → первый контейнер)
+  const bootstrap = job.containers.find((c) => c.is_parent === true) ||
+                    job.containers.find((c) => c.name === 'bootstrap') ||
+                    job.containers[0];
+
+  const fallbackImage = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+  const image = bootstrap?.image || fallbackImage;
 
   const parts: string[] = ['docker run --pull always --rm'];
 
+  // === Resources из bootstrap-контейнера ===
   if (bootstrap?.resources?.gpus) {
     parts.push(`--gpus ${bootstrap.resources.gpus}`);
   }
-
   if (bootstrap?.resources?.shm_size) {
     parts.push(`--shm-size ${bootstrap.resources.shm_size}`);
   }
-
   if (bootstrap?.resources?.memory_limit) {
     parts.push(`--memory ${bootstrap.resources.memory_limit}`);
   }
-
   if (bootstrap?.resources?.cpu_limit) {
     parts.push(`--cpus ${bootstrap.resources.cpu_limit}`);
   }
 
+  // Передаём переменные окружения из bootstrap.env + JOB_CONFIG_URL
+  if (bootstrap?.env) {
+    Object.entries(bootstrap.env).forEach(([key, value]) => {
+      parts.push(`-e ${key}="${value}"`);
+    });
+  }
+
   parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
-  parts.push(`${config.publishedWorkerImage}:${config.publishedWorkerTag}`);
+
+  // Самое важное — используем образ из bootstrap.image (или fallback)!
+  parts.push(image);
 
   return parts.join(' \\\n  ');
 };
@@ -3477,15 +3925,18 @@ export class JobService {
     const job = await JobModel.findById(token.job_id);
     if (!job) return null;
 
-    const claimUrl = `${baseUrl}/api/run-config?token=${token.token}`;
+    const bootstrap = job.containers.find((c) => c.is_parent === true) ||
+                      job.containers.find((c) => c.name === 'bootstrap') ||
+                      job.containers[0];
+
     const dockerCommand = buildDockerCommand(job, token.token, baseUrl);
 
     return {
       ...this.normalizeShareToken(token),
       base_url: baseUrl,
-      claim_url: claimUrl,
-      share_url: claimUrl,
-      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
+      claim_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      share_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      docker_image: bootstrap?.image || `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
       docker_command: dockerCommand,
       worker_command: dockerCommand,
     };
@@ -4379,8 +4830,8 @@ export const logger = pino({
 
 
 === SUMMARY ===
-included: 23
+included: 30
 skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 116666
+totalBytes(approx): 129385

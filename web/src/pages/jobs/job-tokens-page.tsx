@@ -173,6 +173,7 @@ export function JobTokensPage() {
                         ? tokenDetailsQuery.data.remaining_claims
                         : 'Unlimited'}
                     </div>
+                    <div>Docker image: {tokenDetailsQuery.data.docker_image || '—'}</div>
                   </CardContent>
                 </Card>
 

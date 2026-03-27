@@ -45,6 +45,7 @@ const jobsRoute = createRoute({
 });
 
 interface JobCreateSearch {
+  bootstrapImageId?: string;
   templateId?: string;
   containerPresetId?: string;
 }
@@ -53,6 +54,8 @@ const createJobRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/jobs/create',
   validateSearch: (search: Record<string, unknown>): JobCreateSearch => ({
+    bootstrapImageId:
+      typeof search.bootstrapImageId === 'string' ? search.bootstrapImageId : undefined,
     templateId: typeof search.templateId === 'string' ? search.templateId : undefined,
     containerPresetId:
       typeof search.containerPresetId === 'string' ? search.containerPresetId : undefined,

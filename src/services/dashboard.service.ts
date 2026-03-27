@@ -1,5 +1,5 @@
 import db from '../db/index';
-import { Run, RunConfigSnapshot } from '../models/job';
+import { Run } from '../models/job';
 import { JobService } from './job.service';
 
 const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
@@ -20,7 +20,6 @@ const getAsync = <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
 
 const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
   if (!value) return fallback;
-
   try {
     return JSON.parse(value) as T;
   } catch {
@@ -28,29 +27,12 @@ const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
   }
 };
 
-const defaultSnapshot = (jobId: string): RunConfigSnapshot => ({
-  job_id: jobId,
-  containers: [],
-  environments: {},
-  attached_files: [],
-  execution_code: '',
-  execution_language: 'python',
-  entrypoint: null,
-  workspace: {
-    root: '/workspace',
-    code_dir: '/workspace/code',
-    input_dir: '/workspace/input',
-    output_dir: '/workspace/output',
-    artifacts_dir: '/workspace/artifacts',
-    tmp_dir: '/workspace/tmp',
-  },
-});
-
 export class DashboardService {
   static async getSummary() {
     const stats = await getAsync<any>(`
       SELECT
         (SELECT COUNT(*) FROM jobs) as total_jobs,
+        (SELECT COUNT(*) FROM bootstrap_images WHERE status = 'completed') as ready_images,
         (SELECT COUNT(*) FROM runs) as total_runs,
         (SELECT COUNT(*) FROM runs WHERE status = 'created') as created_runs,
         (SELECT COUNT(*) FROM runs WHERE status = 'running') as running_runs,
@@ -64,6 +46,7 @@ export class DashboardService {
 
     return {
       jobs_total: stats?.total_jobs ?? 0,
+      bootstrap_images_ready: stats?.ready_images ?? 0,
       runs_total: stats?.total_runs ?? 0,
       runs_by_status: {
         created: stats?.created_runs ?? 0,
@@ -78,7 +61,7 @@ export class DashboardService {
     };
   }
 
-  static async getActiveRuns(): Promise<Run[]> {
+  static async getActiveRuns(): Promise<Array<Run & { job_title: string }>> {
     const rows = await allAsync<any>(`
       SELECT
         r.*,
@@ -93,12 +76,45 @@ export class DashboardService {
       id: row.id,
       job_id: row.job_id,
       share_token_id: row.share_token_id,
+      bootstrap_image_id: row.bootstrap_image_id,
       worker_id: row.worker_id ?? null,
       worker_name: row.worker_name ?? null,
       status: row.status,
+      stage: row.stage ?? null,
+      progress: row.progress ?? null,
+      status_message: row.status_message ?? null,
       result: row.result ?? null,
       metrics: parseJson(row.metrics, null),
-      config_snapshot: parseJson(row.config_snapshot, defaultSnapshot(row.job_id)),
+      run_manifest: parseJson(row.run_manifest, {
+        run_id: row.id,
+        job_id: row.job_id,
+        bootstrap_image: {
+          id: row.bootstrap_image_id,
+          full_image_name: '',
+          name: '',
+        },
+        workspace: {
+          root: '/workspace',
+          artifacts_dir: '/workspace/artifacts',
+          tmp_dir: '/workspace/tmp',
+        },
+        environment_variables: {},
+        entrypoint: '',
+        entrypoint_args: [],
+        working_dir: '/workspace',
+        files: [],
+        control: {
+          start_url: '',
+          heartbeat_url: '',
+          logs_url: '',
+          progress_url: '',
+          finish_url: '',
+          cancel_url: '',
+        },
+        artifacts: {
+          upload_url: '',
+        },
+      }),
       started_at: row.started_at ?? null,
       finished_at: row.finished_at ?? null,
       last_heartbeat_at: row.last_heartbeat_at ?? null,
@@ -122,6 +138,7 @@ export class DashboardService {
         r.job_id,
         j.title as job_title,
         r.status,
+        r.stage,
         r.updated_at as created_at
       FROM runs r
       JOIN jobs j ON r.job_id = j.id
@@ -135,7 +152,7 @@ export class DashboardService {
       type: 'run_status',
       status: row.status,
       message: `${row.job_title} · ${row.status}`,
-      details: `Run ${row.run_id}`,
+      details: row.stage ? `Run ${row.run_id} · ${row.stage}` : `Run ${row.run_id}`,
       created_at: row.created_at,
     }));
   }

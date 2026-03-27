@@ -1,115 +1,52 @@
-import type { AttachedFile, Container, Job } from '@/api/types';
+import type { Job, JobPayload } from '@/api/types';
 import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
 import { compactObject, fromKeyValuePairs, toKeyValuePairs } from '@/shared/utils/object';
 
-function defaultEntrypoint(
-  language: JobFormValues['execution_language'],
-): string {
-  return language === 'javascript'
-    ? 'node /workspace/code/index.js'
-    : 'python3 /workspace/code/main.py';
+function splitArgs(value?: string | null): string[] {
+  if (!value?.trim()) return [];
+  return value
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
-function makeBootstrapContainer(
-  language: JobFormValues['execution_language'],
-): JobFormValues['containers'][number] {
-  return {
-    name: 'bootstrap',
-    image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
-    is_parent: true,
-    env: [],
-    resources: {
-      cpu_limit: '',
-      memory_limit: '',
-      gpus: '',
-      shm_size: '',
-    },
-  };
-}
-
-function normalizeFormContainers(
-  containers: JobFormValues['containers'],
-  language: JobFormValues['execution_language'],
-): JobFormValues['containers'] {
-  if (!containers.length) {
-    return [makeBootstrapContainer(language)];
-  }
-
-  const parentIndex = containers.findIndex((container) => container.is_parent);
-
-  if (parentIndex === -1) {
-    return containers.map((container, index) => ({
-      ...container,
-      is_parent: index === 0,
-    }));
-  }
-
-  return containers.map((container, index) => ({
-    ...container,
-    is_parent: index === parentIndex,
-  }));
-}
-
-export function mapJobToFormValues(job?: Job | null): JobFormValues {
-  const executionLanguage = job?.execution_language ?? 'python';
-
-  const mappedContainers: JobFormValues['containers'] = (job?.containers ?? []).map((container) => ({
-    name: container.name ?? '',
-    image: container.image ?? '',
-    is_parent: Boolean(container.is_parent),
-    env: toKeyValuePairs(container.env ?? {}),
-    resources: {
-      cpu_limit: container.resources?.cpu_limit?.toString() ?? '',
-      memory_limit: container.resources?.memory_limit ?? '',
-      gpus: container.resources?.gpus ?? '',
-      shm_size: container.resources?.shm_size ?? '',
-    },
-  }));
-
+export function mapJobToFormValues(
+  job?: Job | null,
+  bootstrapImageId?: string | null,
+): JobFormValues {
   return {
     title: job?.title ?? '',
     description: job?.description ?? '',
-    execution_language: executionLanguage,
-    execution_code: job?.execution_code ?? '',
-    entrypoint: job?.entrypoint ?? defaultEntrypoint(executionLanguage),
-    environments: toKeyValuePairs(job?.environments ?? {}),
-    containers: normalizeFormContainers(mappedContainers, executionLanguage),
-    attached_files: job?.attached_files ?? [],
+    bootstrap_image_id: job?.bootstrap_image_id ?? bootstrapImageId ?? '',
+    entrypoint: job?.entrypoint ?? 'scripts/run.sh',
+    entrypoint_args_text: (job?.entrypoint_args ?? []).join(' '),
+    working_dir: job?.working_dir ?? '/workspace',
+    environment_variables: toKeyValuePairs(job?.environment_variables ?? {}),
+    resources: {
+      cpu_limit: job?.resources?.cpu_limit != null ? String(job.resources.cpu_limit) : '',
+      memory_limit: job?.resources?.memory_limit ?? '',
+      gpus: job?.resources?.gpus ?? '',
+      shm_size: job?.resources?.shm_size ?? '',
+    },
   };
 }
 
-export function mapFormValuesToPayload(values: JobFormValues) {
-  const parentIndex = values.containers.findIndex((container) => container.is_parent);
-
-  const normalizedContainers = values.containers.map((container, index) => ({
-    ...container,
-    is_parent: index === (parentIndex === -1 ? 0 : parentIndex),
-  }));
-
-  const containers: Container[] = normalizedContainers.map((container) => ({
-    name: container.name.trim(),
-    image: container.image.trim(),
-    is_parent: container.is_parent,
-    env: fromKeyValuePairs(container.env),
-    resources: compactObject({
-      cpu_limit:
-        container.resources.cpu_limit && container.resources.cpu_limit.trim().length
-          ? Number(container.resources.cpu_limit)
-          : undefined,
-      memory_limit: container.resources.memory_limit,
-      gpus: container.resources.gpus,
-      shm_size: container.resources.shm_size,
-    }),
-  }));
-
+export function mapFormValuesToPayload(values: JobFormValues): JobPayload {
   return {
     title: values.title.trim(),
     description: values.description?.trim() || null,
-    execution_language: values.execution_language,
-    execution_code: values.execution_code,
-    entrypoint: values.entrypoint?.trim() || null,
-    environments: fromKeyValuePairs(values.environments),
-    containers,
-    attached_files: values.attached_files as AttachedFile[],
+    bootstrap_image_id: values.bootstrap_image_id,
+    entrypoint: values.entrypoint.trim(),
+    entrypoint_args: splitArgs(values.entrypoint_args_text),
+    working_dir: values.working_dir?.trim() || '/workspace',
+    environment_variables: fromKeyValuePairs(values.environment_variables),
+    resources: compactObject({
+      cpu_limit: values.resources.cpu_limit.trim()
+        ? Number(values.resources.cpu_limit.trim())
+        : undefined,
+      memory_limit: values.resources.memory_limit.trim() || undefined,
+      gpus: values.resources.gpus.trim() || undefined,
+      shm_size: values.resources.shm_size.trim() || undefined,
+    }),
   };
 }

@@ -3,12 +3,15 @@ import ReactDOM from 'react-dom/client';
 import { RouterProvider } from '@tanstack/react-router';
 import { router } from '@/app/router';
 import { AppProviders } from '@/app/providers';
+import { BootstrapBuildFloating } from '@/features/catalog/bootstrap-build-floating';
+
 import '@/app/styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AppProviders>
       <RouterProvider router={router} />
+      <BootstrapBuildFloating />
     </AppProviders>
   </React.StrictMode>,
 );

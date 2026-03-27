@@ -1,84 +1,70 @@
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  BootstrapImageLogModel,
+  BootstrapImageModel,
+  JobFileModel,
   JobModel,
   LogModel,
   RunArtifactModel,
+  RunEventModel,
   RunModel,
   ShareTokenModel,
   WorkerModel,
 } from '../models';
 import {
-  AttachedFile,
   Job,
+  JobFile,
   LogLevel,
+  RunManifest,
+  RunManifestFile,
   RunStatus,
   ShareToken,
   Worker,
   WorkspaceLayout,
 } from '../models/job';
 import { config } from '../utils/config';
-import { assertValidCreateJobPayload, CreateJobPayload } from '../utils/job-validation';
+import {
+  assertValidCreateJobPayload,
+  assertValidRelativePath,
+  CreateJobPayload,
+} from '../utils/job-validation';
 
 const WORKSPACE: WorkspaceLayout = {
   root: '/workspace',
-  code_dir: '/workspace/code',
-  input_dir: '/workspace/input',
-  output_dir: '/workspace/output',
   artifacts_dir: '/workspace/artifacts',
   tmp_dir: '/workspace/tmp',
 };
 
 const makeId = (prefix: string): string => `${prefix}_${uuidv4().replace(/-/g, '')}`;
 
-const buildAttachedFilesConfig = (attachedFiles: AttachedFile[]) =>
-  attachedFiles.map((file) => ({
-    ...file,
-    download_path: `/artifacts/download?key=${encodeURIComponent(file.storage_key)}`,
-    mount_path: `${WORKSPACE.input_dir}/${file.filename}`,
-  }));
+const normalizePath = (value: string): string =>
+  path.posix.normalize(value.replace(/\\/g, '/')).replace(/^\/+/, '');
 
-/**
- * Generates a docker run command for remote execution.
- * Поддерживает кастомный bootstrap.image из job.containers
- */
-const buildDockerCommand = (job: Job, token: string, baseUrl: string): string => {
-  // Ищем bootstrap-контейнер (приоритет: is_parent → name === 'bootstrap' → первый контейнер)
-  const bootstrap = job.containers.find((c) => c.is_parent === true) ||
-                    job.containers.find((c) => c.name === 'bootstrap') ||
-                    job.containers[0];
+const asString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+};
 
-  const fallbackImage = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
-  const image = bootstrap?.image || fallbackImage;
-
-  const parts: string[] = ['docker run --pull always --rm'];
-
-  // === Resources из bootstrap-контейнера ===
-  if (bootstrap?.resources?.gpus) {
-    parts.push(`--gpus ${bootstrap.resources.gpus}`);
+const asNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
   }
-  if (bootstrap?.resources?.shm_size) {
-    parts.push(`--shm-size ${bootstrap.resources.shm_size}`);
-  }
-  if (bootstrap?.resources?.memory_limit) {
-    parts.push(`--memory ${bootstrap.resources.memory_limit}`);
-  }
-  if (bootstrap?.resources?.cpu_limit) {
-    parts.push(`--cpus ${bootstrap.resources.cpu_limit}`);
-  }
+  return fallback;
+};
 
-  // Передаём переменные окружения из bootstrap.env + JOB_CONFIG_URL
-  if (bootstrap?.env) {
-    Object.entries(bootstrap.env).forEach(([key, value]) => {
-      parts.push(`-e ${key}="${value}"`);
-    });
+const asBoolean = (value: unknown, fallback = false): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off', ''].includes(normalized)) return false;
   }
-
-  parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
-
-  // Самое важное — используем образ из bootstrap.image (или fallback)!
-  parts.push(image);
-
-  return parts.join(' \\\n  ');
+  return fallback;
 };
 
 const isTokenExpired = (token: ShareToken): boolean => {
@@ -117,24 +103,56 @@ const normalizeWorkerStatus = (worker: Worker): Worker => {
   return { ...worker, status: 'online' };
 };
 
+const buildDockerCommand = (
+  job: Job,
+  token: string,
+  baseUrl: string,
+  image: string,
+): string => {
+  const parts: string[] = ['docker run --pull always --rm'];
+
+  if (job.resources?.gpus) {
+    parts.push(`--gpus ${job.resources.gpus}`);
+  }
+  if (job.resources?.shm_size) {
+    parts.push(`--shm-size ${job.resources.shm_size}`);
+  }
+  if (job.resources?.memory_limit) {
+    parts.push(`--memory ${job.resources.memory_limit}`);
+  }
+  if (job.resources?.cpu_limit) {
+    parts.push(`--cpus ${job.resources.cpu_limit}`);
+  }
+
+  parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
+  parts.push(image);
+
+  return parts.join(' \\\n  ');
+};
+
 export class JobService {
   static toCreateJobData = (payload: CreateJobPayload, id: string) => ({
     id,
     title: payload.title,
     description: payload.description ?? null,
     owner_id: payload.owner_id ?? null,
-    containers: payload.containers,
-    environments: payload.environments ?? {},
-    attached_files: payload.attached_files ?? [],
-    execution_code: payload.execution_code,
-    execution_language: payload.execution_language,
-    entrypoint: payload.entrypoint ?? null,
+    bootstrap_image_id: payload.bootstrap_image_id,
+    environment_variables: payload.environment_variables ?? {},
+    resources: payload.resources ?? null,
+    entrypoint: payload.entrypoint,
+    entrypoint_args: payload.entrypoint_args ?? [],
+    working_dir: payload.working_dir ?? '/workspace',
   });
 
   static async createJob(payload: unknown) {
     const normalized = assertValidCreateJobPayload(payload);
-    const id = makeId('job');
+    const bootstrapImage = await BootstrapImageModel.findById(normalized.bootstrap_image_id);
 
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    const id = makeId('job');
     await JobModel.create(this.toCreateJobData(normalized, id));
 
     const created = await JobModel.findById(id);
@@ -154,11 +172,17 @@ export class JobService {
     return JobModel.list(filters);
   }
 
+  static async getJob(jobId: string) {
+    return JobModel.findById(jobId);
+  }
+
   static async getJobDetails(jobId: string) {
     const job = await JobModel.findById(jobId);
     if (!job) return null;
 
-    const [shareTokens, totalRuns, activeRunsCount] = await Promise.all([
+    const [bootstrapImage, files, shareTokens, totalRuns, activeRunsCount] = await Promise.all([
+      BootstrapImageModel.findById(job.bootstrap_image_id),
+      JobFileModel.listByJobId(jobId),
       ShareTokenModel.listByJobId(jobId),
       RunModel.countByJobId(jobId),
       RunModel.countActiveByJobId(jobId),
@@ -166,7 +190,9 @@ export class JobService {
 
     return {
       job,
-      share_tokens: shareTokens.map((t) => this.normalizeShareToken(t)),
+      bootstrap_image: bootstrapImage,
+      files,
+      share_tokens: shareTokens.map((t: ShareToken) => this.normalizeShareToken(t)),
       stats: {
         total_runs: totalRuns,
         active_runs: activeRunsCount,
@@ -185,8 +211,13 @@ export class JobService {
     };
 
     const normalized = assertValidCreateJobPayload(merged);
+    const bootstrapImage = await BootstrapImageModel.findById(normalized.bootstrap_image_id);
 
-    await JobModel.update(jobId, normalized);
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    await JobModel.update(jobId, normalized as Partial<Job>);
 
     const updated = await JobModel.findById(jobId);
     if (!updated) {
@@ -201,11 +232,11 @@ export class JobService {
     if (!job) throw new Error('Job not found');
 
     const activeRuns = await RunModel.countActiveByJobId(jobId);
-
     if (activeRuns > 0) {
       throw new Error('Cannot delete job with active runs');
     }
 
+    await JobFileModel.deleteByJobId(jobId);
     await JobModel.delete(jobId);
   }
 
@@ -213,14 +244,40 @@ export class JobService {
     const job = await JobModel.findById(jobId);
     if (!job) throw new Error('Job not found');
 
+    const files = await JobFileModel.listByJobId(jobId);
     const newId = makeId('job');
-    const clonedData = {
+
+    await JobModel.create({
       ...job,
       id: newId,
       title: `${job.title} (copy)`,
-    };
+    });
 
-    await JobModel.create(clonedData);
+    for (const file of files) {
+      const fileId = makeId('jf');
+      if (file.source_type === 'inline') {
+        await JobFileModel.upsertInline({
+          id: fileId,
+          job_id: newId,
+          relative_path: file.relative_path,
+          filename: file.filename,
+          inline_content: file.inline_content || '',
+          mime_type: file.mime_type,
+          is_executable: file.is_executable,
+        });
+      } else {
+        await JobFileModel.upsertUploaded({
+          id: fileId,
+          job_id: newId,
+          relative_path: file.relative_path,
+          filename: file.filename,
+          storage_key: file.storage_key || '',
+          mime_type: file.mime_type,
+          size_bytes: file.size_bytes,
+          is_executable: file.is_executable,
+        });
+      }
+    }
 
     const cloned = await JobModel.findById(newId);
     if (!cloned) {
@@ -234,7 +291,14 @@ export class JobService {
     const job = await JobModel.findById(jobId);
     if (!job) throw new Error('Job not found');
 
-    return RunModel.listByJobIdPaginated(jobId, limit, offset);
+    const runs = await RunModel.listByJobIdPaginated(jobId, limit, offset);
+    const total = await RunModel.countByJobId(jobId);
+    return {
+      items: runs,
+      total,
+      limit,
+      offset,
+    };
   }
 
   static async listJobShareTokens(jobId: string) {
@@ -242,7 +306,102 @@ export class JobService {
     if (!job) throw new Error('Job not found');
 
     const tokens = await ShareTokenModel.listByJobId(jobId);
-    return tokens.map((token) => this.normalizeShareToken(token));
+    return tokens.map((token: ShareToken) => this.normalizeShareToken(token));
+  }
+
+  static async listJobFiles(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    return JobFileModel.listByJobId(jobId);
+  }
+
+  static async saveInlineJobFile(data: {
+    job_id: string;
+    relative_path: string;
+    content: string;
+    mime_type?: string;
+    is_executable?: boolean;
+  }) {
+    const job = await JobModel.findById(data.job_id);
+    if (!job) throw new Error('Job not found');
+
+    const relativePath = assertValidRelativePath(data.relative_path);
+    const filename = path.posix.basename(relativePath);
+
+    await JobFileModel.upsertInline({
+      id: makeId('jf'),
+      job_id: data.job_id,
+      relative_path: relativePath,
+      filename,
+      inline_content: data.content,
+      mime_type: data.mime_type || 'text/plain; charset=utf-8',
+      is_executable: Boolean(data.is_executable),
+    });
+
+    const saved = await JobFileModel.findByJobIdAndPath(data.job_id, relativePath);
+    if (!saved) {
+      throw new Error('Failed to save job file');
+    }
+
+    return saved;
+  }
+
+  static async registerUploadedJobFile(data: {
+    job_id: string;
+    relative_path: string;
+    filename: string;
+    storage_key: string;
+    mime_type: string;
+    size_bytes: number;
+    is_executable?: boolean;
+  }) {
+    const job = await JobModel.findById(data.job_id);
+    if (!job) throw new Error('Job not found');
+
+    const relativePath = assertValidRelativePath(data.relative_path);
+
+    await JobFileModel.upsertUploaded({
+      id: makeId('jf'),
+      job_id: data.job_id,
+      relative_path: relativePath,
+      filename: data.filename,
+      storage_key: data.storage_key,
+      mime_type: data.mime_type,
+      size_bytes: data.size_bytes,
+      is_executable: Boolean(data.is_executable),
+    });
+
+    const saved = await JobFileModel.findByJobIdAndPath(data.job_id, relativePath);
+    if (!saved) {
+      throw new Error('Failed to register uploaded job file');
+    }
+
+    return saved;
+  }
+
+  static async getJobFile(jobId: string, relativePath: string): Promise<JobFile> {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = assertValidRelativePath(relativePath);
+    const file = await JobFileModel.findByJobIdAndPath(jobId, normalized);
+    if (!file) {
+      throw new Error('Job file not found');
+    }
+
+    return file;
+  }
+
+  static async deleteJobFile(jobId: string, relativePath: string) {
+    await this.getJobFile(jobId, relativePath);
+    await JobFileModel.deleteByJobIdAndPath(jobId, assertValidRelativePath(relativePath));
+  }
+
+  static async getRunJobFile(runId: string, relativePath: string): Promise<JobFile> {
+    const run = await RunModel.findById(runId);
+    if (!run) throw new Error('Run not found');
+    return this.getJobFile(run.job_id, relativePath);
   }
 
   static async getShareToken(tokenId: string, baseUrl: string) {
@@ -252,18 +411,22 @@ export class JobService {
     const job = await JobModel.findById(token.job_id);
     if (!job) return null;
 
-    const bootstrap = job.containers.find((c) => c.is_parent === true) ||
-                      job.containers.find((c) => c.name === 'bootstrap') ||
-                      job.containers[0];
+    const bootstrapImage = await BootstrapImageModel.findById(job.bootstrap_image_id);
+    if (!bootstrapImage) return null;
 
-    const dockerCommand = buildDockerCommand(job, token.token, baseUrl);
+    const dockerCommand = buildDockerCommand(
+      job,
+      token.token,
+      baseUrl,
+      bootstrapImage.full_image_name,
+    );
 
     return {
       ...this.normalizeShareToken(token),
       base_url: baseUrl,
       claim_url: `${baseUrl}/api/run-config?token=${token.token}`,
       share_url: `${baseUrl}/api/run-config?token=${token.token}`,
-      docker_image: bootstrap?.image || `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
+      docker_image: bootstrapImage.full_image_name,
       docker_command: dockerCommand,
       worker_command: dockerCommand,
     };
@@ -298,6 +461,11 @@ export class JobService {
       throw new Error('Job not found');
     }
 
+    const bootstrapImage = await BootstrapImageModel.findById(job.bootstrap_image_id);
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
     const shareTokenId = makeId('st');
     const token = `cf_${uuidv4().replace(/-/g, '')}`;
 
@@ -328,7 +496,7 @@ export class JobService {
     return created;
   }
 
-  static async claimRunByToken(token: string) {
+  static async claimRunByToken(token: string, baseUrl: string) {
     const shareToken = await ShareTokenModel.findByToken(token);
     if (!shareToken) {
       throw new Error('Share token not found');
@@ -351,24 +519,83 @@ export class JobService {
       throw new Error('Job not found for share token');
     }
 
+    const bootstrapImage = await BootstrapImageModel.findById(job.bootstrap_image_id);
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    const jobFiles = await JobFileModel.listByJobId(job.id);
     const runId = makeId('run');
 
-    const configSnapshot = {
+    const manifestFiles: RunManifestFile[] = jobFiles.map(
+      (file): RunManifestFile => {
+        const relativePath = asString(
+          (file as { relative_path?: unknown }).relative_path,
+          asString((file as { filename?: unknown }).filename, 'file'),
+        ).trim();
+
+        const filename =
+          asString((file as { filename?: unknown }).filename).trim() ||
+          relativePath.split('/').filter(Boolean).pop() ||
+          'file';
+
+        const sourceTypeRaw = asString((file as { source_type?: unknown }).source_type, 'upload');
+        const sourceType: RunManifestFile['source_type'] =
+          sourceTypeRaw === 'inline' ? 'inline' : 'upload';
+
+        return {
+          relative_path: relativePath,
+          filename,
+          size_bytes: asNumber((file as { size_bytes?: unknown }).size_bytes, 0),
+          mime_type: asString(
+            (file as { mime_type?: unknown }).mime_type,
+            'application/octet-stream',
+          ),
+          is_executable: asBoolean(
+            (file as { is_executable?: unknown }).is_executable,
+            false,
+          ),
+          source_type: sourceType,
+          download_url:
+            `${baseUrl}/api/runs/${runId}/job-files/content?relativePath=` +
+            encodeURIComponent(relativePath),
+        };
+      },
+    );
+
+    const runManifest: RunManifest = {
+      run_id: runId,
       job_id: job.id,
-      containers: job.containers,
-      environments: job.environments,
-      attached_files: job.attached_files,
-      execution_code: job.execution_code,
-      execution_language: job.execution_language,
-      entrypoint: job.entrypoint ?? null,
+      bootstrap_image: {
+        id: bootstrapImage.id,
+        full_image_name: bootstrapImage.full_image_name,
+        name: bootstrapImage.name,
+      },
       workspace: WORKSPACE,
+      environment_variables: job.environment_variables,
+      entrypoint: job.entrypoint,
+      entrypoint_args: job.entrypoint_args || [],
+      working_dir: job.working_dir || WORKSPACE.root,
+      files: manifestFiles,
+      control: {
+        start_url: `${baseUrl}/api/runs/start`,
+        heartbeat_url: `${baseUrl}/api/runs/heartbeat`,
+        logs_url: `${baseUrl}/api/runs/logs`,
+        progress_url: `${baseUrl}/api/runs/progress`,
+        finish_url: `${baseUrl}/api/runs/finish`,
+        cancel_url: `${baseUrl}/api/runs/${runId}/cancel`,
+      },
+      artifacts: {
+        upload_url: `${baseUrl}/artifacts/upload-run?runId=${runId}`,
+      },
     };
 
     await RunModel.create({
       id: runId,
       job_id: job.id,
       share_token_id: shareToken.id,
-      config_snapshot: configSnapshot,
+      bootstrap_image_id: bootstrapImage.id,
+      run_manifest: runManifest,
     });
 
     await ShareTokenModel.incrementClaim(shareToken.id);
@@ -376,10 +603,7 @@ export class JobService {
     return {
       run_id: runId,
       job_id: job.id,
-      config: {
-        ...configSnapshot,
-        attached_files: buildAttachedFilesConfig(job.attached_files),
-      },
+      config: runManifest,
     };
   }
 
@@ -411,6 +635,18 @@ export class JobService {
     });
 
     await RunModel.markRunning(runId, worker.id, worker.name);
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'status',
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+      message: 'Run started',
+      payload: {
+        worker_id: worker.id,
+        worker_name: worker.name,
+      },
+    });
   }
 
   static async heartbeatRun(
@@ -478,6 +714,49 @@ export class JobService {
     }
 
     await LogModel.add(runId, message, level);
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'log',
+      level,
+      message,
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+    });
+  }
+
+  static async addRunProgress(data: {
+    run_id: string;
+    stage?: string | null;
+    progress?: number | null;
+    message?: string | null;
+    extra?: Record<string, unknown> | null;
+  }) {
+    const run = await RunModel.findById(data.run_id);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    const normalizedProgress =
+      data.progress == null ? null : Math.max(0, Math.min(100, Number(data.progress)));
+
+    await RunModel.updateProgress({
+      id: data.run_id,
+      stage: data.stage ?? run.stage ?? null,
+      progress: normalizedProgress,
+      status_message: data.message ?? run.status_message ?? null,
+      metrics: data.extra ?? undefined,
+    });
+
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: data.run_id,
+      type: 'progress',
+      stage: data.stage ?? run.stage ?? null,
+      progress: normalizedProgress,
+      message: data.message ?? null,
+      payload: data.extra ?? null,
+    });
   }
 
   static async cancelRun(runId: string, reason?: string) {
@@ -508,6 +787,17 @@ export class JobService {
     }
 
     await RunModel.requestCancel(runId, reason || 'Run cancelled by user');
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'status',
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+      message: reason || 'Run cancellation requested',
+      payload: {
+        cancel_requested: true,
+      },
+    });
 
     return {
       run_id: runId,
@@ -533,6 +823,18 @@ export class JobService {
     }
 
     await RunModel.finish(runId, status, result, metrics);
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'status',
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+      message: result || `Run ${status}`,
+      payload: {
+        status,
+        metrics: metrics ?? null,
+      },
+    });
 
     if (run.worker_id) {
       await WorkerModel.release(run.worker_id);
@@ -550,16 +852,11 @@ export class JobService {
         continue;
       }
 
-      await this.finishRun(
-        run.id,
-        'lost',
-        'Worker heartbeat timed out',
-        {
-          reason: 'heartbeat_timeout',
-          cutoff,
-          last_heartbeat_at: run.last_heartbeat_at,
-        },
-      );
+      await this.finishRun(run.id, 'lost', 'Worker heartbeat timed out', {
+        reason: 'heartbeat_timeout',
+        cutoff,
+        last_heartbeat_at: run.last_heartbeat_at,
+      });
 
       lostRunIds.push(run.id);
     }
@@ -586,7 +883,7 @@ export class JobService {
       id: artifactId,
       run_id: data.run_id,
       filename: data.filename,
-      relative_path: data.relative_path,
+      relative_path: normalizePath(data.relative_path),
       size_bytes: data.size_bytes,
       storage_key: data.storage_key,
       mime_type: data.mime_type,
@@ -596,7 +893,7 @@ export class JobService {
       id: artifactId,
       run_id: data.run_id,
       filename: data.filename,
-      relative_path: data.relative_path,
+      relative_path: normalizePath(data.relative_path),
       size_bytes: data.size_bytes,
       storage_key: data.storage_key,
       mime_type: data.mime_type,
@@ -607,8 +904,9 @@ export class JobService {
     const run = await RunModel.findById(runId);
     if (!run) return null;
 
-    const [logs, artifacts, worker] = await Promise.all([
+    const [logs, events, artifacts, worker] = await Promise.all([
       LogModel.listByRunId(runId),
+      RunEventModel.listByRunId(runId),
       RunArtifactModel.listByRunId(runId),
       run.worker_id ? WorkerModel.findById(run.worker_id) : Promise.resolve(null),
     ]);
@@ -618,11 +916,26 @@ export class JobService {
       worker_id: run.worker_id ?? worker?.id ?? null,
       worker_name: run.worker_name ?? worker?.name ?? null,
       logs,
-      artifacts: artifacts.map((artifact) => ({
-        ...artifact,
-        download_path: `/artifacts/download?key=${encodeURIComponent(artifact.storage_key)}`,
-      })),
+      events,
+      artifacts: artifacts.map((artifact) => {
+        const storageKey = asString(
+          (artifact as { storage_key?: unknown }).storage_key,
+          '',
+        );
+
+        return {
+          ...artifact,
+          download_path: `/artifacts/download?key=${encodeURIComponent(storageKey)}`,
+          content_path: `/artifacts/content?key=${encodeURIComponent(storageKey)}`,
+        };
+      }),
     };
+  }
+
+  static async listRunEvents(runId: string) {
+    const run = await RunModel.findById(runId);
+    if (!run) throw new Error('Run not found');
+    return RunEventModel.listByRunId(runId);
   }
 
   static async listWorkers() {
@@ -636,7 +949,22 @@ export class JobService {
     return normalizeWorkerStatus(worker);
   }
 
-  static async getJob(jobId: string) {
-    return JobModel.findById(jobId);
+  static async listBootstrapImages(options?: {
+    status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed';
+  }) {
+    return BootstrapImageModel.list(options);
+  }
+
+  static async getBootstrapImage(imageId: string) {
+    return BootstrapImageModel.findById(imageId);
+  }
+
+  static async listBootstrapImageLogs(imageId: string) {
+    const image = await BootstrapImageModel.findById(imageId);
+    if (!image) {
+      throw new Error('Bootstrap image not found');
+    }
+
+    return BootstrapImageLogModel.listByImageId(imageId);
   }
 }

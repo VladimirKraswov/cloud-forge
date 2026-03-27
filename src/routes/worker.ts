@@ -1,7 +1,9 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ArtifactService } from '../services/artifact.service';
 import { JobService } from '../services/job.service';
 import { LogLevel, RunStatus } from '../models/job';
-import { broadcastRunLog, broadcastRunStatus } from './ws';
+import { broadcastRunLog, broadcastRunProgress, broadcastRunStatus } from './ws';
+import { config } from '../utils/config';
 
 const parseMetrics = (metrics: unknown): unknown => {
   if (typeof metrics !== 'string') return metrics;
@@ -23,24 +25,13 @@ type WorkerPayload = {
 export default async function workerRoutes(app: FastifyInstance) {
   app.get(
     '/api/run-config',
-    {
-      schema: {
-        description: 'Claim share token and create run config for worker',
-        querystring: {
-          type: 'object',
-          required: ['token'],
-          properties: {
-            token: { type: 'string' },
-          },
-        },
-      },
-    },
     async (
       req: FastifyRequest<{ Querystring: { token: string } }>,
       reply: FastifyReply,
     ) => {
       try {
-        const result = await JobService.claimRunByToken(req.query.token);
+        const baseUrl = config.publicBaseUrl || `${req.protocol}://${req.headers.host}`;
+        const result = await JobService.claimRunByToken(req.query.token, baseUrl);
         return reply.send(result);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to claim run';
@@ -50,24 +41,46 @@ export default async function workerRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/api/runs/:id/job-files/content',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const file = await JobService.getRunJobFile(req.params.id, req.query.relativePath);
+
+        if (file.source_type === 'inline') {
+          reply.type(file.mime_type || 'text/plain; charset=utf-8');
+          return reply.send(file.inline_content || '');
+        }
+
+        if (!file.storage_key) {
+          return reply.code(404).send({ error: 'File storage key not found' });
+        }
+
+        const objectResponse = await ArtifactService.getObject(file.storage_key);
+
+        if (objectResponse.ContentType) {
+          reply.type(objectResponse.ContentType);
+        } else {
+          reply.type(file.mime_type || 'application/octet-stream');
+        }
+
+        return reply.send(objectResponse.Body as any);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to read run job file';
+        req.log.error({ err }, '[GET /api/runs/:id/job-files/content] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
   app.post(
     '/api/runs/start',
-    {
-      schema: {
-        description: 'Mark run as started by worker',
-        body: {
-          type: 'object',
-          required: ['run_id', 'worker_id', 'worker_name'],
-          properties: {
-            run_id: { type: 'string' },
-            worker_id: { type: 'string' },
-            worker_name: { type: 'string' },
-            worker_host: { type: 'string' },
-            capabilities: { type: 'object', additionalProperties: true },
-          },
-        },
-      },
-    },
     async (
       req: FastifyRequest<{
         Body: { run_id: string } & WorkerPayload;
@@ -94,22 +107,6 @@ export default async function workerRoutes(app: FastifyInstance) {
 
   app.post(
     '/api/runs/heartbeat',
-    {
-      schema: {
-        description: 'Heartbeat from worker while run is executing',
-        body: {
-          type: 'object',
-          required: ['run_id', 'worker_id', 'worker_name'],
-          properties: {
-            run_id: { type: 'string' },
-            worker_id: { type: 'string' },
-            worker_name: { type: 'string' },
-            worker_host: { type: 'string' },
-            capabilities: { type: 'object', additionalProperties: true },
-          },
-        },
-      },
-    },
     async (
       req: FastifyRequest<{
         Body: { run_id: string } & WorkerPayload;
@@ -139,20 +136,6 @@ export default async function workerRoutes(app: FastifyInstance) {
 
   app.post(
     '/api/runs/logs',
-    {
-      schema: {
-        description: 'Submit run logs',
-        body: {
-          type: 'object',
-          required: ['run_id', 'message'],
-          properties: {
-            run_id: { type: 'string' },
-            message: { type: 'string' },
-            level: { type: 'string', enum: ['info', 'warn', 'error'] },
-          },
-        },
-      },
-    },
     async (
       req: FastifyRequest<{
         Body: { run_id: string; message: string; level?: LogLevel };
@@ -173,25 +156,46 @@ export default async function workerRoutes(app: FastifyInstance) {
   );
 
   app.post(
-    '/api/runs/:id/cancel',
-    {
-      schema: {
-        description: 'Request run cancellation',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' },
-          },
-        },
-        body: {
-          type: 'object',
-          properties: {
-            reason: { type: 'string' },
-          },
-        },
-      },
+    '/api/runs/progress',
+    async (
+      req: FastifyRequest<{
+        Body: {
+          run_id: string;
+          stage?: string;
+          progress?: number;
+          message?: string;
+          extra?: Record<string, unknown>;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.addRunProgress({
+          run_id: req.body.run_id,
+          stage: req.body.stage ?? null,
+          progress: req.body.progress ?? null,
+          message: req.body.message ?? null,
+          extra: req.body.extra ?? null,
+        });
+
+        broadcastRunProgress(req.body.run_id, {
+          stage: req.body.stage ?? null,
+          progress: req.body.progress ?? null,
+          message: req.body.message ?? null,
+          extra: req.body.extra ?? null,
+        });
+
+        return reply.send({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to submit progress';
+        req.log.error({ err }, '[POST /api/runs/progress] failed');
+        return reply.code(404).send({ error: message });
+      }
     },
+  );
+
+  app.post(
+    '/api/runs/:id/cancel',
     async (
       req: FastifyRequest<{
         Params: { id: string };
@@ -217,29 +221,6 @@ export default async function workerRoutes(app: FastifyInstance) {
 
   app.post(
     '/api/runs/finish',
-    {
-      schema: {
-        description: 'Finish run',
-        body: {
-          type: 'object',
-          required: ['run_id', 'status'],
-          properties: {
-            run_id: { type: 'string' },
-            status: {
-              type: 'string',
-              enum: ['finished', 'failed', 'cancelled', 'lost'],
-            },
-            result: { type: 'string' },
-            metrics: {
-              anyOf: [
-                { type: 'string' },
-                { type: 'object', additionalProperties: true },
-              ],
-            },
-          },
-        },
-      },
-    },
     async (
       req: FastifyRequest<{
         Body: {
@@ -270,19 +251,24 @@ export default async function workerRoutes(app: FastifyInstance) {
   );
 
   app.get(
-    '/api/runs/:id',
-    {
-      schema: {
-        description: 'Get run details with logs, worker and artifacts',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' },
-          },
-        },
-      },
+    '/api/runs/:id/events',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const events = await JobService.listRunEvents(req.params.id);
+        return reply.send({
+          items: events,
+          total: events.length,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to list run events';
+        req.log.error({ err }, '[GET /api/runs/:id/events] failed');
+        return reply.code(404).send({ error: message });
+      }
     },
+  );
+
+  app.get(
+    '/api/runs/:id',
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const result = await JobService.getRun(req.params.id);
 

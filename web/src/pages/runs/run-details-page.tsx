@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Download, FileText, Terminal } from 'lucide-react';
+import { ArrowLeft, Ban, Download, FileText, Terminal, Workflow } from 'lucide-react';
 import { toast } from 'sonner';
-import { buildArtifactDownloadUrl } from '@/api/client';
+import { apiBaseUrl, buildArtifactContentUrl } from '@/api/client';
 import { runsApi } from '@/api/runs';
-import type { LogEntry } from '@/api/types';
+import type { LogEntry, RunEvent } from '@/api/types';
 import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
 import { useRunWebsocket } from '@/features/runs/use-run-websocket';
 import { EmptyState } from '@/shared/components/app/empty-state';
@@ -16,10 +16,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui
 import { getApiErrorMessage } from '@/shared/lib/api-error';
 import { formatDateTime, formatFileSize, formatRelative } from '@/shared/utils/format';
 
+function buildArtifactHref(relativeOrAbsolute?: string, storageKey?: string) {
+  if (relativeOrAbsolute?.startsWith('http')) return relativeOrAbsolute;
+  if (relativeOrAbsolute?.startsWith('/')) return `${apiBaseUrl}${relativeOrAbsolute}`;
+  return storageKey ? buildArtifactContentUrl(storageKey) : '#';
+}
+
+function EventBadge({ event }: { event: RunEvent }) {
+  const className =
+    event.type === 'progress'
+      ? 'bg-blue-50 text-blue-700'
+      : event.type === 'log'
+        ? 'bg-slate-100 text-slate-700'
+        : 'bg-emerald-50 text-emerald-700';
+
+  return (
+    <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${className}`}>
+      {event.type}
+    </span>
+  );
+}
+
 export function RunDetailsPage() {
   const { runId } = useParams({ from: '/runs/$runId' });
   const queryClient = useQueryClient();
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
+  const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
+  const [liveProgress, setLiveProgress] = useState<{
+    stage?: string | null;
+    progress?: number | null;
+    message?: string | null;
+  }>({});
 
   const runQuery = useQuery({
     queryKey: ['run', runId],
@@ -51,16 +78,50 @@ export function RunDetailsPage() {
     queryClient.invalidateQueries({ queryKey: ['run', runId] });
   }, [queryClient, runId]);
 
+  const handleProgress = useCallback(
+    (payload: {
+      stage?: string | null;
+      progress?: number | null;
+      message?: string | null;
+      extra?: Record<string, unknown> | null;
+      timestamp?: string;
+    }) => {
+      setLiveProgress({
+        stage: payload.stage ?? null,
+        progress: payload.progress ?? null,
+        message: payload.message ?? null,
+      });
+
+      setLiveEvents((current) => [
+        ...current,
+        {
+          id: `live_${Date.now()}_${current.length}`,
+          run_id: runId,
+          type: 'progress',
+          stage: payload.stage ?? null,
+          progress: payload.progress ?? null,
+          message: payload.message ?? null,
+          payload: payload.extra ?? null,
+          created_at: payload.timestamp || new Date().toISOString(),
+        },
+      ]);
+    },
+    [runId],
+  );
+
   useRunWebsocket({
     runId,
     enabled: run?.status === 'created' || run?.status === 'running',
     onLog: handleLog,
     onStatus: handleStatus,
+    onProgress: handleProgress,
   });
 
   useEffect(() => {
     if (!run?.updated_at) return;
     setLiveLogs([]);
+    setLiveEvents([]);
+    setLiveProgress({});
   }, [run?.updated_at]);
 
   const mergedLogs = useMemo(() => {
@@ -69,12 +130,27 @@ export function RunDetailsPage() {
     return [...initialLogs, ...liveLogs];
   }, [liveLogs, run?.logs]);
 
+  const mergedEvents = useMemo(() => {
+    const initialEvents = run?.events || [];
+    if (!liveEvents.length) return initialEvents;
+    return [...initialEvents, ...liveEvents];
+  }, [liveEvents, run?.events]);
+
+  const currentStage = liveProgress.stage ?? run?.stage ?? 'idle';
+  const currentProgress =
+    typeof liveProgress.progress === 'number'
+      ? liveProgress.progress
+      : typeof run?.progress === 'number'
+        ? run.progress
+        : null;
+  const currentMessage = liveProgress.message ?? run?.status_message ?? null;
+
   if (runQuery.isLoading) {
     return (
       <EmptyState
         icon={FileText}
         title="Loading run"
-        description="Fetching run details, logs, and artifacts from the backend."
+        description="Fetching run details, logs, events and artifacts from the backend."
       />
     );
   }
@@ -103,6 +179,7 @@ export function RunDetailsPage() {
                 Job runs
               </Link>
             </Button>
+
             {run.status === 'created' || run.status === 'running' ? (
               <Button
                 variant="destructive"
@@ -122,13 +199,46 @@ export function RunDetailsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Execution summary</CardTitle>
-              <CardDescription>Realtime status, worker, and lifecycle timestamps.</CardDescription>
+              <CardDescription>Realtime status, stage, worker and lifecycle timestamps.</CardDescription>
             </CardHeader>
+
             <CardContent className="space-y-4 text-sm">
               <div className="flex items-center gap-3">
                 <RunStatusBadge status={run.status} />
                 <span className="text-muted-foreground">Last update {formatRelative(run.updated_at)}</span>
               </div>
+
+              <div className="rounded-2xl border border-border bg-muted/50 p-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Stage
+                    </div>
+                    <div className="mt-1 font-medium">{currentStage || 'idle'}</div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Progress
+                    </div>
+                    <div className="mt-1 font-medium">
+                      {typeof currentProgress === 'number' ? `${currentProgress}%` : '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-2 overflow-hidden rounded-full bg-background">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${typeof currentProgress === 'number' ? currentProgress : 0}%` }}
+                  />
+                </div>
+
+                {currentMessage ? (
+                  <div className="mt-3 text-xs text-muted-foreground">{currentMessage}</div>
+                ) : null}
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">Created</div>
@@ -147,6 +257,7 @@ export function RunDetailsPage() {
                   <div className="mt-1">{run.worker_name || run.worker_id || '—'}</div>
                 </div>
               </div>
+
               {run.cancel_requested_at ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   Cancel requested {formatRelative(run.cancel_requested_at)}
@@ -161,6 +272,7 @@ export function RunDetailsPage() {
               <CardTitle>Artifacts</CardTitle>
               <CardDescription>Files produced by the run and registered in the backend.</CardDescription>
             </CardHeader>
+
             <CardContent className="space-y-3">
               {run.artifacts?.length ? (
                 run.artifacts.map((artifact) => (
@@ -174,9 +286,13 @@ export function RunDetailsPage() {
                         {artifact.relative_path} · {formatFileSize(artifact.size_bytes)}
                       </p>
                     </div>
+
                     <Button variant="outline" asChild>
                       <a
-                        href={buildArtifactDownloadUrl(artifact.storage_key)}
+                        href={buildArtifactHref(
+                          artifact.content_path || artifact.download_path,
+                          artifact.storage_key,
+                        )}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -197,15 +313,19 @@ export function RunDetailsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Logs & metrics</CardTitle>
-            <CardDescription>Live logs stream via WebSocket and static run metrics snapshot.</CardDescription>
+            <CardTitle>Logs, events & manifest</CardTitle>
+            <CardDescription>Live logs stream via WebSocket, structured run events and the immutable run manifest.</CardDescription>
           </CardHeader>
+
           <CardContent>
             <Tabs defaultValue="logs">
               <TabsList>
                 <TabsTrigger value="logs">Logs</TabsTrigger>
+                <TabsTrigger value="events">Events</TabsTrigger>
+                <TabsTrigger value="manifest">Manifest</TabsTrigger>
                 <TabsTrigger value="metrics">Metrics</TabsTrigger>
               </TabsList>
+
               <TabsContent value="logs">
                 <div className="mt-4 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
                   <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
@@ -217,6 +337,7 @@ export function RunDetailsPage() {
                       {run.status === 'running' || run.status === 'created' ? 'streaming' : 'static'}
                     </span>
                   </div>
+
                   <div className="custom-scrollbar h-[520px] overflow-y-auto p-4 font-mono text-sm text-slate-200">
                     {mergedLogs.length ? (
                       mergedLogs.map((entry, index) => (
@@ -233,8 +354,55 @@ export function RunDetailsPage() {
                   </div>
                 </div>
               </TabsContent>
+
+              <TabsContent value="events">
+                <div className="mt-4 max-h-[520px] space-y-3 overflow-y-auto">
+                  {mergedEvents.length ? (
+                    mergedEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="rounded-2xl border border-border bg-card px-4 py-3"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Workflow className="h-4 w-4 text-primary" />
+                            <span className="font-medium">{event.message || 'Run event'}</span>
+                          </div>
+                          <EventBadge event={event} />
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          {event.stage || 'no-stage'}
+                          {typeof event.progress === 'number' ? ` · ${event.progress}%` : ''}
+                          {' · '}
+                          {formatRelative(event.created_at)}
+                        </div>
+
+                        {event.payload ? (
+                          <pre className="custom-scrollbar mt-3 overflow-x-auto rounded-2xl bg-muted p-3 text-xs">
+                            {JSON.stringify(event.payload, null, 2)}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+                      No structured events recorded for this run yet.
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="manifest">
+                <div className="mt-4 rounded-3xl border border-border bg-muted/50 p-4">
+                  <pre className="custom-scrollbar overflow-x-auto whitespace-pre-wrap break-words text-sm">
+                    {JSON.stringify(run.run_manifest, null, 2)}
+                  </pre>
+                </div>
+              </TabsContent>
+
               <TabsContent value="metrics">
-                <div className="rounded-3xl border border-border bg-muted/50 p-4">
+                <div className="mt-4 rounded-3xl border border-border bg-muted/50 p-4">
                   <pre className="custom-scrollbar overflow-x-auto whitespace-pre-wrap break-words text-sm">
                     {JSON.stringify(run.metrics || {}, null, 2)}
                   </pre>

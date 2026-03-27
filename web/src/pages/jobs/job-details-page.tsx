@@ -1,34 +1,50 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, FolderOpen, History, KeyRound, Pencil } from 'lucide-react';
-import { cn } from '@/shared/utils/cn';
+import { ArrowLeft, FileCode2, FolderOpen, History, KeyRound, Pencil } from 'lucide-react';
 import { jobsApi } from '@/api/jobs';
 import { CodeBlock } from '@/shared/components/app/code-block';
 import { EmptyState } from '@/shared/components/app/empty-state';
 import { PageHeader } from '@/shared/components/app/page-header';
-import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Skeleton } from '@/shared/components/ui/skeleton';
-import { formatDateTime, formatFileSize, formatRelative } from '@/shared/utils/format';
+import { formatDateTime, formatRelative } from '@/shared/utils/format';
+
+const TEXT_EXTENSIONS = ['py', 'js', 'ts', 'tsx', 'json', 'yaml', 'yml', 'sh', 'md', 'txt'];
+
+function isPreviewable(path: string, mimeType: string) {
+  if (mimeType.startsWith('text/')) return true;
+  if (mimeType === 'application/json') return true;
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ext ? TEXT_EXTENSIONS.includes(ext) : false;
+}
 
 export function JobDetailsPage() {
   const { jobId } = useParams({ from: '/jobs/$jobId' });
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const jobQuery = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => jobsApi.get(jobId),
   });
 
-  const runsQuery = useQuery({
-    queryKey: ['job', jobId, 'runs'],
-    queryFn: () => jobsApi.listRuns(jobId, { limit: 10, offset: 0 }),
+  const selectedFile = useMemo(() => {
+    const files = jobQuery.data?.files || [];
+    return files.find((file) => file.relative_path === selectedPath) || files[0] || null;
+  }, [jobQuery.data?.files, selectedPath]);
+
+  const fileContentQuery = useQuery({
+    queryKey: ['job', jobId, 'file-content', selectedFile?.relative_path],
+    queryFn: () => jobsApi.getFileContent(jobId, selectedFile!.relative_path),
+    enabled: Boolean(selectedFile && isPreviewable(selectedFile.relative_path, selectedFile.mime_type)),
   });
 
-  const tokensQuery = useQuery({
-    queryKey: ['job', jobId, 'tokens'],
-    queryFn: () => jobsApi.listShareTokens(jobId),
-  });
+  useEffect(() => {
+    if (!selectedPath && jobQuery.data?.files?.[0]?.relative_path) {
+      setSelectedPath(jobQuery.data.files[0].relative_path);
+    }
+  }, [jobQuery.data?.files, selectedPath]);
 
   if (jobQuery.isLoading) {
     return (
@@ -36,22 +52,20 @@ export function JobDetailsPage() {
         <Skeleton className="h-24" />
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-6">
-            <Skeleton className="h-96" />
-            <Skeleton className="h-48" />
+            <Skeleton className="h-72" />
+            <Skeleton className="h-72" />
           </div>
           <div className="space-y-6">
-            <Skeleton className="h-80" />
-            <Skeleton className="h-56" />
-            <Skeleton className="h-56" />
+            <Skeleton className="h-[620px]" />
           </div>
         </div>
       </div>
     );
   }
 
-  const job = jobQuery.data;
+  const response = jobQuery.data;
 
-  if (!job) {
+  if (!response) {
     return (
       <EmptyState
         icon={FolderOpen}
@@ -66,11 +80,8 @@ export function JobDetailsPage() {
     );
   }
 
-  const environments = job.environments ?? {};
-  const containers = job.containers ?? [];
-  const attachedFiles = job.attached_files ?? [];
-  const recentRuns = runsQuery.data ?? [];
-  const tokens = tokensQuery.data ?? [];
+  const { job, bootstrap_image: bootstrapImage, files, share_tokens: shareTokens, stats } =
+    response;
 
   return (
     <div className="space-y-6">
@@ -115,9 +126,9 @@ export function JobDetailsPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Configuration</CardTitle>
+              <CardTitle>Runtime configuration</CardTitle>
               <CardDescription>
-                Top-level job metadata and runtime configuration.
+                Bootstrap image, entrypoint and remote execution settings.
               </CardDescription>
             </CardHeader>
 
@@ -125,16 +136,25 @@ export function JobDetailsPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Language
+                    Entrypoint
                   </div>
-                  <div className="mt-1 font-medium">{job.execution_language}</div>
+                  <div className="mt-1 font-medium">{job.entrypoint}</div>
                 </div>
 
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Entrypoint
+                    Working directory
                   </div>
-                  <div className="mt-1 font-medium">{job.entrypoint || '—'}</div>
+                  <div className="mt-1 font-medium">{job.working_dir || '/workspace'}</div>
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Entry arguments
+                  </div>
+                  <div className="mt-1 font-medium">
+                    {job.entrypoint_args.length ? job.entrypoint_args.join(' ') : '—'}
+                  </div>
                 </div>
 
                 <div>
@@ -143,23 +163,41 @@ export function JobDetailsPage() {
                   </div>
                   <div className="mt-1 font-medium">{formatDateTime(job.created_at)}</div>
                 </div>
-
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Updated
-                  </div>
-                  <div className="mt-1 font-medium">{formatRelative(job.updated_at)}</div>
-                </div>
               </div>
+
+              {bootstrapImage ? (
+                <div className="rounded-2xl border border-border bg-muted/50 p-4">
+                  <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    Bootstrap image
+                  </div>
+                  <div className="font-medium">{bootstrapImage.name}</div>
+                  <div className="text-xs text-muted-foreground">{bootstrapImage.full_image_name}</div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Base image
+                      </div>
+                      <div className="mt-1">{bootstrapImage.base_image}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Environments
+                      </div>
+                      <div className="mt-1">{bootstrapImage.environments.length}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Environment
+                  Environment variables
                 </div>
 
                 <div className="mt-2 grid gap-2">
-                  {Object.entries(environments).length ? (
-                    Object.entries(environments).map(([key, value]) => (
+                  {Object.entries(job.environment_variables || {}).length ? (
+                    Object.entries(job.environment_variables).map(([key, value]) => (
                       <div
                         key={key}
                         className="flex items-center justify-between rounded-2xl bg-muted/70 px-3 py-2 font-mono text-xs"
@@ -169,59 +207,31 @@ export function JobDetailsPage() {
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-muted-foreground">
-                      No environment variables.
-                    </div>
+                    <div className="text-sm text-muted-foreground">No environment variables.</div>
                   )}
                 </div>
               </div>
 
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Containers
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Total runs
+                  </div>
+                  <div className="mt-1 font-medium">{stats.total_runs}</div>
                 </div>
 
-                <div className="mt-2 space-y-2">
-                  {containers.length ? (
-                    containers.map((container) => {
-                      const isLargeImage = container.image?.includes('cloud-forge-worker-qwen-7b');
-                      return (
-                        <div
-                          key={`${container.name}-${container.image}`}
-                          className={cn(
-                            'rounded-2xl border border-border px-3 py-3',
-                            container.is_parent && 'border-primary/50 bg-primary/5'
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-medium flex items-center gap-2">
-                                {container.name}
-                                {container.is_parent && (
-                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                                    Bootstrap
-                                  </span>
-                                )}
-                              </div>
-                              <div className="truncate text-xs text-muted-foreground">
-                                {container.image}
-                              </div>
-                            </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Active runs
+                  </div>
+                  <div className="mt-1 font-medium">{stats.active_runs}</div>
+                </div>
 
-                            {isLargeImage && (
-                              <div className="rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 border border-amber-100 shrink-0">
-                                50GB+ MODEL
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-sm text-muted-foreground">
-                      No extra containers configured.
-                    </div>
-                  )}
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Share tokens
+                  </div>
+                  <div className="mt-1 font-medium">{shareTokens.length}</div>
                 </div>
               </div>
             </CardContent>
@@ -229,94 +239,69 @@ export function JobDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Attached files</CardTitle>
+              <CardTitle>Workspace files</CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-2">
-              {attachedFiles.length ? (
-                attachedFiles.map((file) => (
-                  <div
+              {files.length ? (
+                files.map((file) => (
+                  <button
                     key={file.id}
-                    className="flex items-center justify-between rounded-2xl border border-border px-3 py-3"
+                    type="button"
+                    onClick={() => setSelectedPath(file.relative_path)}
+                    className={`flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-left transition ${
+                      selectedFile?.id === file.id
+                        ? 'border-primary/40 bg-primary/5'
+                        : 'border-border hover:bg-accent'
+                    }`}
                   >
-                    <div>
-                      <div className="font-medium">{file.filename}</div>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{file.relative_path}</div>
                       <div className="text-xs text-muted-foreground">
-                        {formatFileSize(file.size_bytes)}
+                        {file.source_type} · {file.mime_type}
                       </div>
                     </div>
-                  </div>
+
+                    <div className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+                      {file.is_executable ? 'exec' : 'file'}
+                    </div>
+                  </button>
                 ))
               ) : (
-                <div className="text-sm text-muted-foreground">No files attached.</div>
+                <div className="text-sm text-muted-foreground">No workspace files yet.</div>
               )}
             </CardContent>
           </Card>
         </div>
 
         <div className="space-y-6">
-          <CodeBlock code={job.execution_code || ''} language={job.execution_language} />
+          {selectedFile ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <FileCode2 className="h-4 w-4 text-primary" />
+                {selectedFile.relative_path}
+              </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent runs</CardTitle>
-            </CardHeader>
-
-            <CardContent className="space-y-3">
-              {recentRuns.length ? (
-                recentRuns.slice(0, 5).map((run) => (
-                  <Link
-                    key={run.id}
-                    to="/runs/$runId"
-                    params={{ runId: run.id }}
-                    className="flex items-center justify-between rounded-2xl border border-border px-4 py-3 transition hover:bg-accent"
-                  >
-                    <div>
-                      <p className="font-medium">{run.id}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatRelative(run.created_at)}
-                      </p>
-                    </div>
-                    <RunStatusBadge status={run.status} />
-                  </Link>
-                ))
+              {isPreviewable(selectedFile.relative_path, selectedFile.mime_type) ? (
+                <CodeBlock
+                  code={fileContentQuery.data || selectedFile.inline_content || ''}
+                  language={selectedFile.relative_path.split('.').pop() || 'text'}
+                />
               ) : (
-                <div className="text-sm text-muted-foreground">No runs recorded.</div>
+                <Card>
+                  <CardContent className="p-6 text-sm text-muted-foreground">
+                    This file is not previewable as text in the UI. It will still be downloaded by the remote worker at runtime.
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Share tokens</CardTitle>
-            </CardHeader>
-
-            <CardContent className="space-y-3">
-              {tokens.length ? (
-                tokens.slice(0, 5).map((token) => (
-                  <div
-                    key={token.id}
-                    className="flex items-center justify-between rounded-2xl border border-border px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-medium">{token.id}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {token.revoked ? 'Revoked' : `${token.claim_count} claim(s)`}
-                      </p>
-                    </div>
-
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to="/jobs/$jobId/tokens" params={{ jobId }}>
-                        Manage
-                      </Link>
-                    </Button>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-muted-foreground">No share tokens yet.</div>
-              )}
-            </CardContent>
-          </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-6 text-sm text-muted-foreground">
+                No files registered for this job.
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -11,18 +11,6 @@ const getBaseUrl = (req: FastifyRequest): string => {
 export default async function tokensRoutes(app: FastifyInstance) {
   app.get(
     '/share-tokens/:id',
-    {
-      schema: {
-        description: 'Get share token details',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' },
-          },
-        },
-      },
-    },
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const token = await JobService.getShareToken(req.params.id, getBaseUrl(req));
 
@@ -36,18 +24,6 @@ export default async function tokensRoutes(app: FastifyInstance) {
 
   app.post(
     '/share-tokens/:id/revoke',
-    {
-      schema: {
-        description: 'Revoke a share token',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' },
-          },
-        },
-      },
-    },
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
         await JobService.revokeShareToken(req.params.id);

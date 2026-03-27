@@ -68,7 +68,7 @@ export function JobsListPage() {
       <PageHeader
         eyebrow="Jobs"
         title="Jobs"
-        description="Search, filter, paginate, clone, and delete jobs from a single control surface."
+        description="Search, filter, paginate, clone, and delete bootstrap-image jobs from a single control surface."
         actions={
           <Button asChild>
             <Link to="/jobs/create">
@@ -94,6 +94,7 @@ export function JobsListPage() {
                 className="pl-10"
               />
             </div>
+
             <div className="w-full lg:w-56">
               <Select
                 value={status}
@@ -130,12 +131,15 @@ export function JobsListPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Job</TableHead>
+                    <TableHead>Bootstrap image</TableHead>
+                    <TableHead>Entrypoint</TableHead>
                     <TableHead>Latest run</TableHead>
                     <TableHead>Runs</TableHead>
                     <TableHead>Updated</TableHead>
                     <TableHead className="w-16" />
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {rows.map((job) => (
                     <TableRow key={job.id}>
@@ -153,6 +157,15 @@ export function JobsListPage() {
                           </p>
                         </div>
                       </TableCell>
+
+                      <TableCell className="text-sm text-muted-foreground">
+                        {job.bootstrap_image_name || '—'}
+                      </TableCell>
+
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {job.entrypoint}
+                      </TableCell>
+
                       <TableCell>
                         {job.latest_run_status ? (
                           <div className="space-y-1">
@@ -165,6 +178,7 @@ export function JobsListPage() {
                           <span className="text-sm text-muted-foreground">No runs yet</span>
                         )}
                       </TableCell>
+
                       <TableCell>
                         <div className="text-sm font-medium">
                           {job.runs_count ?? 0}
@@ -175,9 +189,11 @@ export function JobsListPage() {
                           ) : null}
                         </div>
                       </TableCell>
+
                       <TableCell className="text-sm text-muted-foreground">
                         {formatRelative(job.updated_at)}
                       </TableCell>
+
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -185,6 +201,7 @@ export function JobsListPage() {
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
+
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem asChild>
                               <Link to="/jobs/$jobId/edit" params={{ jobId: job.id }}>
@@ -192,10 +209,12 @@ export function JobsListPage() {
                                 Edit
                               </Link>
                             </DropdownMenuItem>
+
                             <DropdownMenuItem onClick={() => cloneMutation.mutate(job.id)}>
                               <Copy className="mr-2 h-4 w-4" />
                               Clone
                             </DropdownMenuItem>
+
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <DropdownMenuItem
@@ -206,13 +225,15 @@ export function JobsListPage() {
                                   Delete
                                 </DropdownMenuItem>
                               </AlertDialogTrigger>
+
                               <AlertDialogContent>
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Delete job?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    This removes the job, its runs, logs, artifacts, and share tokens.
+                                    This removes the job, its files, runs, logs, artifacts, and share tokens.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
+
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction onClick={() => deleteMutation.mutate(job.id)}>
@@ -228,6 +249,7 @@ export function JobsListPage() {
                   ))}
                 </TableBody>
               </Table>
+
               <PaginationControls
                 page={page}
                 pageSize={pageSize}

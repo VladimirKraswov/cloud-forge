@@ -21,6 +21,7 @@ services:
       - minio
     volumes:
       - sqlite-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   redis:

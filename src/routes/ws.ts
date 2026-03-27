@@ -40,6 +40,24 @@ export const broadcastRunLog = (runId: string, message: string, level: LogLevel 
   });
 };
 
+export const broadcastRunProgress = (
+  runId: string,
+  data: {
+    stage?: string | null;
+    progress?: number | null;
+    message?: string | null;
+    extra?: Record<string, unknown> | null;
+  },
+) => {
+  sendToRunClients(runId, {
+    type: 'run_progress',
+    stage: data.stage ?? null,
+    progress: data.progress ?? null,
+    message: data.message ?? null,
+    extra: data.extra ?? null,
+  });
+};
+
 export default async function wsRoutes(app: FastifyInstance) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   app.get('/ws/runs/:run_id', { websocket: true } as any, (connection: any, req: any) => {

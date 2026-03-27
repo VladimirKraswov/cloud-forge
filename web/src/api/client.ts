@@ -34,7 +34,9 @@ api.interceptors.response.use(
   (error: AxiosError<ErrorPayload>) => {
     const payload = error.response?.data;
     const message =
-      (Array.isArray(payload?.errors) && payload.errors.length ? payload.errors.join('\n') : undefined) ||
+      (Array.isArray(payload?.errors) && payload.errors.length
+        ? payload.errors.join('\n')
+        : undefined) ||
       payload?.error ||
       payload?.message ||
       error.message ||
@@ -50,6 +52,17 @@ export function unwrap<T>(promise: Promise<{ data: T }>): Promise<T> {
 
 export function buildArtifactDownloadUrl(storageKey: string) {
   return `${apiBaseUrl}/artifacts/download?key=${encodeURIComponent(storageKey)}`;
+}
+
+export function buildArtifactContentUrl(storageKey: string) {
+  return `${apiBaseUrl}/artifacts/content?key=${encodeURIComponent(storageKey)}`;
+}
+
+export function buildJobFileContentUrl(jobId: string, relativePath: string) {
+  return (
+    `${apiBaseUrl}/jobs/${jobId}/files/content?relativePath=` +
+    encodeURIComponent(relativePath)
+  );
 }
 
 export function buildRunWebSocketUrl(runId: string) {

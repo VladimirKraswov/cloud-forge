@@ -67,10 +67,12 @@ export class ArtifactService {
     file: Buffer,
     filename: string,
     jobId: string,
+    relativePath: string,
     mimeType = 'application/octet-stream',
   ): Promise<{
     id: string;
     filename: string;
+    relative_path: string;
     size_bytes: number;
     storage_key: string;
   }> {
@@ -78,7 +80,8 @@ export class ArtifactService {
 
     const fileId = uuidv4();
     const safeFilename = sanitizeFilename(filename);
-    const storageKey = `jobs/${jobId}/files/${fileId}-${safeFilename}`;
+    const normalizedRelativePath = normalizeRelativePath(relativePath || safeFilename) || safeFilename;
+    const storageKey = `jobs/${jobId}/files/${fileId}/${normalizedRelativePath}`;
 
     await s3Client.send(
       new PutObjectCommand({
@@ -92,6 +95,7 @@ export class ArtifactService {
     return {
       id: fileId,
       filename: safeFilename,
+      relative_path: normalizedRelativePath,
       size_bytes: file.length,
       storage_key: storageKey,
     };
@@ -144,5 +148,29 @@ export class ArtifactService {
     });
 
     return getSignedUrl(s3Client, command, { expiresIn });
+  }
+
+  static async getObject(storageKey: string) {
+    await ArtifactService.ensureBucket();
+
+    const response = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+      }),
+    );
+
+    return response;
+  }
+
+  static async readTextObject(storageKey: string): Promise<string> {
+    const response = await ArtifactService.getObject(storageKey);
+    const body = response.Body;
+
+    if (!body || typeof (body as any).transformToString !== 'function') {
+      throw new Error('Unable to read object body as text');
+    }
+
+    return (body as any).transformToString();
   }
 }

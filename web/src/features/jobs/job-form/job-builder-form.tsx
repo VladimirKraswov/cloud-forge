@@ -1,26 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useEffect, useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Link } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { ContainerPreset, Job, JobTemplate } from '@/api/types';
-import { artifactsApi } from '@/api/artifacts';
+import { catalogApi } from '@/api/catalog';
 import { jobsApi } from '@/api/jobs';
-import { Button } from '@/shared/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
-import { Input } from '@/shared/components/ui/input';
-import { Label } from '@/shared/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
-import { Textarea } from '@/shared/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/components/ui/select';
-import { AttachedFilesField } from '@/features/jobs/job-form/attached-files-field';
-import { ContainersFieldArray } from '@/features/jobs/job-form/containers-field-array';
+import type { Job, JobDetailsResponse, JobFile } from '@/api/types';
+import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
 import { EnvironmentsFieldArray } from '@/features/jobs/job-form/environments-field-array';
+import {
+  EditableJobFile,
+  JobFilesEditor,
+  isTextEditableFile,
+} from '@/features/jobs/job-form/job-files-editor';
 import {
   jobFormSchema,
   type JobFormValues,
@@ -29,39 +22,115 @@ import {
   mapFormValuesToPayload,
   mapJobToFormValues,
 } from '@/features/jobs/job-form/job-form-mappers';
-import {
-  normalizeFormContainers as globalNormalizeFormContainers,
-  normalizePayloadContainers as globalNormalizePayloadContainers,
-} from '@/features/jobs/job-form/job-form-helpers';
-import { TemplatePickerDialog } from '@/features/jobs/job-form/template-picker-dialog';
-import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
-import { CodeBlock } from '@/shared/components/app/code-block';
 import { getApiErrorMessage } from '@/shared/lib/api-error';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+import { Textarea } from '@/shared/components/ui/textarea';
 
-type FormContainer = JobFormValues['containers'][number];
+function makeLocalId() {
+  return `local_${Math.random().toString(36).slice(2, 10)}`;
+}
 
+function mapJobFileToEditable(file: JobFile): EditableJobFile {
+  return {
+    local_id: makeLocalId(),
+    existing_id: file.id,
+    original_relative_path: file.relative_path,
+    relative_path: file.relative_path,
+    filename: file.filename,
+    source_type: file.source_type,
+    mime_type: file.mime_type,
+    is_executable: file.is_executable,
+    inline_content: file.inline_content || '',
+    status: 'existing',
+    content_loaded: file.source_type === 'inline',
+    file: null,
+  };
+}
+
+function makeInlineDraft(): EditableJobFile {
+  return {
+    local_id: makeLocalId(),
+    relative_path: 'src/main.py',
+    filename: 'main.py',
+    source_type: 'inline',
+    mime_type: 'text/x-python',
+    is_executable: false,
+    inline_content: '',
+    status: 'new',
+    content_loaded: true,
+    file: null,
+  };
+}
+
+function guessMimeType(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.py')) return 'text/x-python';
+  if (lower.endsWith('.sh')) return 'text/x-shellscript';
+  if (lower.endsWith('.js')) return 'text/javascript';
+  if (lower.endsWith('.ts')) return 'text/typescript';
+  if (lower.endsWith('.tsx')) return 'text/tsx';
+  if (lower.endsWith('.json')) return 'application/json';
+  if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'text/yaml';
+  if (lower.endsWith('.md')) return 'text/markdown';
+  return 'application/octet-stream';
+}
+
+function toUploadDraft(file: File): EditableJobFile {
+  const relativePath =
+    (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+
+  return {
+    local_id: makeLocalId(),
+    relative_path: relativePath,
+    filename: file.name,
+    source_type: 'upload',
+    mime_type: file.type || guessMimeType(file.name),
+    is_executable: file.name.endsWith('.sh'),
+    inline_content: '',
+    status: 'new',
+    content_loaded: false,
+    file,
+  };
+}
 
 export function JobBuilderForm({
   jobId,
-  initialJob,
-  initialTemplate,
-  initialContainerPreset,
+  initialJobDetails,
+  initialBootstrapImageId,
   onSaved,
 }: {
   jobId?: string;
-  initialJob?: Job | null;
-  initialTemplate?: JobTemplate | null;
-  initialContainerPreset?: ContainerPreset | null;
+  initialJobDetails?: JobDetailsResponse | null;
+  initialBootstrapImageId?: string | null;
   onSaved: (job: Job) => Promise<void> | void;
 }) {
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [tab, setTab] = useState('general');
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const isEditMode = Boolean(jobId);
-  const appliedTemplateIdRef = useRef<string | null>(null);
-  const appliedContainerPresetIdRef = useRef<string | null>(null);
+  const [tab, setTab] = useState<'general' | 'files'>('general');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [files, setFiles] = useState<EditableJobFile[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [loadingContentFileId, setLoadingContentFileId] = useState<string | null>(null);
 
-  const initialValues = useMemo(() => mapJobToFormValues(initialJob), [initialJob]);
+  const bootstrapImagesQuery = useQuery({
+    queryKey: ['bootstrap-images'],
+    queryFn: catalogApi.listBootstrapImages,
+  });
+
+  const initialValues = useMemo(
+    () => mapJobToFormValues(initialJobDetails?.job ?? null, initialBootstrapImageId),
+    [initialBootstrapImageId, initialJobDetails?.job],
+  );
 
   const form = useForm<JobFormValues>({
     resolver: zodResolver(jobFormSchema),
@@ -69,254 +138,209 @@ export function JobBuilderForm({
   });
 
   useEffect(() => {
-    if (isEditMode && !initialJob) {
-      return;
-    }
-
     form.reset(initialValues);
-    setPendingFiles([]);
+    const mappedFiles = (initialJobDetails?.files ?? []).map(mapJobFileToEditable);
+    setFiles(mappedFiles);
+    setSelectedFileId(mappedFiles[0]?.local_id || null);
     setSubmitError(null);
     setTab('general');
-    appliedTemplateIdRef.current = null;
-    appliedContainerPresetIdRef.current = null;
-  }, [form, initialValues, initialJob, isEditMode]);
-
-  const attachmentsFieldArray = useFieldArray({
-    control: form.control,
-    name: 'attached_files',
-  });
-
-  const existingAttachments = form.watch('attached_files');
-  const codePreview = form.watch('execution_code');
-  const language = form.watch('execution_language');
-
-  const addPendingFiles = (fileList: FileList | null) => {
-    if (!fileList?.length) return;
-
-    const nextFiles = Array.from(fileList).filter(
-      (file) => !pendingFiles.some((current) => current.name === file.name),
-    );
-
-    setPendingFiles((previous) => [...previous, ...nextFiles]);
-  };
-
-  const applyTemplateToForm = useCallback(
-    (template: JobTemplate, notify = true) => {
-      const draft = template.draft;
-      const nextLanguage = draft.execution_language ?? 'python';
-
-      const mappedContainers: FormContainer[] = (draft.containers || []).map((container) => ({
-        name: container.name ?? '',
-        image: container.image ?? '',
-        is_parent: Boolean(container.is_parent),
-        env: Object.entries(container.env || {}).map(([key, value]) => ({
-          key,
-          value: String(value ?? ''),
-        })),
-        resources: {
-          cpu_limit:
-            container.resources?.cpu_limit !== undefined
-              ? String(container.resources.cpu_limit)
-              : '',
-          memory_limit: container.resources?.memory_limit ?? '',
-          gpus: container.resources?.gpus ?? '',
-          shm_size: container.resources?.shm_size ?? '',
-        },
-      }));
-
-      form.reset({
-        ...form.getValues(),
-        title: draft.title || template.name || form.getValues('title'),
-        description: draft.description || template.description || '',
-        execution_language: nextLanguage,
-        execution_code: draft.execution_code ?? '',
-        entrypoint:
-          draft.entrypoint || (nextLanguage === 'javascript' ? 'main.js' : 'main.py'),
-        environments: Object.entries(draft.environments || {}).map(([key, value]) => ({
-          key,
-          value: String(value ?? ''),
-        })),
-        containers: globalNormalizeFormContainers(mappedContainers, nextLanguage),
-        attached_files: form.getValues('attached_files'),
-      });
-
-      form.clearErrors();
-      setSubmitError(null);
-
-      if (notify) {
-        toast.success(`Applied template: ${template.name}`);
-      }
-    },
-    [form],
-  );
-
-  const applyContainerPresetToForm = useCallback(
-    (preset: ContainerPreset, notify = true) => {
-      const currentContainers = form.getValues('containers');
-
-      const nextContainers = globalNormalizeFormContainers(
-        [
-          ...currentContainers,
-          {
-            name: preset.container.name ?? preset.name,
-            image: preset.container.image ?? '',
-            is_parent: Boolean(preset.container.is_parent),
-            env: Object.entries(preset.container.env || {}).map(([key, value]) => ({
-              key,
-              value: String(value ?? ''),
-            })),
-            resources: {
-              cpu_limit: preset.container.resources?.cpu_limit?.toString() || '',
-              memory_limit: preset.container.resources?.memory_limit || '',
-              gpus: preset.container.resources?.gpus || '',
-              shm_size: preset.container.resources?.shm_size || '',
-            },
-          },
-        ],
-        form.getValues('execution_language'),
-      );
-
-      form.setValue('containers', nextContainers, {
-        shouldDirty: true,
-        shouldTouch: true,
-        shouldValidate: true,
-      });
-
-      setSubmitError(null);
-
-      if (notify) {
-        toast.success(`Added container preset: ${preset.name}`);
-      }
-    },
-    [form],
-  );
+  }, [form, initialJobDetails?.files, initialValues]);
 
   useEffect(() => {
-    if (isEditMode) return;
+    const firstFile = files.find((file) => file.status !== 'deleted');
+    if (!selectedFileId && firstFile) {
+      setSelectedFileId(firstFile.local_id);
+    }
+  }, [files, selectedFileId]);
 
-    if (initialTemplate && appliedTemplateIdRef.current !== initialTemplate.id) {
-      applyTemplateToForm(initialTemplate, false);
-      appliedTemplateIdRef.current = initialTemplate.id;
-      appliedContainerPresetIdRef.current = null;
-      return;
+  const filesByLocalId = useMemo(() => {
+    return new Map(files.map((file) => [file.local_id, file]));
+  }, [files]);
+
+  const selectedFile = selectedFileId ? filesByLocalId.get(selectedFileId) || null : null;
+
+  const activeBootstrapImages =
+    bootstrapImagesQuery.data?.items.filter((image) => image.status === 'completed') || [];
+
+  const updateFile = (localId: string, patch: Partial<EditableJobFile>) => {
+    setFiles((current) =>
+      current.map((file) => (file.local_id === localId ? { ...file, ...patch } : file)),
+    );
+  };
+
+  const addInlineFile = () => {
+    const next = makeInlineDraft();
+    setFiles((current) => [...current, next]);
+    setSelectedFileId(next.local_id);
+    setTab('files');
+  };
+
+  const addUploadFiles = (pickedFiles: FileList | null) => {
+    if (!pickedFiles?.length) return;
+
+    const nextFiles = Array.from(pickedFiles).map(toUploadDraft);
+    setFiles((current) => [...current, ...nextFiles]);
+    setSelectedFileId((previous) => previous || nextFiles[0]?.local_id || null);
+    setTab('files');
+  };
+
+  const deleteFile = (localId: string) => {
+    setFiles((current) => {
+      const target = current.find((file) => file.local_id === localId);
+      if (!target) return current;
+
+      const next =
+        target.status === 'existing'
+          ? current.map((file) =>
+              file.local_id === localId ? { ...file, status: 'deleted' as const } : file,
+            )
+          : current.filter((file) => file.local_id !== localId);
+
+      const visible = next.filter((file) => file.status !== 'deleted');
+      setSelectedFileId(visible[0]?.local_id || null);
+      return next;
+    });
+  };
+
+  const loadSelectedFileContent = async (localId: string) => {
+    const target = filesByLocalId.get(localId);
+    if (!target || target.content_loaded || !isTextEditableFile(target)) return;
+
+    setLoadingContentFileId(localId);
+
+    try {
+      if (target.file) {
+        const text = await target.file.text();
+        updateFile(localId, {
+          inline_content: text,
+          content_loaded: true,
+        });
+      } else if (jobId) {
+        const text = await jobsApi.getFileContent(jobId, target.relative_path);
+        updateFile(localId, {
+          inline_content: text,
+          content_loaded: true,
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to load file content');
+    } finally {
+      setLoadingContentFileId(null);
+    }
+  };
+
+  const selectFile = (localId: string) => {
+    setSelectedFileId(localId);
+    void loadSelectedFileContent(localId);
+  };
+
+  const syncFiles = async (savedJobId: string) => {
+    const visibleFiles = files.filter((file) => file.status !== 'deleted');
+    const deletePaths = new Set<string>();
+
+    for (const file of files) {
+      if (file.status === 'deleted' && file.original_relative_path) {
+        deletePaths.add(file.original_relative_path);
+      }
+
+      if (
+        file.status !== 'deleted' &&
+        file.original_relative_path &&
+        file.original_relative_path !== file.relative_path
+      ) {
+        deletePaths.add(file.original_relative_path);
+      }
     }
 
-    if (
-      !initialTemplate &&
-      initialContainerPreset &&
-      appliedContainerPresetIdRef.current !== initialContainerPreset.id
-    ) {
-      applyContainerPresetToForm(initialContainerPreset, false);
-      appliedContainerPresetIdRef.current = initialContainerPreset.id;
+    for (const relativePath of deletePaths) {
+      await jobsApi.deleteFile(savedJobId, relativePath);
     }
-  }, [
-    applyContainerPresetToForm,
-    applyTemplateToForm,
-    initialContainerPreset,
-    initialTemplate,
-    isEditMode,
-  ]);
+
+    for (const file of visibleFiles) {
+      const renamedExistingUploadWithoutContent =
+        file.status === 'existing' &&
+        file.original_relative_path !== file.relative_path &&
+        file.source_type === 'upload' &&
+        !file.file &&
+        !file.content_loaded;
+
+      if (renamedExistingUploadWithoutContent) {
+        throw new Error(
+          `File "${file.original_relative_path}" was renamed but its content is not available in the browser. Re-upload it or open it as text and save it inline.`,
+        );
+      }
+
+      if (file.source_type === 'inline') {
+        await jobsApi.saveFileContent(savedJobId, {
+          relative_path: file.relative_path,
+          content: file.inline_content,
+          mime_type: file.mime_type,
+          is_executable: file.is_executable,
+        });
+        continue;
+      }
+
+      if (file.source_type === 'upload' && file.file) {
+        await jobsApi.uploadFile(
+          savedJobId,
+          file.file,
+          file.relative_path,
+          file.is_executable,
+        );
+      }
+    }
+  };
 
   const submit = form.handleSubmit(
     async (values) => {
       setSubmitError(null);
 
       try {
-        if (isEditMode && !jobId) {
-          throw new Error('Cannot update job: missing job id');
-        }
-
         const payload = mapFormValuesToPayload(values);
-        const normalizedPayload = {
-          ...payload,
-          containers: globalNormalizePayloadContainers(
-            values.containers,
-            payload.execution_language,
-          ),
-        };
-
         const savedJob =
           isEditMode && jobId
-            ? await jobsApi.update(jobId, normalizedPayload)
-            : await jobsApi.create(normalizedPayload);
+            ? await jobsApi.update(jobId, payload)
+            : await jobsApi.create(payload);
 
-        if (pendingFiles.length) {
-          const uploadedFiles = [];
+        await syncFiles(savedJob.id);
 
-          for (const file of pendingFiles) {
-            const uploaded = await artifactsApi.uploadJobFile(savedJob.id, file);
-            uploadedFiles.push(uploaded);
-          }
-
-          if (uploadedFiles.length) {
-            const finalFiles = [...values.attached_files, ...uploadedFiles];
-            const updatedJob = await jobsApi.update(savedJob.id, { attached_files: finalFiles });
-            setPendingFiles([]);
-            toast.success(isEditMode ? 'Job updated' : 'Job created');
-            await onSaved(updatedJob);
-            return;
-          }
-        }
-
-        savedJob.attached_files = values.attached_files;
-        setPendingFiles([]);
         toast.success(isEditMode ? 'Job updated' : 'Job created');
         await onSaved(savedJob);
       } catch (error) {
         const message = getApiErrorMessage(error);
         setSubmitError(message);
         toast.error(message);
-        console.error('Save job failed:', error);
       }
     },
-    (errors) => {
+    () => {
       setSubmitError('Please fix validation errors before saving');
-
-      if (errors.title || errors.description || errors.entrypoint || errors.execution_language) {
-        setTab('general');
-      } else if (errors.execution_code) {
-        setTab('code');
-      } else if (errors.containers) {
-        setTab('containers');
-      } else if (errors.environments || errors.attached_files) {
-        setTab('attachments');
-      }
-
       toast.error('Please fix validation errors before saving');
+      setTab('general');
     },
-  );
-
-  const tabs = useMemo(
-    () => [
-      { id: 'general', label: 'General' },
-      { id: 'code', label: 'Execution' },
-      { id: 'containers', label: 'Containers' },
-      { id: 'attachments', label: 'Files & env' },
-    ],
-    [],
   );
 
   return (
     <form className="space-y-6" onSubmit={submit}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={(value) => setTab(value as 'general' | 'files')}>
           <TabsList>
-            {tabs.map((item) => (
-              <TabsTrigger key={item.id} value={item.id}>
-                {item.label}
-              </TabsTrigger>
-            ))}
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="files">Workspace files</TabsTrigger>
           </TabsList>
         </Tabs>
 
         <div className="flex flex-wrap items-center gap-2">
-          <BootstrapBuilderDialog />
-          <TemplatePickerDialog
-            onApplyTemplate={(template) => applyTemplateToForm(template, true)}
-            onApplyContainerPreset={(preset) => applyContainerPresetToForm(preset, true)}
+          <BootstrapBuilderDialog
+            onSuccess={() => {
+              void bootstrapImagesQuery.refetch();
+            }}
           />
+          <Button variant="outline" asChild>
+            <Link to="/catalog">Open catalog</Link>
+          </Button>
           <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? 'Saving...' : 'Save job'}
+            {form.formState.isSubmitting ? 'Saving…' : 'Save job'}
           </Button>
         </div>
       </div>
@@ -327,153 +351,199 @@ export function JobBuilderForm({
         </div>
       ) : null}
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as 'general' | 'files')}>
         <TabsContent value="general">
-          <Card>
-            <CardHeader>
-              <CardTitle>General information</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="title">Title</Label>
-                  <Input id="title" {...form.register('title')} />
-                  {form.formState.errors.title ? (
-                    <p className="text-xs text-destructive">
-                      {form.formState.errors.title.message}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="entrypoint">Entrypoint filename</Label>
-                  <Input
-                    id="entrypoint"
-                    {...form.register('entrypoint')}
-                    placeholder={language === 'javascript' ? 'main.js' : 'main.py'}
-                  />
-                  {form.formState.errors.entrypoint ? (
-                    <p className="text-xs text-destructive">
-                      {form.formState.errors.entrypoint.message}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea id="description" {...form.register('description')} />
-                {form.formState.errors.description ? (
-                  <p className="text-xs text-destructive">
-                    {form.formState.errors.description.message}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="space-y-2">
-                <Label>Execution language</Label>
-                <Select
-                  value={form.watch('execution_language')}
-                  onValueChange={(value) =>
-                    form.setValue(
-                      'execution_language',
-                      value as JobFormValues['execution_language'],
-                      {
-                        shouldDirty: true,
-                        shouldTouch: true,
-                        shouldValidate: true,
-                      },
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="python">Python</SelectItem>
-                    <SelectItem value="javascript">JavaScript</SelectItem>
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.execution_language ? (
-                  <p className="text-xs text-destructive">
-                    {form.formState.errors.execution_language.message}
-                  </p>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="code">
-          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Execution code</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Textarea
-                  className="min-h-[520px] font-mono text-sm"
-                  spellCheck={false}
-                  {...form.register('execution_code')}
-                />
-                {form.formState.errors.execution_code ? (
-                  <p className="text-xs text-destructive">
-                    {form.formState.errors.execution_code.message}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <CodeBlock code={codePreview || '// Start typing…'} language={language} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="containers">
-          <div className="space-y-3">
-            <ContainersFieldArray
-              control={form.control}
-              register={form.register}
-              setValue={form.setValue}
-            />
-            {form.formState.errors.containers ? (
-              <p className="text-xs text-destructive">
-                {Array.isArray(form.formState.errors.containers)
-                  ? 'Please fix container configuration'
-                  : form.formState.errors.containers.message}
-              </p>
-            ) : null}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="attachments">
           <div className="space-y-6">
-            <AttachedFilesField
-              existingFiles={existingAttachments}
-              pendingFiles={pendingFiles}
-              onPickFiles={addPendingFiles}
-              onRemoveExisting={(fileId) => {
-                const index = existingAttachments.findIndex((file) => file.id === fileId);
-                if (index >= 0) attachmentsFieldArray.remove(index);
-              }}
-              onRemovePending={(fileName) =>
-                setPendingFiles((current) =>
-                  current.filter((file) => file.name !== fileName),
-                )
-              }
-            />
+            <Card>
+              <CardHeader>
+                <CardTitle>Job runtime</CardTitle>
+              </CardHeader>
+
+              <CardContent className="grid gap-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="job-title">Title</Label>
+                    <Input id="job-title" {...form.register('title')} />
+                    {form.formState.errors.title ? (
+                      <p className="text-xs text-destructive">
+                        {form.formState.errors.title.message}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Bootstrap image</Label>
+                    <Select
+                      value={form.watch('bootstrap_image_id')}
+                      onValueChange={(value) =>
+                        form.setValue('bootstrap_image_id', value, {
+                          shouldDirty: true,
+                          shouldTouch: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose bootstrap image" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeBootstrapImages.map((image) => (
+                          <SelectItem key={image.id} value={image.id}>
+                            {image.name} · {image.tag}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.bootstrap_image_id ? (
+                      <p className="text-xs text-destructive">
+                        {form.formState.errors.bootstrap_image_id.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="job-description">Description</Label>
+                  <Textarea id="job-description" {...form.register('description')} />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="job-entrypoint">Entrypoint</Label>
+                    <Input
+                      id="job-entrypoint"
+                      {...form.register('entrypoint')}
+                      placeholder="scripts/train.sh"
+                    />
+                    {form.formState.errors.entrypoint ? (
+                      <p className="text-xs text-destructive">
+                        {form.formState.errors.entrypoint.message}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="job-entrypoint-args">Entrypoint args</Label>
+                    <Input
+                      id="job-entrypoint-args"
+                      {...form.register('entrypoint_args_text')}
+                      placeholder="--epochs 3 --lr 2e-4"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="job-working-dir">Working directory</Label>
+                    <Input
+                      id="job-working-dir"
+                      {...form.register('working_dir')}
+                      placeholder="/workspace"
+                    />
+                  </div>
+                </div>
+
+                {form.watch('bootstrap_image_id') ? (
+                  <div className="rounded-2xl border border-border bg-muted/40 p-4 text-sm">
+                    {(() => {
+                      const selected = activeBootstrapImages.find(
+                        (image) => image.id === form.watch('bootstrap_image_id'),
+                      );
+
+                      if (!selected) {
+                        return (
+                          <span className="text-muted-foreground">
+                            Selected bootstrap image details are not loaded yet.
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Docker image
+                            </div>
+                            <div className="mt-1 font-medium">{selected.full_image_name}</div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Base image
+                            </div>
+                            <div className="mt-1 font-medium">{selected.base_image}</div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Environments
+                            </div>
+                            <div className="mt-1 font-medium">{selected.environments.length}</div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Status
+                            </div>
+                            <div className="mt-1 font-medium capitalize">{selected.status}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Job environment</CardTitle>
+                <CardTitle>Environment variables</CardTitle>
               </CardHeader>
+
               <CardContent>
-                <EnvironmentsFieldArray
-                  control={form.control}
-                  register={form.register}
-                />
+                <EnvironmentsFieldArray control={form.control} register={form.register} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Runtime resource hints</CardTitle>
+              </CardHeader>
+
+              <CardContent className="grid gap-4 md:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>GPUs</Label>
+                  <Input {...form.register('resources.gpus')} placeholder="all" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Shared memory</Label>
+                  <Input {...form.register('resources.shm_size')} placeholder="16g" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Memory limit</Label>
+                  <Input {...form.register('resources.memory_limit')} placeholder="64g" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>CPU limit</Label>
+                  <Input {...form.register('resources.cpu_limit')} placeholder="8" />
+                </div>
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="files">
+          <JobFilesEditor
+            files={files}
+            selectedFileId={selectedFile?.local_id || null}
+            loadingContent={loadingContentFileId === selectedFile?.local_id}
+            onSelectFile={selectFile}
+            onAddInlineFile={addInlineFile}
+            onPickUploadFiles={addUploadFiles}
+            onUpdateFile={updateFile}
+            onDeleteFile={deleteFile}
+          />
         </TabsContent>
       </Tabs>
     </form>

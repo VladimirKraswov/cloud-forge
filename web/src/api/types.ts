@@ -5,16 +5,18 @@ export type LogLevel = 'info' | 'warn' | 'error';
 export type SupportLevel = 'supported' | 'future';
 export type ContainerPresetCategory = 'bootstrap' | 'runtime' | 'model' | 'service';
 
+export interface RuntimeResources {
+  gpus?: string;
+  shm_size?: string;
+  cpu_limit?: number;
+  memory_limit?: string;
+}
+
 export interface Container {
   name: string;
   image: string;
   is_parent?: boolean;
-  resources?: {
-    gpus?: string;
-    shm_size?: string;
-    cpu_limit?: number;
-    memory_limit?: string;
-  };
+  resources?: RuntimeResources;
   env?: Record<string, string>;
 }
 
@@ -26,16 +28,53 @@ export interface AttachedFile {
   mime_type: string;
 }
 
+export interface BootstrapEnvironmentSpec {
+  name: string;
+  python_binary?: string | null;
+  requirements_text: string;
+}
+
+export interface BootstrapImage {
+  id: string;
+  name: string;
+  base_image: string;
+  tag: string;
+  full_image_name: string;
+  dockerfile_text: string;
+  environments: BootstrapEnvironmentSpec[];
+  runtime_resources?: RuntimeResources | null;
+  sdk_version?: string | null;
+  status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed';
+  error?: string | null;
+  build_started_at?: string | null;
+  build_finished_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BootstrapImageLogEntry {
+  id: number;
+  image_id: string;
+  level: LogLevel;
+  message: string;
+  created_at: string;
+}
+
+export interface BootstrapBuildProgress {
+  status: 'building' | 'pushing' | 'completed' | 'failed';
+  logs: string[];
+}
+
 export interface JobPayload {
   title: string;
   description?: string | null;
   owner_id?: string | null;
-  containers: Container[];
-  environments: Record<string, string>;
-  attached_files: AttachedFile[];
-  execution_code: string;
-  execution_language: ExecutionLanguage;
-  entrypoint?: string | null;
+  bootstrap_image_id: string;
+  environment_variables: Record<string, string>;
+  resources?: RuntimeResources | null;
+  entrypoint: string;
+  entrypoint_args: string[];
+  working_dir?: string | null;
 }
 
 export interface Job extends JobPayload {
@@ -45,30 +84,81 @@ export interface Job extends JobPayload {
 }
 
 export interface JobListItem extends Job {
+  bootstrap_image_name?: string | null;
+  bootstrap_full_image_name?: string | null;
   latest_run_status?: RunStatus | null;
   latest_run_at?: string | null;
-  runs_count?: number;
-  active_runs_count?: number;
+  runs_count: number;
+  active_runs_count: number;
+}
+
+export interface JobFile {
+  id: string;
+  job_id: string;
+  relative_path: string;
+  filename: string;
+  source_type: 'upload' | 'inline';
+  storage_key?: string | null;
+  inline_content?: string | null;
+  mime_type: string;
+  size_bytes: number;
+  is_executable: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobDetailsResponse {
+  job: Job;
+  bootstrap_image?: BootstrapImage | null;
+  files: JobFile[];
+  share_tokens: ShareToken[];
+  stats: {
+    total_runs: number;
+    active_runs: number;
+  };
 }
 
 export interface WorkspaceLayout {
   root: string;
-  code_dir: string;
-  input_dir: string;
-  output_dir: string;
   artifacts_dir: string;
   tmp_dir: string;
 }
 
-export interface RunConfigSnapshot {
+export interface RunManifestFile {
+  relative_path: string;
+  filename: string;
+  size_bytes: number;
+  mime_type: string;
+  is_executable: boolean;
+  source_type: 'upload' | 'inline';
+  download_url: string;
+}
+
+export interface RunManifest {
+  run_id: string;
   job_id: string;
-  containers: Container[];
-  environments: Record<string, string>;
-  attached_files: AttachedFile[];
-  execution_code: string;
-  execution_language: ExecutionLanguage;
-  entrypoint?: string | null;
+  bootstrap_image: {
+    id: string;
+    full_image_name: string;
+    name: string;
+  };
   workspace: WorkspaceLayout;
+  environment_variables: Record<string, string>;
+  entrypoint: string;
+  entrypoint_args: string[];
+  working_dir: string;
+  files: RunManifestFile[];
+  control: {
+    start_url: string;
+    heartbeat_url: string;
+    logs_url: string;
+    progress_url: string;
+    finish_url: string;
+    cancel_url: string;
+  };
+  artifacts: {
+    upload_url: string;
+  };
 }
 
 export interface LogEntry {
@@ -77,6 +167,18 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp?: string;
+}
+
+export interface RunEvent {
+  id: string;
+  run_id: string;
+  type: 'status' | 'progress' | 'metric' | 'log';
+  stage?: string | null;
+  progress?: number | null;
+  message?: string | null;
+  level?: LogLevel | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface RunArtifact {
@@ -89,18 +191,23 @@ export interface RunArtifact {
   mime_type: string;
   created_at: string;
   download_path?: string;
+  content_path?: string;
 }
 
 export interface Run {
   id: string;
   job_id: string;
   share_token_id: string;
+  bootstrap_image_id: string;
   worker_id?: string | null;
   worker_name?: string | null;
   status: RunStatus;
+  stage?: string | null;
+  progress?: number | null;
+  status_message?: string | null;
   result?: string | null;
   metrics?: unknown;
-  config_snapshot: RunConfigSnapshot;
+  run_manifest: RunManifest;
   started_at?: string | null;
   finished_at?: string | null;
   last_heartbeat_at?: string | null;
@@ -109,6 +216,7 @@ export interface Run {
   created_at: string;
   updated_at: string;
   logs?: LogEntry[];
+  events?: RunEvent[];
   artifacts?: RunArtifact[];
   job_title?: string;
 }
@@ -131,6 +239,7 @@ export interface ShareTokenDetails extends ShareToken {
   base_url?: string;
   claim_url?: string;
   share_url?: string;
+  docker_image?: string;
   docker_command?: string;
   worker_command?: string;
 }
@@ -164,7 +273,16 @@ export interface RecentEvent {
   created_at: string;
 }
 
-export interface JobDraftTemplate extends JobPayload {}
+export interface JobDraftTemplate {
+  title: string;
+  description: string;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: AttachedFile[];
+  execution_code: string;
+  execution_language: ExecutionLanguage;
+  entrypoint?: string | null;
+}
 
 export interface JobTemplate {
   id: string;
