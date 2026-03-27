@@ -54,8 +54,8 @@ export function normalizeFormContainers(
   }
 
   // Преобразуем в FormContainer
-  let list: FormContainer[] = containers.map((item: any) => {
-    if (item && Array.isArray(item.env)) {
+  let list: FormContainer[] = (containers as (FormContainer | Container)[]).map((item) => {
+    if ('env' in item && Array.isArray(item.env)) {
       return item as FormContainer; // уже форма
     }
     return mapApiContainerToFormContainer(item as Container);
@@ -98,22 +98,9 @@ export function normalizeFormContainers(
 }
 
 export function normalizePayloadContainers(
-  containers:
-    | Array<{
-        name: string;
-        image: string;
-        is_parent?: boolean;
-        env?: Record<string, string>;
-        resources?: {
-          cpu_limit?: number;
-          memory_limit?: string;
-          gpus?: string;
-          shm_size?: string;
-        };
-      }>
-    | undefined,
+  containers: FormContainer[] | Container[] | undefined,
   language: ExecutionLanguage,
-) {
+): Container[] {
   const list = Array.isArray(containers) ? [...containers] : [];
 
   if (list.length === 0) {
@@ -130,11 +117,37 @@ export function normalizePayloadContainers(
 
   const parentIndex = list.findIndex((item) => item.is_parent);
 
-  return list.map((item, index) => ({
-    ...item,
-    is_parent: parentIndex === -1 ? index === 0 : index === parentIndex,
-    env: item.env || {},
-  }));
+  return list.map((item, index): Container => {
+    const isParent = parentIndex === -1 ? index === 0 : index === parentIndex;
+
+    // Convert Form env (Array) to API env (Record) if necessary
+    const envRecord: Record<string, string> = {};
+    if (Array.isArray(item.env)) {
+      item.env.forEach((kv: { key: string; value: string }) => {
+        if (kv.key.trim()) {
+          envRecord[kv.key.trim()] = kv.value;
+        }
+      });
+    } else {
+      const record = item.env as unknown as Record<string, string>;
+      Object.entries(record || {}).forEach(([k, v]) => {
+        envRecord[k] = v;
+      });
+    }
+
+    return {
+      name: item.name || (isParent ? 'bootstrap' : `container-${index + 1}`),
+      image: item.image || '',
+      is_parent: isParent,
+      env: envRecord,
+      resources: {
+        cpu_limit: item.resources?.cpu_limit ? Number(item.resources.cpu_limit) : undefined,
+        memory_limit: item.resources?.memory_limit || undefined,
+        gpus: item.resources?.gpus || undefined,
+        shm_size: item.resources?.shm_size || undefined,
+      },
+    };
+  });
 }
 
 export function mapTemplateToFormValues(

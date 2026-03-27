@@ -1,6 +1,19 @@
 // catalog/templates/hello-world.ts
-import { JobTemplate } from '../../models/job';
-import { containerPresets } from '../presets';
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
+
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapPython: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '2g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
 
 export const helloWorldPython: JobTemplate = {
   id: 'hello-world-python',
@@ -11,7 +24,7 @@ export const helloWorldPython: JobTemplate = {
   draft: {
     title: 'Hello World',
     description: 'Проверочный remote job для публикации bootstrap-образа.',
-    containers: [containerPresets.find((p) => p.id === 'bootstrap-python')!.container],
+    containers: [bootstrapPython],
     environments: {
       APP_ENV: 'production',
     },

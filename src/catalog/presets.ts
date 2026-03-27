@@ -2,9 +2,10 @@
 import { ContainerPreset } from '../models/job';
 import { config } from '../utils/config';
 import { jobTemplates } from './templates';
-
 // Базовый официальный bootstrap-образ
 const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+export { jobTemplates };
 
 export const containerPresets: ContainerPreset[] = [
   {
@@ -138,5 +139,3 @@ export const containerPresets: ContainerPreset[] = [
     },
   },
 ];
-
-export { jobTemplates };

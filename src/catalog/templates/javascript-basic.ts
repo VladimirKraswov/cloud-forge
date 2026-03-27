@@ -1,6 +1,19 @@
 // catalog/templates/javascript-basic.ts
-import { JobTemplate } from '../../models/job';
-import { containerPresets } from '../presets';
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
+
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapNode: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '1g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
 
 export const javascriptBasic: JobTemplate = {
   id: 'javascript-basic',
@@ -11,7 +24,7 @@ export const javascriptBasic: JobTemplate = {
   draft: {
     title: 'JavaScript Basic Job',
     description: 'Шаблон базовой JavaScript job для скриптов и автоматизации.',
-    containers: [containerPresets.find((p) => p.id === 'bootstrap-node')!.container],
+    containers: [bootstrapNode],
     environments: {
       APP_ENV: 'development',
     },

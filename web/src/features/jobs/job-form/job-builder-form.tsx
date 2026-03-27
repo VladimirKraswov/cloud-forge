@@ -29,95 +29,16 @@ import {
   mapFormValuesToPayload,
   mapJobToFormValues,
 } from '@/features/jobs/job-form/job-form-mappers';
+import {
+  normalizeFormContainers as globalNormalizeFormContainers,
+  normalizePayloadContainers as globalNormalizePayloadContainers,
+} from '@/features/jobs/job-form/job-form-helpers';
 import { TemplatePickerDialog } from '@/features/jobs/job-form/template-picker-dialog';
 import { CodeBlock } from '@/shared/components/app/code-block';
 import { getApiErrorMessage } from '@/shared/lib/api-error';
 
 type FormContainer = JobFormValues['containers'][number];
 
-function makeBootstrapContainer(
-  language: JobFormValues['execution_language'],
-): FormContainer {
-  return {
-    name: 'bootstrap',
-    image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
-    is_parent: true,
-    env: [],
-    resources: {
-      cpu_limit: '',
-      memory_limit: '',
-      gpus: '',
-      shm_size: '',
-    },
-  };
-}
-
-function normalizeFormContainers(
-  containers: FormContainer[] | undefined,
-  language: JobFormValues['execution_language'],
-): FormContainer[] {
-  const list = Array.isArray(containers) ? [...containers] : [];
-
-  if (list.length === 0) {
-    return [makeBootstrapContainer(language)];
-  }
-
-  const parentIndex = list.findIndex((item) => item.is_parent);
-
-  if (parentIndex === -1) {
-    list[0] = { ...list[0], is_parent: true };
-    return list;
-  }
-
-  return list.map((item, index) => ({
-    ...item,
-    is_parent: index === parentIndex,
-  }));
-}
-
-function normalizePayloadContainers(
-  containers:
-    | Array<{
-        name: string;
-        image: string;
-        is_parent?: boolean;
-        env?: Record<string, string>;
-        resources?: {
-          cpu_limit?: number;
-          memory_limit?: string;
-          gpus?: string;
-          shm_size?: string;
-        };
-      }>
-    | undefined,
-  language: JobFormValues['execution_language'],
-) {
-  const list = Array.isArray(containers) ? [...containers] : [];
-
-  if (list.length === 0) {
-    return [
-      {
-        name: 'bootstrap',
-        image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
-        is_parent: true,
-        env: {},
-        resources: {},
-      },
-    ];
-  }
-
-  const parentIndex = list.findIndex((item) => item.is_parent);
-
-  if (parentIndex === -1) {
-    list[0] = { ...list[0], is_parent: true };
-    return list;
-  }
-
-  return list.map((item, index) => ({
-    ...item,
-    is_parent: index === parentIndex,
-  }));
-}
 
 export function JobBuilderForm({
   jobId,
@@ -214,7 +135,7 @@ export function JobBuilderForm({
           key,
           value: String(value ?? ''),
         })),
-        containers: normalizeFormContainers(mappedContainers, nextLanguage),
+        containers: globalNormalizeFormContainers(mappedContainers, nextLanguage),
         attached_files: form.getValues('attached_files'),
       });
 
@@ -232,7 +153,7 @@ export function JobBuilderForm({
     (preset: ContainerPreset, notify = true) => {
       const currentContainers = form.getValues('containers');
 
-      const nextContainers = normalizeFormContainers(
+      const nextContainers = globalNormalizeFormContainers(
         [
           ...currentContainers,
           {
@@ -307,8 +228,8 @@ export function JobBuilderForm({
         const payload = mapFormValuesToPayload(values);
         const normalizedPayload = {
           ...payload,
-          containers: normalizePayloadContainers(
-            payload.containers,
+          containers: globalNormalizePayloadContainers(
+            values.containers,
             payload.execution_language,
           ),
         };

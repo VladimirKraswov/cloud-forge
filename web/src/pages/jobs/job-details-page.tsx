@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft, FolderOpen, History, KeyRound, Pencil } from 'lucide-react';
+import { cn } from '@/shared/utils/cn';
 import { jobsApi } from '@/api/jobs';
 import { CodeBlock } from '@/shared/components/app/code-block';
 import { EmptyState } from '@/shared/components/app/empty-state';
@@ -182,27 +183,40 @@ export function JobDetailsPage() {
 
                 <div className="mt-2 space-y-2">
                   {containers.length ? (
-                    containers.map((container) => (
-                      <div
-                        key={`${container.name}-${container.image}`}
-                        className="rounded-2xl border border-border px-3 py-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="font-medium">{container.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {container.image}
+                    containers.map((container) => {
+                      const isLargeImage = container.image?.includes('cloud-forge-worker-qwen-7b');
+                      return (
+                        <div
+                          key={`${container.name}-${container.image}`}
+                          className={cn(
+                            'rounded-2xl border border-border px-3 py-3',
+                            container.is_parent && 'border-primary/50 bg-primary/5'
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium flex items-center gap-2">
+                                {container.name}
+                                {container.is_parent && (
+                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                                    Bootstrap
+                                  </span>
+                                )}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {container.image}
+                              </div>
                             </div>
-                          </div>
 
-                          {container.is_parent ? (
-                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">
-                              parent
-                            </span>
-                          ) : null}
+                            {isLargeImage && (
+                              <div className="rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 border border-amber-100 shrink-0">
+                                50GB+ MODEL
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="text-sm text-muted-foreground">
                       No extra containers configured.

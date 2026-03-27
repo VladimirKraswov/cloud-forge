@@ -1,6 +1,17 @@
 // catalog/templates/qwen-7b-finetune.ts
-import { JobTemplate } from '../../models/job';
-import { containerPresets } from '../presets';
+import { JobTemplate, Container } from '../../models/job';
+
+const qwen7bFinetuneWorker: Container = {
+  name: 'bootstrap',
+  image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0',
+  is_parent: true,
+  resources: {
+    gpus: 'all',
+    shm_size: '16g',
+    memory_limit: '64g',
+    cpu_limit: 8,
+  },
+};
 
 export const qwen7bFinetune: JobTemplate = {
   id: 'qwen-7b-finetune',
@@ -11,9 +22,7 @@ export const qwen7bFinetune: JobTemplate = {
   draft: {
     title: 'Qwen 7B Fine-tune',
     description: 'Модель уже внутри bootstrap-образа. Добавь свой код обучения.',
-    containers: [
-      containerPresets.find((p) => p.id === 'qwen-7b-finetune-worker')!.container,
-    ],
+    containers: [qwen7bFinetuneWorker],
     environments: {
       MODEL_DIR: '/models/qwen-7b',
       HF_HOME: '/workspace/.cache/huggingface',

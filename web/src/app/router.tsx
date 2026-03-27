@@ -44,10 +44,15 @@ const jobsRoute = createRoute({
   component: JobsListPage,
 });
 
+interface JobCreateSearch {
+  templateId?: string;
+  containerPresetId?: string;
+}
+
 const createJobRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/jobs/create',
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): JobCreateSearch => ({
     templateId: typeof search.templateId === 'string' ? search.templateId : undefined,
     containerPresetId:
       typeof search.containerPresetId === 'string' ? search.containerPresetId : undefined,

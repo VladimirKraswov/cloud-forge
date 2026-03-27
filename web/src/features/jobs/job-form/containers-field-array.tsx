@@ -1,11 +1,12 @@
 // src/features/jobs/job-form/containers-field-array.tsx
-import { Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useWatch, type Control, type UseFormRegister, type UseFormSetValue } from 'react-hook-form';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Checkbox } from '@/shared/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
 import type { JobFormValues } from './job-form-schema';
 
 export function ContainersFieldArray({
@@ -36,8 +37,8 @@ export function ContainersFieldArray({
     append({
       name: `container-${fields.length + 1}`,
       image: '',
-      is_parent: fields.length === 0,           // первый контейнер автоматически bootstrap
-      env: [],                                  // ← ОБЯЗАТЕЛЬНОЕ поле!
+      is_parent: fields.length === 0, // первый контейнер автоматически bootstrap
+      env: [], // ← ОБЯЗАТЕЛЬНОЕ поле!
       resources: {
         cpu_limit: '',
         memory_limit: '',
@@ -87,8 +88,13 @@ export function ContainersFieldArray({
         {fields.map((field, index) => {
           const isParent = containers[index]?.is_parent ?? false;
 
+          const isLargeImage = containers[index]?.image?.includes('cloud-forge-worker-qwen-7b');
+
           return (
-            <Card key={field.id} className={isParent ? 'border-primary/50 bg-primary/5' : ''}>
+            <Card
+              key={field.id}
+              className={isParent ? 'border-primary/50 bg-primary/5 shadow-md' : ''}
+            >
               <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle className="text-base flex items-center gap-2">
                   Container #{index + 1}
@@ -129,6 +135,17 @@ export function ContainersFieldArray({
                     />
                   </div>
                 </div>
+
+                {isLargeImage && (
+                  <Alert variant="warning" className="bg-amber-50 border-amber-200 text-amber-900">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Большой образ модели</AlertTitle>
+                    <AlertDescription className="text-xs">
+                      Этот образ содержит веса модели (50GB+). Первый запуск может занять до 10-15 минут
+                      из-за скачивания слоёв.
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 <label className="flex items-center gap-3 text-sm cursor-pointer">
                   <Checkbox

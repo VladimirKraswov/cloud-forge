@@ -130,8 +130,8 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
       docker_command: string;
     };
 
-    expect(docker_image).toBe('xproger/cloud-forge-worker:0.1.0');
-    expect(docker_command).toContain('xproger/cloud-forge-worker:0.1.0');
+    expect(docker_image).toBe('node:20-slim');
+    expect(docker_command).toContain('node:20-slim');
     expect(docker_command).toContain(token);
 
     const claimRes = await app.inject({
