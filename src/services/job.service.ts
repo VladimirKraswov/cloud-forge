@@ -39,33 +39,45 @@ const buildAttachedFilesConfig = (attachedFiles: AttachedFile[]) =>
 
 /**
  * Generates a docker run command for remote execution.
- * The published worker image is expected to contain the Cloud Forge SDK + worker runtime.
+ * Поддерживает кастомный bootstrap.image из job.containers
  */
 const buildDockerCommand = (job: Job, token: string, baseUrl: string): string => {
-  const bootstrap =
-    job.containers.find((container) => container.name === 'bootstrap' || container.is_parent) ||
-    job.containers[0];
+  // Ищем bootstrap-контейнер (приоритет: is_parent → name === 'bootstrap' → первый контейнер)
+  const bootstrap = job.containers.find((c) => c.is_parent === true) ||
+                    job.containers.find((c) => c.name === 'bootstrap') ||
+                    job.containers[0];
+
+  if (!bootstrap || !bootstrap.image) {
+    throw new Error('No bootstrap container with image found in job');
+  }
 
   const parts: string[] = ['docker run --pull always --rm'];
 
-  if (bootstrap?.resources?.gpus) {
+  // === Resources из bootstrap-контейнера ===
+  if (bootstrap.resources?.gpus) {
     parts.push(`--gpus ${bootstrap.resources.gpus}`);
   }
-
-  if (bootstrap?.resources?.shm_size) {
+  if (bootstrap.resources?.shm_size) {
     parts.push(`--shm-size ${bootstrap.resources.shm_size}`);
   }
-
-  if (bootstrap?.resources?.memory_limit) {
+  if (bootstrap.resources?.memory_limit) {
     parts.push(`--memory ${bootstrap.resources.memory_limit}`);
   }
-
-  if (bootstrap?.resources?.cpu_limit) {
+  if (bootstrap.resources?.cpu_limit) {
     parts.push(`--cpus ${bootstrap.resources.cpu_limit}`);
   }
 
+  // Передаём переменные окружения из bootstrap.env + JOB_CONFIG_URL
+  if (bootstrap.env) {
+    Object.entries(bootstrap.env).forEach(([key, value]) => {
+      parts.push(`-e ${key}="${value}"`);
+    });
+  }
+
   parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
-  parts.push(`${config.publishedWorkerImage}:${config.publishedWorkerTag}`);
+
+  // Самое важное — используем образ из bootstrap.image!
+  parts.push(bootstrap.image);
 
   return parts.join(' \\\n  ');
 };
@@ -241,15 +253,18 @@ export class JobService {
     const job = await JobModel.findById(token.job_id);
     if (!job) return null;
 
-    const claimUrl = `${baseUrl}/api/run-config?token=${token.token}`;
+    const bootstrap = job.containers.find((c) => c.is_parent === true) ||
+                      job.containers.find((c) => c.name === 'bootstrap') ||
+                      job.containers[0];
+
     const dockerCommand = buildDockerCommand(job, token.token, baseUrl);
 
     return {
       ...this.normalizeShareToken(token),
       base_url: baseUrl,
-      claim_url: claimUrl,
-      share_url: claimUrl,
-      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
+      claim_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      share_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      docker_image: bootstrap?.image || `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
       docker_command: dockerCommand,
       worker_command: dockerCommand,
     };

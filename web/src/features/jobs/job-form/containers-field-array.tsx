@@ -1,11 +1,12 @@
+// src/features/jobs/job-form/containers-field-array.tsx
 import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useWatch, type Control, type UseFormRegister, type UseFormSetValue } from 'react-hook-form';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
-import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
 import { Checkbox } from '@/shared/components/ui/checkbox';
+import type { JobFormValues } from './job-form-schema';
 
 export function ContainersFieldArray({
   control,
@@ -24,7 +25,6 @@ export function ContainersFieldArray({
       ...container,
       is_parent: index === targetIndex,
     }));
-
     setValue('containers', next, {
       shouldDirty: true,
       shouldTouch: true,
@@ -34,10 +34,10 @@ export function ContainersFieldArray({
 
   const handleAppend = () => {
     append({
-      name: '',
+      name: `container-${fields.length + 1}`,
       image: '',
-      is_parent: fields.length === 0,
-      env: [],
+      is_parent: fields.length === 0,           // первый контейнер автоматически bootstrap
+      env: [],                                  // ← ОБЯЗАТЕЛЬНОЕ поле!
       resources: {
         cpu_limit: '',
         memory_limit: '',
@@ -51,18 +51,14 @@ export function ContainersFieldArray({
     const removingParent = containers[index]?.is_parent;
     remove(index);
 
-    const nextLength = fields.length - 1;
-    if (nextLength <= 0) {
-      return;
-    }
-
-    if (removingParent) {
+    // Если удалили bootstrap — делаем первым оставшийся контейнер bootstrap
+    if (removingParent && containers.length > 1) {
       queueMicrotask(() => {
-        const nextContainers = (containers.filter((_, i) => i !== index) ?? []).map((container, i) => ({
-          ...container,
+        const remaining = containers.filter((_, i) => i !== index);
+        const nextContainers = remaining.map((c, i) => ({
+          ...c,
           is_parent: i === 0,
         }));
-
         setValue('containers', nextContainers, {
           shouldDirty: true,
           shouldTouch: true,
@@ -73,15 +69,14 @@ export function ContainersFieldArray({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold">Containers</h3>
           <p className="text-sm text-muted-foreground">
-            Configure the bootstrap container and any sidecars required by the job.
+            Настройте bootstrap-контейнер (должен быть только один) и дополнительные контейнеры.
           </p>
         </div>
-
         <Button type="button" variant="outline" onClick={handleAppend}>
           <Plus className="h-4 w-4" />
           Add container
@@ -89,82 +84,94 @@ export function ContainersFieldArray({
       </div>
 
       <div className="space-y-4">
-        {fields.map((field, index) => (
-          <Card key={field.id}>
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <CardTitle className="text-base">Container #{index + 1}</CardTitle>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => handleRemove(index)}
-                disabled={fields.length === 1}
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </CardHeader>
+        {fields.map((field, index) => {
+          const isParent = containers[index]?.is_parent ?? false;
 
-            <CardContent className="space-y-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor={`containers.${index}.name`}>Name</Label>
-                  <Input id={`containers.${index}.name`} {...register(`containers.${index}.name`)} />
+          return (
+            <Card key={field.id} className={isParent ? 'border-primary/50 bg-primary/5' : ''}>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  Container #{index + 1}
+                  {isParent && (
+                    <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                      BOOTSTRAP
+                    </span>
+                  )}
+                </CardTitle>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemove(index)}
+                  disabled={fields.length === 1}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </CardHeader>
+
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`containers.${index}.name`}>Name</Label>
+                    <Input
+                      id={`containers.${index}.name`}
+                      placeholder="bootstrap"
+                      {...register(`containers.${index}.name`)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`containers.${index}.image`}>Docker Image</Label>
+                    <Input
+                      id={`containers.${index}.image`}
+                      placeholder="igortet/cloud-forge-worker-qwen-7b:0.1.0"
+                      {...register(`containers.${index}.image`)}
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor={`containers.${index}.image`}>Docker image</Label>
-                  <Input id={`containers.${index}.image`} {...register(`containers.${index}.image`)} />
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3 text-sm">
-                <Checkbox
-                  checked={Boolean(containers[index]?.is_parent)}
-                  onChange={() => makeParent(index)}
-                />
-                Bootstrap / parent container
-              </label>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor={`containers.${index}.resources.cpu_limit`}>CPU limit</Label>
-                  <Input
-                    id={`containers.${index}.resources.cpu_limit`}
-                    placeholder="e.g. 2"
-                    {...register(`containers.${index}.resources.cpu_limit`)}
+                <label className="flex items-center gap-3 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={isParent}
+                    onChange={() => makeParent(index)}
                   />
-                </div>
+                  Это основной bootstrap / parent контейнер
+                </label>
 
-                <div className="space-y-2">
-                  <Label htmlFor={`containers.${index}.resources.memory_limit`}>Memory limit</Label>
-                  <Input
-                    id={`containers.${index}.resources.memory_limit`}
-                    placeholder="e.g. 4g"
-                    {...register(`containers.${index}.resources.memory_limit`)}
-                  />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>GPUs</Label>
+                    <Input
+                      placeholder="all"
+                      {...register(`containers.${index}.resources.gpus`)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Shared memory (shm_size)</Label>
+                    <Input
+                      placeholder="16g"
+                      {...register(`containers.${index}.resources.shm_size`)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Memory limit</Label>
+                    <Input
+                      placeholder="64g"
+                      {...register(`containers.${index}.resources.memory_limit`)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CPU limit</Label>
+                    <Input
+                      placeholder="8"
+                      {...register(`containers.${index}.resources.cpu_limit`)}
+                    />
+                  </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor={`containers.${index}.resources.gpus`}>GPUs</Label>
-                  <Input
-                    id={`containers.${index}.resources.gpus`}
-                    placeholder="e.g. all"
-                    {...register(`containers.${index}.resources.gpus`)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor={`containers.${index}.resources.shm_size`}>Shared memory</Label>
-                  <Input
-                    id={`containers.${index}.resources.shm_size`}
-                    placeholder="e.g. 1g"
-                    {...register(`containers.${index}.resources.shm_size`)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

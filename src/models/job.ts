@@ -135,3 +135,36 @@ export interface RunArtifact {
   mime_type: string;
   created_at: string;
 }
+
+// === CATALOG TYPES ===
+// Эти типы используются в catalog/presets.ts и templates/
+
+export interface JobDraftTemplate {
+  title: string;
+  description: string;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: AttachedFile[];
+  execution_code: string;
+  execution_language: ExecutionLanguage;
+  entrypoint?: string | null;
+}
+
+export interface ContainerPreset {
+  id: string;
+  name: string;
+  category: 'bootstrap' | 'runtime' | 'model' | 'service';
+  description: string;
+  recommended_for: string[];
+  container: Container;
+  support_level: 'supported' | 'future';
+}
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  draft: JobDraftTemplate;
+  support_level: 'supported' | 'future';
+}

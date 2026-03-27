@@ -1,7 +1,7 @@
 === CODE BUNDLE ===
 root: /Volumes/Extend/work/cloud-forge/src
 ignore: .codebundleignore
-generated: 2026-03-27T07:31:02.094Z
+generated: 2026-03-27T12:01:11.786Z
 
 
 
@@ -268,6 +268,7 @@ bundle().catch(err => {
 path: /catalog/presets.ts
 ----------------------------------------
 import { AttachedFile, Container, ExecutionLanguage } from '../models/job';
+import { config } from '../utils/config';
 
 export interface JobDraftTemplate {
   title: string;
@@ -299,12 +300,44 @@ export interface JobTemplate {
   support_level: 'supported' | 'future';
 }
 
-const PYTHON_SAMPLE = `from cloudforge import info, input_path, artifacts_path, raise_if_cancel_requested
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const HELLO_WORLD_PYTHON = `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("hello world job started")
+info("Cloud Forge SDK is available inside the bootstrap container")
+
+raise_if_cancel_requested()
+
+hello_file = artifacts_path("hello.txt")
+hello_file.parent.mkdir(parents=True, exist_ok=True)
+hello_file.write_text("hello from cloud forge\\n", encoding="utf-8")
+
+summary_file = artifacts_path("summary.json")
+summary_file.write_text(
+    json.dumps(
+        {
+            "message": "hello from cloud forge",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "artifacts": ["hello.txt", "summary.json"],
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
+info(f"artifact written: {hello_file}")
+info(f"artifact written: {summary_file}")
+info("hello world job finished successfully")
+`;
+
+const PYTHON_SAMPLE = `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
 
 info("python job started")
-
-dataset = input_path("train.jsonl")
-info(f"dataset path: {dataset}")
 
 raise_if_cancel_requested()
 
@@ -312,23 +345,34 @@ result_file = artifacts_path("result.txt")
 result_file.parent.mkdir(parents=True, exist_ok=True)
 result_file.write_text("hello from cloud forge", encoding="utf-8")
 
+metadata_file = artifacts_path("metadata.json")
+metadata_file.write_text(
+    json.dumps(
+        {
+            "language": "python",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "message": "hello from cloud forge",
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
 info(f"result written to {result_file}")
+info(f"metadata written to {metadata_file}")
 `;
 
 const JAVASCRIPT_SAMPLE = `const fs = require('fs');
 const path = require('path');
 const {
   info,
-  inputPath,
   artifactsPath,
   raiseIfCancelRequested,
 } = require('cloudforge');
 
 async function main() {
   await info('javascript job started');
-
-  const datasetPath = inputPath('input.jsonl');
-  await info(\`dataset path: \${datasetPath}\`);
+  await info('Cloud Forge SDK is available inside the bootstrap container');
 
   raiseIfCancelRequested();
 
@@ -336,7 +380,22 @@ async function main() {
   fs.mkdirSync(path.dirname(resultPath), { recursive: true });
   fs.writeFileSync(resultPath, 'hello from cloud forge');
 
+  const summaryPath = artifactsPath('summary.json');
+  fs.writeFileSync(
+    summaryPath,
+    JSON.stringify(
+      {
+        language: 'javascript',
+        message: 'hello from cloud forge',
+        generated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+
   await info(\`result written to \${resultPath}\`);
+  await info(\`summary written to \${summaryPath}\`);
 }
 
 main().catch(async (err) => {
@@ -351,33 +410,39 @@ main().catch(async (err) => {
 export const containerPresets: ContainerPreset[] = [
   {
     id: 'bootstrap-python',
-    name: 'Bootstrap Python',
+    name: 'Cloud Forge Bootstrap (Python)',
     category: 'bootstrap',
-    description: 'Базовый bootstrap-контейнер для Python job с SDK Cloud Forge.',
-    recommended_for: ['python', 'training', 'etl', 'data-processing'],
+    description:
+      'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK и worker runtime.',
+    recommended_for: ['python', 'remote-run', 'sdk', 'hello-world', 'etl', 'data-processing'],
     support_level: 'supported',
     container: {
       name: 'bootstrap',
-      image: 'xproger/cloud-forge-worker:0.1.0',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
       is_parent: true,
       resources: {
         shm_size: '2g',
+        cpu_limit: 2,
+        memory_limit: '4g',
       },
     },
   },
   {
     id: 'bootstrap-node',
-    name: 'Bootstrap Node.js',
+    name: 'Cloud Forge Bootstrap (Node.js)',
     category: 'bootstrap',
-    description: 'Базовый bootstrap-контейнер для JavaScript/Node.js job.',
-    recommended_for: ['javascript', 'node', 'etl', 'automation'],
+    description:
+      'Официальный bootstrap-контейнер Cloud Forge для JavaScript/Node.js job с предустановленным SDK и worker runtime.',
+    recommended_for: ['javascript', 'node', 'remote-run', 'sdk', 'automation'],
     support_level: 'supported',
     container: {
       name: 'bootstrap',
-      image: 'xproger/cloud-forge-worker:0.1.0',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
       is_parent: true,
       resources: {
         shm_size: '1g',
+        cpu_limit: 2,
+        memory_limit: '4g',
       },
     },
   },
@@ -451,6 +516,27 @@ export const containerPresets: ContainerPreset[] = [
 
 export const jobTemplates: JobTemplate[] = [
   {
+    id: 'hello-world-python',
+    name: 'Hello World (Remote Python)',
+    description:
+      'Минимальный job для проверки удаленного запуска через Docker: пишет hello.txt и summary.json через Cloud Forge SDK.',
+    tags: ['python', 'hello-world', 'remote-run', 'sdk', 'supported'],
+    support_level: 'supported',
+    draft: {
+      title: 'Hello World',
+      description:
+        'Проверочный remote job для публикации bootstrap-образа и запуска на любой машине с Docker.',
+      containers: [containerPresets.find((preset) => preset.id === 'bootstrap-python')!.container],
+      environments: {
+        APP_ENV: 'production',
+      },
+      attached_files: [],
+      execution_code: HELLO_WORLD_PYTHON,
+      execution_language: 'python',
+      entrypoint: 'main.py',
+    },
+  },
+  {
     id: 'python-basic',
     name: 'Python Basic',
     description: 'Простой Python job с одним bootstrap-контейнером.',
@@ -466,7 +552,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: PYTHON_SAMPLE,
       execution_language: 'python',
-      entrypoint: null,
+      entrypoint: 'main.py',
     },
   },
   {
@@ -485,7 +571,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: JAVASCRIPT_SAMPLE,
       execution_language: 'javascript',
-      entrypoint: null,
+      entrypoint: 'main.js',
     },
   },
   {
@@ -507,12 +593,9 @@ export const jobTemplates: JobTemplate[] = [
         EPOCHS: '3',
       },
       attached_files: [],
-      execution_code: `from cloudforge import info, input_path, artifacts_path, raise_if_cancel_requested
+      execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
 
 info("training started")
-dataset = input_path("train.jsonl")
-info(f"dataset: {dataset}")
-
 raise_if_cancel_requested()
 
 checkpoint = artifacts_path("checkpoints/epoch-1.txt")
@@ -522,7 +605,7 @@ checkpoint.write_text("demo checkpoint", encoding="utf-8")
 info("training finished")
 `,
       execution_language: 'python',
-      entrypoint: null,
+      entrypoint: 'train.py',
     },
   },
   {
@@ -551,7 +634,7 @@ raise_if_cancel_requested()
 info("connect to vLLM runtime and execute prompts here")
 `,
       execution_language: 'python',
-      entrypoint: null,
+      entrypoint: 'main.py',
     },
   },
 ];
@@ -560,7 +643,15 @@ info("connect to vLLM runtime and execute prompts here")
 path: /db/index.ts
 ----------------------------------------
 import sqlite3 from 'sqlite3';
+import path from 'path';
+import fs from 'fs';
 import { config } from '../utils/config';
+
+// Ensure the directory for the database exists
+const dbDir = path.dirname(config.databaseUrl);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 const db = new sqlite3.Database(config.databaseUrl);
 
@@ -1591,32 +1682,8 @@ export default async function artifactsRoutes(app: FastifyInstance) {
 
 path: /routes/catalog.ts
 ----------------------------------------
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { containerPresets, jobTemplates } from '../catalog/presets';
-
-const mapContainerPreset = (preset: (typeof containerPresets)[number]) => ({
-  id: preset.id,
-  name: preset.name,
-  description: preset.description,
-  image: preset.container.image,
-  tags: [preset.category, ...preset.recommended_for],
-  resources: preset.container.resources ?? {},
-  env: preset.container.env ?? {},
-});
-
-const mapJobTemplate = (template: (typeof jobTemplates)[number]) => ({
-  id: template.id,
-  name: template.name,
-  description: template.description,
-  tags: template.tags,
-  preset: {
-    containers: template.draft.containers,
-    environments: template.draft.environments,
-    execution_code: template.draft.execution_code,
-    execution_language: template.draft.execution_language,
-    entrypoint: template.draft.entrypoint ?? null,
-  },
-});
 
 export default async function catalogRoutes(app: FastifyInstance) {
   app.get(
@@ -1627,10 +1694,9 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async () => {
-      const items = containerPresets.map(mapContainerPreset);
       return {
-        items,
-        total: items.length,
+        items: containerPresets,
+        total: containerPresets.length,
       };
     },
   );
@@ -1643,10 +1709,9 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async () => {
-      const items = jobTemplates.map(mapJobTemplate);
       return {
-        items,
-        total: items.length,
+        items: jobTemplates,
+        total: jobTemplates.length,
       };
     },
   );
@@ -1665,16 +1730,17 @@ export default async function catalogRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (req, reply) => {
-      const template = jobTemplates.find(
-        (item) => item.id === (req.params as { id: string }).id,
-      );
+    async (
+      req: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const template = jobTemplates.find((item) => item.id === req.params.id);
 
       if (!template) {
         return reply.code(404).send({ error: 'Job template not found' });
       }
 
-      return mapJobTemplate(template);
+      return reply.send(template);
     },
   );
 }
@@ -1804,6 +1870,7 @@ import { config } from '../utils/config';
 import {
   JobValidationError,
   assertValidCreateJobPayload,
+  validateCreateJobPayload,
 } from '../utils/job-validation';
 
 interface CreateJobBody {
@@ -1827,9 +1894,9 @@ interface CreateJobBody {
 type UpdateJobBody = Partial<CreateJobBody>;
 
 interface CreateShareTokenBody {
-  expires_in_seconds?: number;
+  expires_in_seconds?: number | null;
   expires_at?: string | null;
-  max_claims?: number;
+  max_claims?: number | null;
 }
 
 interface ListJobsQuerystring {
@@ -1872,32 +1939,13 @@ export default async function jobsRoutes(app: FastifyInstance) {
       },
     },
     async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
-      try {
-        const normalized = assertValidCreateJobPayload(req.body);
+      const result = validateCreateJobPayload(req.body);
 
-        return reply.code(200).send({
-          valid: true,
-          errors: [],
-          warnings: [],
-          normalized,
-        });
-      } catch (err) {
-        if (err instanceof JobValidationError) {
-          return reply.code(422).send({
-            valid: false,
-            errors: err.details,
-            warnings: [],
-          });
-        }
-
-        return sendRouteError(
-          req,
-          reply,
-          err,
-          'POST /jobs/validate',
-          'Failed to validate job payload',
-        );
+      if (!result.valid) {
+        return reply.code(422).send(result);
       }
+
+      return reply.code(200).send(result);
     },
   );
 
@@ -1949,11 +1997,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
       try {
         const normalized = assertValidCreateJobPayload(req.body);
         const created = await JobService.createJob(normalized);
-
-        return reply.code(201).send({
-          job_id: created.id,
-          normalized,
-        });
+        return reply.code(201).send(created);
       } catch (err) {
         if (err instanceof JobValidationError) {
           return reply.code(422).send({
@@ -2003,7 +2047,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
     '/jobs/:id',
     {
       schema: {
-        description: 'Get job details with stats and share tokens',
+        description: 'Get a single job by id',
         params: {
           type: 'object',
           required: ['id'],
@@ -2014,13 +2058,13 @@ export default async function jobsRoutes(app: FastifyInstance) {
       },
     },
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const result = await JobService.getJobDetails(req.params.id);
+      const job = await JobService.getJob(req.params.id);
 
-      if (!result) {
+      if (!job) {
         return reply.code(404).send({ error: 'Job not found' });
       }
 
-      return reply.send(result);
+      return reply.send(job);
     },
   );
 
@@ -2203,9 +2247,9 @@ export default async function jobsRoutes(app: FastifyInstance) {
         body: {
           type: 'object',
           properties: {
-            expires_in_seconds: { type: 'integer', minimum: 1 },
+            expires_in_seconds: { type: 'integer', minimum: 1, nullable: true },
             expires_at: { type: 'string', format: 'date-time', nullable: true },
-            max_claims: { type: 'integer', minimum: 1 },
+            max_claims: { type: 'integer', minimum: 1, nullable: true },
           },
         },
       },
@@ -2221,9 +2265,9 @@ export default async function jobsRoutes(app: FastifyInstance) {
         const result = await JobService.createShareToken(
           req.params.id,
           {
-            expiresInSeconds: req.body?.expires_in_seconds,
+            expiresInSeconds: req.body?.expires_in_seconds ?? undefined,
             expiresAt: req.body?.expires_at ?? null,
-            maxClaims: req.body?.max_claims,
+            maxClaims: req.body?.max_claims ?? undefined,
           },
           getBaseUrl(req),
         );
@@ -3231,16 +3275,14 @@ const buildAttachedFilesConfig = (attachedFiles: AttachedFile[]) =>
 
 /**
  * Generates a docker run command for remote execution.
- * MVP: Uses official published worker image. User code executes inside this container.
- * Future: Worker will become an executor and orchestrate additional containers defined in job config.
+ * The published worker image is expected to contain the Cloud Forge SDK + worker runtime.
  */
 const buildDockerCommand = (job: Job, token: string, baseUrl: string): string => {
-  // We use the first container (or bootstrap) resources as a hint for the worker run command
   const bootstrap =
     job.containers.find((container) => container.name === 'bootstrap' || container.is_parent) ||
     job.containers[0];
 
-  const parts: string[] = ['docker run --rm'];
+  const parts: string[] = ['docker run --pull always --rm'];
 
   if (bootstrap?.resources?.gpus) {
     parts.push(`--gpus ${bootstrap.resources.gpus}`);
@@ -3248,6 +3290,14 @@ const buildDockerCommand = (job: Job, token: string, baseUrl: string): string =>
 
   if (bootstrap?.resources?.shm_size) {
     parts.push(`--shm-size ${bootstrap.resources.shm_size}`);
+  }
+
+  if (bootstrap?.resources?.memory_limit) {
+    parts.push(`--memory ${bootstrap.resources.memory_limit}`);
+  }
+
+  if (bootstrap?.resources?.cpu_limit) {
+    parts.push(`--cpus ${bootstrap.resources.cpu_limit}`);
   }
 
   parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
@@ -3435,6 +3485,7 @@ export class JobService {
       base_url: baseUrl,
       claim_url: claimUrl,
       share_url: claimUrl,
+      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
       docker_command: dockerCommand,
       worker_command: dockerCommand,
     };
@@ -3462,7 +3513,7 @@ export class JobService {
       expiresAt?: string | null;
       maxClaims?: number;
     },
-    _baseUrl: string,
+    baseUrl: string,
   ) {
     const job = await JobModel.findById(jobId);
     if (!job) {
@@ -3491,12 +3542,12 @@ export class JobService {
       max_claims: options.maxClaims ?? null,
     });
 
-    const created = await ShareTokenModel.findByToken(token);
+    const created = await this.getShareToken(shareTokenId, baseUrl);
     if (!created) {
       throw new Error('Failed to create share token');
     }
 
-    return this.normalizeShareToken(created);
+    return created;
   }
 
   static async claimRunByToken(token: string) {
@@ -3893,7 +3944,7 @@ const normalizeBaseUrl = (value?: string): string | undefined => {
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
-  databaseUrl: process.env.DATABASE_URL || 'db.sqlite',
+  databaseUrl: process.env.DATABASE_URL || 'data/db.sqlite',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   minioEndpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
   minioAccessKey: process.env.MINIO_ACCESS_KEY || 'cloudforge',
@@ -4332,4 +4383,4 @@ included: 23
 skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 114747
+totalBytes(approx): 116666

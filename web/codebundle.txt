@@ -1,7 +1,7 @@
 === CODE BUNDLE ===
 root: /Volumes/Extend/work/cloud-forge/web
 ignore: .codebundleignore
-generated: 2026-03-27T07:32:09.964Z
+generated: 2026-03-27T12:16:06.326Z
 
 
 
@@ -224,30 +224,49 @@ export const dashboardApi = {
 path: /src/api/jobs.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
-import type { Job, JobsListResponse, Run, ShareToken } from '@/api/types';
+import type { Job, JobPayload, JobsListResponse, Run, RunStatus, ShareToken } from '@/api/types';
 
 export interface JobsListParams {
   search?: string;
-  status?: string;
+  status?: RunStatus;
   limit?: number;
   offset?: number;
 }
 
 export interface CreateShareTokenPayload {
-  expires_at?: string | null;
-  max_claims?: number | null;
+  expires_at?: string;
+  expires_in_seconds?: number;
+  max_claims?: number;
 }
 
 export const jobsApi = {
-  list: (params?: JobsListParams) => unwrap(api.get<JobsListResponse>('/jobs', { params })),
-  get: (jobId: string) => unwrap(api.get<Job>(`/jobs/${jobId}`)),
-  create: (payload: Partial<Job> & Pick<Job, 'id' | 'title' | 'execution_code' | 'execution_language' | 'containers' | 'environments' | 'attached_files'>) => unwrap(api.post<Job>('/jobs', payload)),
-  update: (jobId: string, payload: Partial<Job>) => unwrap(api.patch<Job>(`/jobs/${jobId}`, payload)),
-  delete: (jobId: string) => unwrap(api.delete<{ ok?: boolean }>(`/jobs/${jobId}`)),
-  clone: (jobId: string) => unwrap(api.post<Job>(`/jobs/${jobId}/clone`)),
-  listRuns: (jobId: string, params?: { limit?: number; offset?: number }) => unwrap(api.get<Run[]>(`/jobs/${jobId}/runs`, { params })),
-  listShareTokens: (jobId: string) => unwrap(api.get<ShareToken[]>(`/jobs/${jobId}/share-tokens`)),
-  createShareToken: (jobId: string, payload: CreateShareTokenPayload) => unwrap(api.post<ShareToken>(`/jobs/${jobId}/share-tokens`, payload)),
+  list: (params?: JobsListParams) =>
+    unwrap(api.get<JobsListResponse>('/jobs', { params })),
+
+  get: (jobId: string) =>
+    unwrap(api.get<Job>(`/jobs/${jobId}`)),
+
+  create: (payload: JobPayload) =>
+    unwrap(api.post<Job>('/jobs', payload)),
+
+  update: (jobId: string, payload: Partial<JobPayload>) =>
+    unwrap(api.patch<Job>(`/jobs/${jobId}`, payload)),
+
+  delete: async (jobId: string): Promise<void> => {
+    await api.delete(`/jobs/${jobId}`);
+  },
+
+  clone: (jobId: string) =>
+    unwrap(api.post<Job>(`/jobs/${jobId}/clone`)),
+
+  listRuns: (jobId: string, params?: { limit?: number; offset?: number }) =>
+    unwrap(api.get<Run[]>(`/jobs/${jobId}/runs`, { params })),
+
+  listShareTokens: (jobId: string) =>
+    unwrap(api.get<ShareToken[]>(`/jobs/${jobId}/share-tokens`)),
+
+  createShareToken: (jobId: string, payload: CreateShareTokenPayload) =>
+    unwrap(api.post<ShareToken>(`/jobs/${jobId}/share-tokens`, payload)),
 };
 
 
@@ -279,6 +298,8 @@ export type ExecutionLanguage = 'python' | 'javascript';
 export type RunStatus = 'created' | 'running' | 'finished' | 'failed' | 'cancelled' | 'lost';
 export type WorkerStatus = 'online' | 'busy' | 'offline';
 export type LogLevel = 'info' | 'warn' | 'error';
+export type SupportLevel = 'supported' | 'future';
+export type ContainerPresetCategory = 'bootstrap' | 'runtime' | 'model' | 'service';
 
 export interface Container {
   name: string;
@@ -301,8 +322,7 @@ export interface AttachedFile {
   mime_type: string;
 }
 
-export interface Job {
-  id: string;
+export interface JobPayload {
   title: string;
   description?: string | null;
   owner_id?: string | null;
@@ -312,6 +332,10 @@ export interface Job {
   execution_code: string;
   execution_language: ExecutionLanguage;
   entrypoint?: string | null;
+}
+
+export interface Job extends JobPayload {
+  id: string;
   created_at: string;
   updated_at: string;
 }
@@ -366,7 +390,7 @@ export interface RunArtifact {
 export interface Run {
   id: string;
   job_id: string;
-  share_token_id?: string;
+  share_token_id: string;
   worker_id?: string | null;
   worker_name?: string | null;
   status: RunStatus;
@@ -392,6 +416,7 @@ export interface ShareToken {
   expires_at?: string | null;
   max_claims?: number | null;
   claim_count: number;
+  remaining_claims?: number | null;
   revoked: boolean;
   last_claimed_at?: string | null;
   created_at: string;
@@ -435,28 +460,25 @@ export interface RecentEvent {
   created_at: string;
 }
 
+export interface JobDraftTemplate extends JobPayload {}
+
 export interface JobTemplate {
   id: string;
   name: string;
-  description?: string;
-  tags?: string[];
-  preset: {
-    containers?: Container[];
-    environments?: Record<string, string>;
-    execution_code: string;
-    execution_language: ExecutionLanguage;
-    entrypoint?: string | null;
-  };
+  description: string;
+  tags: string[];
+  draft: JobDraftTemplate;
+  support_level: SupportLevel;
 }
 
 export interface ContainerPreset {
   id: string;
   name: string;
-  description?: string;
-  image: string;
-  tags?: string[];
-  resources?: Container['resources'];
-  env?: Record<string, string>;
+  category: ContainerPresetCategory;
+  description: string;
+  recommended_for: string[];
+  container: Container;
+  support_level: SupportLevel;
 }
 
 export interface PaginatedResponse<T> {
@@ -548,7 +570,12 @@ export function RouteErrorBoundary({ error }: { error: Error }) {
 
 path: /src/app/router.tsx
 ----------------------------------------
-import { Outlet, createRootRouteWithContext, createRoute, createRouter } from '@tanstack/react-router';
+import {
+  Outlet,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+} from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/app/shell/app-shell';
 import { RouteErrorBoundary } from '@/app/route-error-boundary';
@@ -577,16 +604,70 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   notFoundComponent: NotFoundPage,
 });
 
-const dashboardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: DashboardPage });
-const jobsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs', component: JobsListPage });
-const createJobRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/create', component: JobEditorPage });
-const jobDetailsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId', component: JobDetailsPage });
-const editJobRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId/edit', component: JobEditorPage });
-const jobRunsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId/runs', component: JobRunsPage });
-const jobTokensRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId/tokens', component: JobTokensPage });
-const runDetailsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/runs/$runId', component: RunDetailsPage });
-const workersRoute = createRoute({ getParentRoute: () => rootRoute, path: '/workers', component: WorkersListPage });
-const catalogRoute = createRoute({ getParentRoute: () => rootRoute, path: '/catalog', component: CatalogPage });
+const dashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  component: DashboardPage,
+});
+
+const jobsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs',
+  component: JobsListPage,
+});
+
+const createJobRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/create',
+  validateSearch: (search: Record<string, unknown>) => ({
+    templateId: typeof search.templateId === 'string' ? search.templateId : undefined,
+    containerPresetId:
+      typeof search.containerPresetId === 'string' ? search.containerPresetId : undefined,
+  }),
+  component: JobEditorPage,
+});
+
+const jobDetailsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/$jobId',
+  component: JobDetailsPage,
+});
+
+const editJobRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/$jobId/edit',
+  component: JobEditorPage,
+});
+
+const jobRunsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/$jobId/runs',
+  component: JobRunsPage,
+});
+
+const jobTokensRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/$jobId/tokens',
+  component: JobTokensPage,
+});
+
+const runDetailsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/runs/$runId',
+  component: RunDetailsPage,
+});
+
+const workersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/workers',
+  component: WorkersListPage,
+});
+
+const catalogRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/catalog',
+  component: CatalogPage,
+});
 
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
@@ -1133,7 +1214,7 @@ export function EnvironmentsFieldArray({ control, register, name = 'environments
 
 path: /src/features/jobs/job-form/job-builder-form.tsx
 ----------------------------------------
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -1257,16 +1338,22 @@ function normalizePayloadContainers(
 export function JobBuilderForm({
   jobId,
   initialJob,
+  initialTemplate,
+  initialContainerPreset,
   onSaved,
 }: {
   jobId?: string;
   initialJob?: Job | null;
+  initialTemplate?: JobTemplate | null;
+  initialContainerPreset?: ContainerPreset | null;
   onSaved: (job: Job) => Promise<void> | void;
 }) {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [tab, setTab] = useState('general');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const isEditMode = Boolean(jobId);
+  const appliedTemplateIdRef = useRef<string | null>(null);
+  const appliedContainerPresetIdRef = useRef<string | null>(null);
 
   const initialValues = useMemo(() => mapJobToFormValues(initialJob), [initialJob]);
 
@@ -1284,6 +1371,8 @@ export function JobBuilderForm({
     setPendingFiles([]);
     setSubmitError(null);
     setTab('general');
+    appliedTemplateIdRef.current = null;
+    appliedContainerPresetIdRef.current = null;
   }, [form, initialValues, initialJob, isEditMode]);
 
   const attachmentsFieldArray = useFieldArray({
@@ -1305,50 +1394,39 @@ export function JobBuilderForm({
     setPendingFiles((previous) => [...previous, ...nextFiles]);
   };
 
-  const onApplyTemplate = (template: JobTemplate) => {
-    try {
-      const preset =
-        (template as any).preset ?? {
-          execution_language: (template as any).execution_language ?? 'python',
-          execution_code: (template as any).execution_code ?? '',
-          entrypoint: (template as any).entrypoint ?? '',
-          environments: (template as any).environments ?? {},
-          containers: (template as any).containers ?? [],
-        };
+  const applyTemplateToForm = useCallback(
+    (template: JobTemplate, notify = true) => {
+      const draft = template.draft;
+      const nextLanguage = draft.execution_language ?? 'python';
 
-      const nextLanguage = (preset.execution_language ??
-        'python') as JobFormValues['execution_language'];
-
-      const mappedContainers: FormContainer[] = (preset.containers || []).map(
-        (container: any) => ({
-          name: container.name ?? '',
-          image: container.image ?? '',
-          is_parent: Boolean(container.is_parent),
-          env: Object.entries(container.env || {}).map(([key, value]) => ({
-            key,
-            value: String(value ?? ''),
-          })),
-          resources: {
-            cpu_limit:
-              container.resources?.cpu_limit !== undefined
-                ? String(container.resources.cpu_limit)
-                : '',
-            memory_limit: container.resources?.memory_limit ?? '',
-            gpus: container.resources?.gpus ?? '',
-            shm_size: container.resources?.shm_size ?? '',
-          },
-        }),
-      );
+      const mappedContainers: FormContainer[] = (draft.containers || []).map((container) => ({
+        name: container.name ?? '',
+        image: container.image ?? '',
+        is_parent: Boolean(container.is_parent),
+        env: Object.entries(container.env || {}).map(([key, value]) => ({
+          key,
+          value: String(value ?? ''),
+        })),
+        resources: {
+          cpu_limit:
+            container.resources?.cpu_limit !== undefined
+              ? String(container.resources.cpu_limit)
+              : '',
+          memory_limit: container.resources?.memory_limit ?? '',
+          gpus: container.resources?.gpus ?? '',
+          shm_size: container.resources?.shm_size ?? '',
+        },
+      }));
 
       form.reset({
         ...form.getValues(),
-        title: template.name ?? form.getValues('title'),
-        description: template.description || '',
+        title: draft.title || template.name || form.getValues('title'),
+        description: draft.description || template.description || '',
         execution_language: nextLanguage,
-        execution_code: preset.execution_code ?? '',
+        execution_code: draft.execution_code ?? '',
         entrypoint:
-          preset.entrypoint || (nextLanguage === 'javascript' ? 'index.js' : 'main.py'),
-        environments: Object.entries(preset.environments || {}).map(([key, value]) => ({
+          draft.entrypoint || (nextLanguage === 'javascript' ? 'main.js' : 'main.py'),
+        environments: Object.entries(draft.environments || {}).map(([key, value]) => ({
           key,
           value: String(value ?? ''),
         })),
@@ -1358,46 +1436,80 @@ export function JobBuilderForm({
 
       form.clearErrors();
       setSubmitError(null);
-      toast.success(`Applied template: ${template.name}`);
-    } catch (error) {
-      console.error('Failed to apply template', error, template);
-      toast.error('Failed to apply template');
-    }
-  };
 
-  const onApplyContainerPreset = (preset: ContainerPreset) => {
-    const currentContainers = form.getValues('containers');
-    const nextContainers = normalizeFormContainers(
-      [
-        ...currentContainers,
-        {
-          name: preset.name,
-          image: preset.image,
-          is_parent: false,
-          env: Object.entries(preset.env || {}).map(([key, value]) => ({
-            key,
-            value: String(value ?? ''),
-          })),
-          resources: {
-            cpu_limit: preset.resources?.cpu_limit?.toString() || '',
-            memory_limit: preset.resources?.memory_limit || '',
-            gpus: preset.resources?.gpus || '',
-            shm_size: preset.resources?.shm_size || '',
+      if (notify) {
+        toast.success(`Applied template: ${template.name}`);
+      }
+    },
+    [form],
+  );
+
+  const applyContainerPresetToForm = useCallback(
+    (preset: ContainerPreset, notify = true) => {
+      const currentContainers = form.getValues('containers');
+
+      const nextContainers = normalizeFormContainers(
+        [
+          ...currentContainers,
+          {
+            name: preset.container.name ?? preset.name,
+            image: preset.container.image ?? '',
+            is_parent: Boolean(preset.container.is_parent),
+            env: Object.entries(preset.container.env || {}).map(([key, value]) => ({
+              key,
+              value: String(value ?? ''),
+            })),
+            resources: {
+              cpu_limit: preset.container.resources?.cpu_limit?.toString() || '',
+              memory_limit: preset.container.resources?.memory_limit || '',
+              gpus: preset.container.resources?.gpus || '',
+              shm_size: preset.container.resources?.shm_size || '',
+            },
           },
-        },
-      ],
-      form.getValues('execution_language'),
-    );
+        ],
+        form.getValues('execution_language'),
+      );
 
-    form.setValue('containers', nextContainers, {
-      shouldDirty: true,
-      shouldTouch: true,
-      shouldValidate: true,
-    });
+      form.setValue('containers', nextContainers, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
 
-    setSubmitError(null);
-    toast.success(`Added container preset: ${preset.name}`);
-  };
+      setSubmitError(null);
+
+      if (notify) {
+        toast.success(`Added container preset: ${preset.name}`);
+      }
+    },
+    [form],
+  );
+
+  useEffect(() => {
+    if (isEditMode) return;
+
+    if (initialTemplate && appliedTemplateIdRef.current !== initialTemplate.id) {
+      applyTemplateToForm(initialTemplate, false);
+      appliedTemplateIdRef.current = initialTemplate.id;
+      appliedContainerPresetIdRef.current = null;
+      return;
+    }
+
+    if (
+      !initialTemplate &&
+      initialContainerPreset &&
+      appliedContainerPresetIdRef.current !== initialContainerPreset.id
+    ) {
+      applyContainerPresetToForm(initialContainerPreset, false);
+      appliedContainerPresetIdRef.current = initialContainerPreset.id;
+    }
+  }, [
+    applyContainerPresetToForm,
+    applyTemplateToForm,
+    initialContainerPreset,
+    initialTemplate,
+    isEditMode,
+  ]);
 
   const submit = form.handleSubmit(
     async (values) => {
@@ -1420,10 +1532,7 @@ export function JobBuilderForm({
         const savedJob =
           isEditMode && jobId
             ? await jobsApi.update(jobId, normalizedPayload)
-            : await jobsApi.create({
-                ...normalizedPayload,
-                id: crypto.randomUUID(),
-              });
+            : await jobsApi.create(normalizedPayload);
 
         if (pendingFiles.length) {
           const uploadedFiles = [];
@@ -1435,13 +1544,15 @@ export function JobBuilderForm({
 
           if (uploadedFiles.length) {
             const finalFiles = [...values.attached_files, ...uploadedFiles];
-            await jobsApi.update(savedJob.id, { attached_files: finalFiles });
-            savedJob.attached_files = finalFiles;
+            const updatedJob = await jobsApi.update(savedJob.id, { attached_files: finalFiles });
+            setPendingFiles([]);
+            toast.success(isEditMode ? 'Job updated' : 'Job created');
+            await onSaved(updatedJob);
+            return;
           }
-        } else {
-          savedJob.attached_files = values.attached_files;
         }
 
+        savedJob.attached_files = values.attached_files;
         setPendingFiles([]);
         toast.success(isEditMode ? 'Job updated' : 'Job created');
         await onSaved(savedJob);
@@ -1494,8 +1605,8 @@ export function JobBuilderForm({
 
         <div className="flex flex-wrap items-center gap-2">
           <TemplatePickerDialog
-            onApplyTemplate={onApplyTemplate}
-            onApplyContainerPreset={onApplyContainerPreset}
+            onApplyTemplate={(template) => applyTemplateToForm(template, true)}
+            onApplyContainerPreset={(preset) => applyContainerPresetToForm(preset, true)}
           />
           <Button type="submit" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting ? 'Saving...' : 'Save job'}
@@ -1504,7 +1615,7 @@ export function JobBuilderForm({
       </div>
 
       {submitError ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive whitespace-pre-line">
+        <div className="whitespace-pre-line rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {submitError}
         </div>
       ) : null}
@@ -1528,11 +1639,11 @@ export function JobBuilderForm({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="entrypoint">Entrypoint</Label>
+                  <Label htmlFor="entrypoint">Entrypoint filename</Label>
                   <Input
                     id="entrypoint"
                     {...form.register('entrypoint')}
-                    placeholder="main.py"
+                    placeholder={language === 'javascript' ? 'main.js' : 'main.py'}
                   />
                   {form.formState.errors.entrypoint ? (
                     <p className="text-xs text-destructive">
@@ -1670,6 +1781,12 @@ import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
 
 export type FormContainer = JobFormValues['containers'][number];
 
+export function defaultEntrypoint(language: ExecutionLanguage): string {
+  return language === 'javascript'
+    ? 'node /workspace/code/index.js'
+    : 'python3 /workspace/code/main.py';
+}
+
 export function makeBootstrapContainer(language: ExecutionLanguage): FormContainer {
   return {
     name: 'bootstrap',
@@ -1728,7 +1845,10 @@ export function normalizeFormContainers(
   const parentIndex = list.findIndex((item) => item.is_parent);
 
   if (parentIndex === -1) {
-    return [{ ...list[0], is_parent: true }, ...list.slice(1).map((item) => ({ ...item, is_parent: false }))];
+    return [
+      { ...list[0], is_parent: true },
+      ...list.slice(1).map((item) => ({ ...item, is_parent: false })),
+    ];
   }
 
   return list.map((item, index) => ({
@@ -1738,18 +1858,20 @@ export function normalizeFormContainers(
 }
 
 export function normalizePayloadContainers(
-  containers: Array<{
-    name: string;
-    image: string;
-    is_parent?: boolean;
-    env?: Record<string, string>;
-    resources?: {
-      cpu_limit?: number;
-      memory_limit?: string;
-      gpus?: string;
-      shm_size?: string;
-    };
-  }> | undefined,
+  containers:
+    | Array<{
+        name: string;
+        image: string;
+        is_parent?: boolean;
+        env?: Record<string, string>;
+        resources?: {
+          cpu_limit?: number;
+          memory_limit?: string;
+          gpus?: string;
+          shm_size?: string;
+        };
+      }>
+    | undefined,
   language: ExecutionLanguage,
 ) {
   const list = Array.isArray(containers) ? [...containers] : [];
@@ -1785,29 +1907,33 @@ export function mapTemplateToFormValues(
   template: JobTemplate,
   currentValues: JobFormValues,
 ): JobFormValues {
-  const preset = template.preset || {
+  const draft = template.draft || {
     execution_language: 'python' as ExecutionLanguage,
     execution_code: '',
     entrypoint: '',
     environments: {},
     containers: [],
+    title: '',
+    description: '',
+    attached_files: [],
   };
 
-  const nextLanguage = preset.execution_language ?? 'python';
-  const templateContainers = (preset.containers || []).map(mapApiContainerToFormContainer);
+  const nextLanguage = draft.execution_language ?? 'python';
+  const templateContainers = (draft.containers || []).map(mapApiContainerToFormContainer);
 
   return {
     ...currentValues,
-    title: template.name ?? currentValues.title,
-    description: template.description || '',
+    title: draft.title || template.name || currentValues.title,
+    description: draft.description || template.description || '',
     execution_language: nextLanguage,
-    execution_code: preset.execution_code ?? '',
-    entrypoint: preset.entrypoint || (nextLanguage === 'javascript' ? 'index.js' : 'main.py'),
-    environments: Object.entries(preset.environments || {}).map(([key, value]) => ({
+    execution_code: draft.execution_code ?? '',
+    entrypoint: draft.entrypoint || defaultEntrypoint(nextLanguage),
+    environments: Object.entries(draft.environments || {}).map(([key, value]) => ({
       key,
       value: String(value ?? ''),
     })),
     containers: normalizeFormContainers(templateContainers, nextLanguage),
+    attached_files: currentValues.attached_files,
   };
 }
 
@@ -1817,6 +1943,14 @@ path: /src/features/jobs/job-form/job-form-mappers.ts
 import type { AttachedFile, Container, Job } from '@/api/types';
 import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
 import { compactObject, fromKeyValuePairs, toKeyValuePairs } from '@/shared/utils/object';
+
+function defaultEntrypoint(
+  language: JobFormValues['execution_language'],
+): string {
+  return language === 'javascript'
+    ? 'node /workspace/code/index.js'
+    : 'python3 /workspace/code/main.py';
+}
 
 function makeBootstrapContainer(
   language: JobFormValues['execution_language'],
@@ -1879,7 +2013,7 @@ export function mapJobToFormValues(job?: Job | null): JobFormValues {
     description: job?.description ?? '',
     execution_language: executionLanguage,
     execution_code: job?.execution_code ?? '',
-    entrypoint: job?.entrypoint ?? (executionLanguage === 'javascript' ? 'index.js' : 'main.py'),
+    entrypoint: job?.entrypoint ?? defaultEntrypoint(executionLanguage),
     environments: toKeyValuePairs(job?.environments ?? {}),
     containers: normalizeFormContainers(mappedContainers, executionLanguage),
     attached_files: job?.attached_files ?? [],
@@ -1995,6 +2129,20 @@ import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 
+function SupportBadge({ value }: { value: 'supported' | 'future' }) {
+  return (
+    <span
+      className={
+        value === 'supported'
+          ? 'rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700'
+          : 'rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700'
+      }
+    >
+      {value}
+    </span>
+  );
+}
+
 export function TemplatePickerDialog({
   onApplyTemplate,
   onApplyContainerPreset,
@@ -2046,13 +2194,16 @@ export function TemplatePickerDialog({
                 : templatesQuery.data?.items.map((template) => (
                     <Card key={template.id}>
                       <CardHeader>
-                        <CardTitle className="text-base">{template.name}</CardTitle>
+                        <div className="flex items-start justify-between gap-3">
+                          <CardTitle className="text-base">{template.name}</CardTitle>
+                          <SupportBadge value={template.support_level} />
+                        </div>
                         <CardDescription>{template.description}</CardDescription>
                       </CardHeader>
 
-                      <CardContent className="flex items-center justify-between gap-3">
+                      <CardContent className="space-y-3">
                         <div className="flex flex-wrap gap-1.5">
-                          {template.tags?.map((tag) => (
+                          {template.tags.map((tag) => (
                             <span
                               key={tag}
                               className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
@@ -2062,15 +2213,22 @@ export function TemplatePickerDialog({
                           ))}
                         </div>
 
-                        <Button
-                          type="button"
-                          onClick={() => {
-                            onApplyTemplate(template);
-                            setOpen(false);
-                          }}
-                        >
-                          Apply
-                        </Button>
+                        <div className="text-xs text-muted-foreground">
+                          {template.draft.execution_language} · {template.draft.containers.length}{' '}
+                          container(s)
+                        </div>
+
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              onApplyTemplate(template);
+                              setOpen(false);
+                            }}
+                          >
+                            Apply
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -2086,22 +2244,40 @@ export function TemplatePickerDialog({
                 : containerPresetsQuery.data?.items.map((preset) => (
                     <Card key={preset.id}>
                       <CardHeader>
-                        <CardTitle className="text-base">{preset.name}</CardTitle>
-                        <CardDescription>{preset.description || preset.image}</CardDescription>
+                        <div className="flex items-start justify-between gap-3">
+                          <CardTitle className="text-base">{preset.name}</CardTitle>
+                          <SupportBadge value={preset.support_level} />
+                        </div>
+                        <CardDescription>{preset.description}</CardDescription>
                       </CardHeader>
 
-                      <CardContent className="flex items-center justify-between gap-3">
-                        <div className="text-xs text-muted-foreground">{preset.image}</div>
+                      <CardContent className="space-y-3">
+                        <div className="text-xs text-muted-foreground">
+                          {preset.container.image}
+                        </div>
 
-                        <Button
-                          type="button"
-                          onClick={() => {
-                            onApplyContainerPreset(preset);
-                            setOpen(false);
-                          }}
-                        >
-                          Add
-                        </Button>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[preset.category, ...preset.recommended_for].map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              onApplyContainerPreset(preset);
+                              setOpen(false);
+                            }}
+                          >
+                            Add
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -2201,31 +2377,35 @@ import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { getApiErrorMessage } from '@/shared/lib/api-error';
 
-function toIsoOrNull(value: string) {
-  if (!value) return null;
+function toIsoOrUndefined(value: string) {
+  if (!value) return undefined;
 
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
 export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
   const [open, setOpen] = useState(false);
   const [expiresAt, setExpiresAt] = useState('');
-  const [maxClaims, setMaxClaims] = useState('');
+  const [maxClaims, setMaxClaims] = useState('1');
   const queryClient = useQueryClient();
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      jobsApi.createShareToken(jobId, {
-        expires_at: toIsoOrNull(expiresAt),
-        max_claims: maxClaims ? Number(maxClaims) : null,
-      }),
+    mutationFn: () => {
+      const expiresAtIso = toIsoOrUndefined(expiresAt);
+      const maxClaimsValue = maxClaims ? Number(maxClaims) : undefined;
+
+      return jobsApi.createShareToken(jobId, {
+        ...(expiresAtIso ? { expires_at: expiresAtIso } : {}),
+        ...(maxClaimsValue ? { max_claims: maxClaimsValue } : {}),
+      });
+    },
     onSuccess: () => {
       toast.success('Share token created');
       queryClient.invalidateQueries({ queryKey: ['job', jobId, 'tokens'] });
       setOpen(false);
       setExpiresAt('');
-      setMaxClaims('');
+      setMaxClaims('1');
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -2241,7 +2421,7 @@ export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
         <DialogHeader>
           <DialogTitle>Create share token</DialogTitle>
           <DialogDescription>
-            Issue a reusable execution token for workers or external automation.
+            For a simple remote run on one Docker machine, the default single-use token is usually enough.
           </DialogDescription>
         </DialogHeader>
 
@@ -2255,6 +2435,7 @@ export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
               onChange={(event) => setExpiresAt(event.target.value)}
             />
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="maxClaims">Max claims</Label>
             <Input
@@ -2374,25 +2555,184 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 path: /src/pages/catalog/catalog-page.tsx
 ----------------------------------------
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { Boxes, Sparkles } from 'lucide-react';
 import { catalogApi } from '@/api/catalog';
 import { EmptyState } from '@/shared/components/app/empty-state';
 import { PageHeader } from '@/shared/components/app/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+
+function SupportBadge({ value }: { value: 'supported' | 'future' }) {
+  return (
+    <span
+      className={
+        value === 'supported'
+          ? 'rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700'
+          : 'rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700'
+      }
+    >
+      {value}
+    </span>
+  );
+}
 
 export function CatalogPage() {
-  const templatesQuery = useQuery({ queryKey: ['catalog', 'job-templates'], queryFn: catalogApi.listTemplates });
-  const presetsQuery = useQuery({ queryKey: ['catalog', 'container-presets'], queryFn: catalogApi.listContainerPresets });
+  const navigate = useNavigate();
+
+  const templatesQuery = useQuery({
+    queryKey: ['catalog', 'job-templates'],
+    queryFn: catalogApi.listTemplates,
+  });
+
+  const presetsQuery = useQuery({
+    queryKey: ['catalog', 'container-presets'],
+    queryFn: catalogApi.listContainerPresets,
+  });
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Catalog" title="Templates & presets" description="Browse job templates and container presets exposed by the backend." />
-      <Tabs defaultValue="templates">
-        <TabsList><TabsTrigger value="templates">Job templates</TabsTrigger><TabsTrigger value="presets">Container presets</TabsTrigger></TabsList>
-        <TabsContent value="templates">{templatesQuery.data?.items.length ? <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{templatesQuery.data.items.map((template) => <Card key={template.id}><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" />{template.name}</CardTitle><CardDescription>{template.description}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><div className="flex flex-wrap gap-1.5">{template.tags?.map((tag) => <span key={tag} className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">#{tag}</span>)}</div><div>Language: {template.preset.execution_language}</div><div>Entrypoint: {template.preset.entrypoint || '—'}</div><div>Containers: {template.preset.containers?.length || 0}</div></CardContent></Card>)}</div> : <EmptyState icon={Sparkles} title="No templates" description="The backend did not return any job templates." />}</TabsContent>
-        <TabsContent value="presets">{presetsQuery.data?.items.length ? <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{presetsQuery.data.items.map((preset) => <Card key={preset.id}><CardHeader><CardTitle className="flex items-center gap-2"><Boxes className="h-4 w-4 text-primary" />{preset.name}</CardTitle><CardDescription>{preset.description || preset.image}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><div>Image: {preset.image}</div><div>CPU: {preset.resources?.cpu_limit ?? '—'}</div><div>Memory: {preset.resources?.memory_limit ?? '—'}</div><div className="flex flex-wrap gap-1.5">{preset.tags?.map((tag) => <span key={tag} className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">#{tag}</span>)}</div></CardContent></Card>)}</div> : <EmptyState icon={Boxes} title="No container presets" description="The backend did not return any container presets." />}</TabsContent>
-      </Tabs>
+      <PageHeader
+        eyebrow="Catalog"
+        title="Templates & presets"
+        description="Click any template or preset to open the job editor with that configuration pre-filled."
+      />
+
+      <div className="space-y-8">
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Job templates</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Start a new job from a ready-to-run backend template.
+            </p>
+          </div>
+
+          {templatesQuery.data?.items.length ? (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {templatesQuery.data.items.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() =>
+                    navigate({
+                      to: '/jobs/create',
+                      search: { templateId: template.id },
+                    })
+                  }
+                  className="text-left"
+                >
+                  <Card className="h-full cursor-pointer transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-soft)]">
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-3">
+                        <CardTitle className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-primary" />
+                          {template.name}
+                        </CardTitle>
+                        <SupportBadge value={template.support_level} />
+                      </div>
+                      <CardDescription>{template.description}</CardDescription>
+                    </CardHeader>
+
+                    <CardContent className="space-y-3 text-sm">
+                      <div className="flex flex-wrap gap-1.5">
+                        {template.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div>Language: {template.draft.execution_language}</div>
+                      <div>Entrypoint: {template.draft.entrypoint || '—'}</div>
+                      <div>Containers: {template.draft.containers.length}</div>
+
+                      <div className="pt-2 text-sm font-medium text-primary">
+                        Open in job editor →
+                      </div>
+                    </CardContent>
+                  </Card>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Sparkles}
+              title="No templates"
+              description="The backend did not return any job templates."
+            />
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Container presets</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Open the job editor and add a preset container automatically.
+            </p>
+          </div>
+
+          {presetsQuery.data?.items.length ? (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {presetsQuery.data.items.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() =>
+                    navigate({
+                      to: '/jobs/create',
+                      search: { containerPresetId: preset.id },
+                    })
+                  }
+                  className="text-left"
+                >
+                  <Card className="h-full cursor-pointer transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-soft)]">
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-3">
+                        <CardTitle className="flex items-center gap-2">
+                          <Boxes className="h-4 w-4 text-primary" />
+                          {preset.name}
+                        </CardTitle>
+                        <SupportBadge value={preset.support_level} />
+                      </div>
+                      <CardDescription>{preset.description}</CardDescription>
+                    </CardHeader>
+
+                    <CardContent className="space-y-3 text-sm">
+                      <div>Container name: {preset.container.name}</div>
+                      <div>Image: {preset.container.image}</div>
+                      <div>CPU: {preset.container.resources?.cpu_limit ?? '—'}</div>
+                      <div>Memory: {preset.container.resources?.memory_limit ?? '—'}</div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {[preset.category, ...preset.recommended_for].map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="pt-2 text-sm font-medium text-primary">
+                        Open in job editor →
+                      </div>
+                    </CardContent>
+                  </Card>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Boxes}
+              title="No container presets"
+              description="The backend did not return any container presets."
+            />
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -2822,9 +3162,11 @@ export function JobDetailsPage() {
 
 path: /src/pages/jobs/job-editor-page.tsx
 ----------------------------------------
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { ArrowLeft, FileWarning } from 'lucide-react';
+import { catalogApi } from '@/api/catalog';
 import { jobsApi } from '@/api/jobs';
 import { JobBuilderForm } from '@/features/jobs/job-form/job-builder-form';
 import { EmptyState } from '@/shared/components/app/empty-state';
@@ -2835,15 +3177,47 @@ import { Skeleton } from '@/shared/components/ui/skeleton';
 
 export function JobEditorPage() {
   const params = useParams({ strict: false }) as { jobId?: string };
+  const search = useSearch({ strict: false }) as {
+    templateId?: string;
+    containerPresetId?: string;
+  };
+
   const jobId = params.jobId;
   const isEditMode = Boolean(jobId);
   const navigate = useNavigate();
+
+  const templateId = !isEditMode ? search.templateId : undefined;
+  const containerPresetId = !isEditMode ? search.containerPresetId : undefined;
 
   const jobQuery = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => jobsApi.get(jobId as string),
     enabled: isEditMode,
   });
+
+  const templateQuery = useQuery({
+    queryKey: ['catalog', 'job-template', templateId],
+    queryFn: () => catalogApi.getTemplate(templateId as string),
+    enabled: !isEditMode && Boolean(templateId),
+  });
+
+  const presetsQuery = useQuery({
+    queryKey: ['catalog', 'container-presets'],
+    queryFn: catalogApi.listContainerPresets,
+    enabled: !isEditMode && Boolean(containerPresetId),
+  });
+
+  const initialContainerPreset = useMemo(() => {
+    if (!containerPresetId || !presetsQuery.data?.items) return null;
+    return (
+      presetsQuery.data.items.find((preset) => preset.id === containerPresetId) ?? null
+    );
+  }, [containerPresetId, presetsQuery.data?.items]);
+
+  const isCreateSeedLoading =
+    !isEditMode &&
+    ((Boolean(templateId) && templateQuery.isLoading) ||
+      (Boolean(containerPresetId) && presetsQuery.isLoading));
 
   if (isEditMode && jobQuery.isLoading) {
     return (
@@ -2857,6 +3231,36 @@ export function JobEditorPage() {
               <Link to="/jobs/$jobId" params={{ jobId: jobId as string }}>
                 <ArrowLeft className="h-4 w-4" />
                 Back
+              </Link>
+            </Button>
+          }
+        />
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-80" />
+              <Skeleton className="h-32" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isCreateSeedLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Create job"
+          title="Create job"
+          description="Loading template or container preset from the catalog."
+          actions={
+            <Button variant="outline" asChild>
+              <Link to="/catalog">
+                <ArrowLeft className="h-4 w-4" />
+                Back to catalog
               </Link>
             </Button>
           }
@@ -2890,6 +3294,42 @@ export function JobEditorPage() {
     );
   }
 
+  if (!isEditMode && templateId && templateQuery.isError) {
+    return (
+      <EmptyState
+        icon={FileWarning}
+        title="Template not found"
+        description="The selected catalog template could not be loaded."
+        action={
+          <Button asChild>
+            <Link to="/catalog">Back to catalog</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!isEditMode && containerPresetId && !initialContainerPreset) {
+    return (
+      <EmptyState
+        icon={FileWarning}
+        title="Container preset not found"
+        description="The selected container preset could not be loaded."
+        action={
+          <Button asChild>
+            <Link to="/catalog">Back to catalog</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  const createDescription = templateId
+    ? 'Create a new job from the selected catalog template.'
+    : containerPresetId
+      ? 'Create a new job with the selected container preset already added.'
+      : 'Create a new job with code, containers, environment, and attached files.';
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -2898,7 +3338,7 @@ export function JobEditorPage() {
         description={
           isEditMode
             ? 'Update the selected job configuration.'
-            : 'Create a new job with code, containers, environment, and attached files.'
+            : createDescription
         }
         actions={
           <Button variant="outline" asChild>
@@ -2916,9 +3356,11 @@ export function JobEditorPage() {
       <Card>
         <CardContent className="p-6">
           <JobBuilderForm
-            key={jobId ?? 'create'}
+            key={`${jobId ?? 'create'}:${templateId ?? 'none'}:${containerPresetId ?? 'none'}`}
             jobId={jobId}
             initialJob={jobQuery.data ?? null}
+            initialTemplate={!isEditMode ? templateQuery.data ?? null : null}
+            initialContainerPreset={!isEditMode ? initialContainerPreset : null}
             onSaved={(job) =>
               navigate({
                 to: '/jobs/$jobId',
@@ -2965,7 +3407,7 @@ path: /src/pages/jobs/job-tokens-page.tsx
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, KeyRound, Terminal } from 'lucide-react';
+import { ArrowLeft, KeyRound, PlayCircle, Terminal } from 'lucide-react';
 import { jobsApi } from '@/api/jobs';
 import { tokensApi } from '@/api/tokens';
 import { CreateShareTokenDialog } from '@/features/tokens/create-share-token-dialog';
@@ -2982,19 +3424,227 @@ import { formatDateTime, formatRelative } from '@/shared/utils/format';
 export function JobTokensPage() {
   const { jobId } = useParams({ from: '/jobs/$jobId/tokens' });
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
-  const tokensQuery = useQuery({ queryKey: ['job', jobId, 'tokens'], queryFn: () => jobsApi.listShareTokens(jobId) });
-  const tokenDetailsQuery = useQuery({ queryKey: ['share-token', selectedTokenId], queryFn: () => tokensApi.get(selectedTokenId!), enabled: Boolean(selectedTokenId) });
-  const dockerCommand = tokenDetailsQuery.data?.docker_command || tokenDetailsQuery.data?.worker_command || '';
+
+  const tokensQuery = useQuery({
+    queryKey: ['job', jobId, 'tokens'],
+    queryFn: () => jobsApi.listShareTokens(jobId),
+  });
+
+  const tokenDetailsQuery = useQuery({
+    queryKey: ['share-token', selectedTokenId],
+    queryFn: () => tokensApi.get(selectedTokenId!),
+    enabled: Boolean(selectedTokenId),
+  });
+
+  const dockerCommand =
+    tokenDetailsQuery.data?.docker_command || tokenDetailsQuery.data?.worker_command || '';
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Share tokens" title="Share tokens" description="Create, inspect, copy, and revoke worker tokens for this job." actions={<><Button variant="outline" asChild><Link to="/jobs/$jobId" params={{ jobId }}><ArrowLeft className="h-4 w-4" />Job details</Link></Button><CreateShareTokenDialog jobId={jobId} /></>} />
-      <Card><CardContent className="p-0">{tokensQuery.data?.length ? <Table><TableHeader><TableRow><TableHead>Token</TableHead><TableHead>Claims</TableHead><TableHead>Created</TableHead><TableHead>Last claimed</TableHead><TableHead /></TableRow></TableHeader><TableBody>{tokensQuery.data.map((token) => <TableRow key={token.id}><TableCell><button type="button" className="font-medium text-left hover:text-primary" onClick={() => setSelectedTokenId(token.id)}>{token.id}</button></TableCell><TableCell className="text-sm text-muted-foreground">{token.claim_count}{token.max_claims ? ` / ${token.max_claims}` : ''}</TableCell><TableCell className="text-sm text-muted-foreground">{formatDateTime(token.created_at)}</TableCell><TableCell className="text-sm text-muted-foreground">{token.last_claimed_at ? formatRelative(token.last_claimed_at) : 'Never'}</TableCell><TableCell><div className="flex justify-end"><RevokeTokenButton tokenId={token.id} jobId={jobId} disabled={token.revoked} /></div></TableCell></TableRow>)}</TableBody></Table> : <div className="p-6"><EmptyState icon={KeyRound} title="No tokens yet" description="Create a token to allow a worker or external process to claim and execute this job." /></div>}</CardContent></Card>
+      <PageHeader
+        eyebrow="Share tokens"
+        title="Remote execution tokens"
+        description="Create a token, copy the generated docker command, and run this job on any machine with Docker."
+        actions={
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/jobs/$jobId" params={{ jobId }}>
+                <ArrowLeft className="h-4 w-4" />
+                Job details
+              </Link>
+            </Button>
+            <CreateShareTokenDialog jobId={jobId} />
+          </>
+        }
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PlayCircle className="h-4 w-4" />
+            Remote run quick start
+          </CardTitle>
+          <CardDescription>
+            1) create a token, 2) open token details, 3) copy the docker command, 4) run it on any computer that has Docker access to this control plane.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          {tokensQuery.data?.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Token</TableHead>
+                  <TableHead>Claims</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Last claimed</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tokensQuery.data.map((token) => (
+                  <TableRow key={token.id}>
+                    <TableCell>
+                      <button
+                        type="button"
+                        className="text-left font-medium hover:text-primary"
+                        onClick={() => setSelectedTokenId(token.id)}
+                      >
+                        {token.id}
+                      </button>
+                    </TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {token.claim_count}
+                      {token.max_claims ? ` / ${token.max_claims}` : ' / unlimited'}
+                      {typeof token.remaining_claims === 'number'
+                        ? ` · ${token.remaining_claims} left`
+                        : ''}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDateTime(token.created_at)}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {token.last_claimed_at ? formatRelative(token.last_claimed_at) : 'Never'}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {token.expires_at ? formatDateTime(token.expires_at) : 'Never'}
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="flex justify-end">
+                        <RevokeTokenButton tokenId={token.id} jobId={jobId} disabled={token.revoked} />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="p-6">
+              <EmptyState
+                icon={KeyRound}
+                title="No tokens yet"
+                description="Create a token to generate the docker command for a remote worker machine."
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={Boolean(selectedTokenId)} onOpenChange={(open) => !open && setSelectedTokenId(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Token details</DialogTitle><DialogDescription>Inspect the token value, claim URL, and worker command generated by the backend.</DialogDescription></DialogHeader>
-          {tokenDetailsQuery.data ? <div className="space-y-5"><div className="rounded-2xl border border-border bg-muted/50 p-4"><div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Token value</div><div className="flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-sm">{tokenDetailsQuery.data.token}</code><CopyButton value={tokenDetailsQuery.data.token} /></div></div><div className="grid gap-4 md:grid-cols-2"><Card className="shadow-none"><CardHeader><CardTitle className="text-base">Metadata</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div>Created: {formatDateTime(tokenDetailsQuery.data.created_at)}</div><div>Expires: {tokenDetailsQuery.data.expires_at ? formatDateTime(tokenDetailsQuery.data.expires_at) : 'Never'}</div><div>Claims: {tokenDetailsQuery.data.claim_count}</div></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle className="text-base">Links</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">{tokenDetailsQuery.data.share_url ? <div className="space-y-1"><div className="text-xs uppercase tracking-wide text-muted-foreground">Share URL</div><div className="flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-xs">{tokenDetailsQuery.data.share_url}</code><CopyButton value={tokenDetailsQuery.data.share_url} /></div></div> : null}{tokenDetailsQuery.data.claim_url ? <div className="space-y-1"><div className="text-xs uppercase tracking-wide text-muted-foreground">Claim URL</div><div className="flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-xs">{tokenDetailsQuery.data.claim_url}</code><CopyButton value={tokenDetailsQuery.data.claim_url} /></div></div> : null}</CardContent></Card></div><Card className="shadow-none"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" />Docker / worker command</CardTitle><CardDescription>This is rendered if the backend returns a generated command.</CardDescription></CardHeader><CardContent>{dockerCommand ? <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-200"><div className="mb-3 flex items-center justify-end"><CopyButton value={dockerCommand} /></div><code className="block whitespace-pre-wrap break-all text-sm">{dockerCommand}</code></div> : <div className="text-sm text-muted-foreground">No generated command returned by the backend for this token.</div>}</CardContent></Card></div> : null}
+          <DialogHeader>
+            <DialogTitle>Token details</DialogTitle>
+            <DialogDescription>
+              Copy this docker command and run it on any computer with Docker. The worker container will claim the job and execute it remotely.
+            </DialogDescription>
+          </DialogHeader>
+
+          {tokenDetailsQuery.data ? (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-border bg-muted/50 p-4">
+                <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+                  Token value
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="min-w-0 flex-1 break-all text-sm">{tokenDetailsQuery.data.token}</code>
+                  <CopyButton value={tokenDetailsQuery.data.token} />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card className="shadow-none">
+                  <CardHeader>
+                    <CardTitle className="text-base">Metadata</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div>Created: {formatDateTime(tokenDetailsQuery.data.created_at)}</div>
+                    <div>
+                      Expires:{' '}
+                      {tokenDetailsQuery.data.expires_at
+                        ? formatDateTime(tokenDetailsQuery.data.expires_at)
+                        : 'Never'}
+                    </div>
+                    <div>Claims: {tokenDetailsQuery.data.claim_count}</div>
+                    <div>
+                      Remaining:{' '}
+                      {typeof tokenDetailsQuery.data.remaining_claims === 'number'
+                        ? tokenDetailsQuery.data.remaining_claims
+                        : 'Unlimited'}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-none">
+                  <CardHeader>
+                    <CardTitle className="text-base">Links</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {tokenDetailsQuery.data.share_url ? (
+                      <div className="space-y-1">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Share URL
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all text-xs">
+                            {tokenDetailsQuery.data.share_url}
+                          </code>
+                          <CopyButton value={tokenDetailsQuery.data.share_url} />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {tokenDetailsQuery.data.claim_url ? (
+                      <div className="space-y-1">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Claim URL
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all text-xs">
+                            {tokenDetailsQuery.data.claim_url}
+                          </code>
+                          <CopyButton value={tokenDetailsQuery.data.claim_url} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="shadow-none">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Terminal className="h-4 w-4" />
+                    Docker command
+                  </CardTitle>
+                  <CardDescription>
+                    Run this on the remote machine. Docker will pull the published bootstrap image automatically if needed.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {dockerCommand ? (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-200">
+                      <div className="mb-3 flex items-center justify-end">
+                        <CopyButton value={dockerCommand} />
+                      </div>
+                      <code className="block whitespace-pre-wrap break-all text-sm">{dockerCommand}</code>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      No generated command returned by the backend for this token.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>
@@ -3452,7 +4102,7 @@ export function RunDetailsPage() {
                     </div>
                     <Button variant="outline" asChild>
                       <a
-                        href={artifact.download_path || buildArtifactDownloadUrl(artifact.storage_key)}
+                        href={buildArtifactDownloadUrl(artifact.storage_key)}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -4292,4 +4942,4 @@ included: 70
 skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 163527
+totalBytes(approx): 179088
