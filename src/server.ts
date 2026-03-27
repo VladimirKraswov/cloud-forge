@@ -20,6 +20,7 @@ import healthRoutes from './routes/health';
 import bootstrapImageRoutes from './routes/bootstrap-images';
 import { ArtifactService } from './services/artifact.service';
 import { RunWatchdogService } from './services/run-watchdog.service';
+import { BootstrapBuilderService } from './services/bootstrap-builder.service';
 
 const app = Fastify({
   logger: {
@@ -68,6 +69,7 @@ const stopWatchdog = () => {
 const start = async () => {
   try {
     await initDb();
+    await BootstrapBuilderService.cleanupInterruptedBuilds();
 
     try {
       await ArtifactService.ensureBucket();

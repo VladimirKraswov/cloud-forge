@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { catalogApi } from '@/api/catalog';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
@@ -22,8 +25,23 @@ function getStatusLabel(status?: string) {
 
 export function BootstrapBuildFloating() {
   const { build, isActive, isFinished, clearTracking } = useBootstrapBuildTracker();
+  const [cancelling, setCancelling] = useState(false);
 
   if (!build) return null;
+
+  const handleCancel = async () => {
+    if (!build.id) return;
+    setCancelling(true);
+    try {
+      await catalogApi.cancelBuild(build.id);
+      toast.success('Build cancellation requested');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to cancel build');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   return (
     <div className="fixed bottom-4 right-4 z-[100] w-[360px] max-w-[calc(100vw-2rem)]">
@@ -75,10 +93,17 @@ export function BootstrapBuildFloating() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled
-                    title="Отмена недоступна, пока на бэкенде нет cancel endpoint"
+                    disabled={cancelling}
+                    onClick={handleCancel}
                   >
-                    Cancel unavailable
+                    {cancelling ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      'Cancel build'
+                    )}
                   </Button>
                 )}
               </div>

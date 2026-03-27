@@ -64,4 +64,7 @@ export const catalogApi = {
 
   getBuildProgress: (id: string) =>
     unwrap(api.get<BootstrapBuildProgress>(`/api/bootstrap-images/build/${id}`)),
+
+  cancelBuild: (id: string) =>
+    unwrap(api.post<{ success: boolean }>(`/api/bootstrap-images/build/${id}/cancel`)),
 };

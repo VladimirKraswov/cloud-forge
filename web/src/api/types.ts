@@ -44,7 +44,7 @@ export interface BootstrapImage {
   environments: BootstrapEnvironmentSpec[];
   runtime_resources?: RuntimeResources | null;
   sdk_version?: string | null;
-  status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed';
+  status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
   error?: string | null;
   build_started_at?: string | null;
   build_finished_at?: string | null;
@@ -61,7 +61,7 @@ export interface BootstrapImageLogEntry {
 }
 
 export interface BootstrapBuildProgress {
-  status: 'building' | 'pushing' | 'completed' | 'failed';
+  status: 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
   logs: string[];
 }
 

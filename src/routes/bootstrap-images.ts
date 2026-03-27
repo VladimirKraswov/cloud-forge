@@ -18,6 +18,7 @@ type BuildBootstrapImageBody = {
   tag: string;
   environments: BootstrapEnvironmentInput[];
   dockerfileText: string;
+  runtimeResources?: Record<string, unknown> | null;
   dockerUser: string;
   dockerPass: string;
 };
@@ -93,6 +94,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
             baseImage: { type: 'string', minLength: 1 },
             tag: { type: 'string', minLength: 1 },
             dockerfileText: { type: 'string', minLength: 1 },
+            runtimeResources: { type: 'object', additionalProperties: true, nullable: true },
             dockerUser: { type: 'string', minLength: 1 },
             dockerPass: { type: 'string', minLength: 1 },
             environments: {
@@ -126,6 +128,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
           tag: req.body.tag,
           dockerfileText: req.body.dockerfileText,
           environments: req.body.environments,
+          runtimeResources: req.body.runtimeResources,
           dockerUser: req.body.dockerUser,
           dockerPass: req.body.dockerPass,
         });
@@ -137,6 +140,35 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to start build';
         req.log.error({ err }, '[POST /api/bootstrap-images/build] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/bootstrap-images/build/:id/cancel',
+    {
+      schema: {
+        description: 'Cancel an active bootstrap image build',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await BootstrapBuilderService.cancelBuild(req.params.id);
+        return reply.send({ success: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to cancel build';
+        req.log.error({ err }, '[POST /api/bootstrap-images/build/:id/cancel] failed');
         return reply.code(400).send({ error: message });
       }
     },

@@ -52,8 +52,40 @@ const ensureColumn = async (
   }
 };
 
+const renameTable = async (oldName: string, newName: string): Promise<void> => {
+  const tables = await allAsync<{ name: string }>(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+    [oldName],
+  );
+  if (tables.length > 0) {
+    const targetExists = await allAsync<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+      [newName],
+    );
+    if (targetExists.length === 0) {
+      console.log(`[DB] Renaming table ${oldName} to ${newName}`);
+      await runAsync(`ALTER TABLE ${oldName} RENAME TO ${newName}`);
+    }
+  }
+};
+
+const renameColumn = async (
+  tableName: string,
+  oldColumn: string,
+  newColumn: string,
+): Promise<void> => {
+  const columns = await getTableColumns(tableName);
+  if (columns.has(oldColumn) && !columns.has(newColumn)) {
+    console.log(`[DB] Renaming column ${oldColumn} to ${newColumn} in table ${tableName}`);
+    await runAsync(`ALTER TABLE ${tableName} RENAME COLUMN ${oldColumn} TO ${newColumn}`);
+  }
+};
+
 export const initDb = async (): Promise<void> => {
   console.log('[DB] Starting database initialization...');
+
+  // Migrations for consistency
+  await renameTable('custom_bootstrap_images', 'bootstrap_images');
 
   // Jobs
   await runAsync(`
@@ -64,7 +96,7 @@ export const initDb = async (): Promise<void> => {
       owner_id TEXT,
       bootstrap_image_id TEXT,
       environment_variables TEXT NOT NULL DEFAULT '{}',
-      resources TEXT,
+      resources_json TEXT,
       entrypoint TEXT NOT NULL,
       entrypoint_args TEXT NOT NULL DEFAULT '[]',
       working_dir TEXT NOT NULL DEFAULT '/workspace',
@@ -74,9 +106,10 @@ export const initDb = async (): Promise<void> => {
   `);
 
   // Migrate older jobs table
+  await renameColumn('jobs', 'resources', 'resources_json');
   await ensureColumn('jobs', 'bootstrap_image_id', 'bootstrap_image_id TEXT');
   await ensureColumn('jobs', 'environment_variables', `environment_variables TEXT NOT NULL DEFAULT '{}'`);
-  await ensureColumn('jobs', 'resources', 'resources TEXT');
+  await ensureColumn('jobs', 'resources_json', 'resources_json TEXT');
   await ensureColumn('jobs', 'entrypoint', `entrypoint TEXT NOT NULL DEFAULT 'main.py'`);
   await ensureColumn('jobs', 'entrypoint_args', `entrypoint_args TEXT NOT NULL DEFAULT '[]'`);
   await ensureColumn('jobs', 'working_dir', `working_dir TEXT NOT NULL DEFAULT '/workspace'`);
@@ -172,13 +205,14 @@ export const initDb = async (): Promise<void> => {
 
   // Bootstrap images
   await runAsync(`
-    CREATE TABLE IF NOT EXISTS custom_bootstrap_images (
+    CREATE TABLE IF NOT EXISTS bootstrap_images (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       base_image TEXT NOT NULL,
       tag TEXT NOT NULL,
       dockerfile_text TEXT,
       environments_json TEXT NOT NULL DEFAULT '[]',
+      runtime_resources_json TEXT,
       sdk_version TEXT,
       full_image_name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'draft',
@@ -191,15 +225,16 @@ export const initDb = async (): Promise<void> => {
   `);
 
   // Migrate older bootstrap images table
-  await ensureColumn('custom_bootstrap_images', 'dockerfile_text', 'dockerfile_text TEXT');
+  await ensureColumn('bootstrap_images', 'dockerfile_text', 'dockerfile_text TEXT');
   await ensureColumn(
-    'custom_bootstrap_images',
+    'bootstrap_images',
     'environments_json',
     `environments_json TEXT NOT NULL DEFAULT '[]'`,
   );
-  await ensureColumn('custom_bootstrap_images', 'sdk_version', 'sdk_version TEXT');
-  await ensureColumn('custom_bootstrap_images', 'build_started_at', 'build_started_at DATETIME');
-  await ensureColumn('custom_bootstrap_images', 'build_finished_at', 'build_finished_at DATETIME');
+  await ensureColumn('bootstrap_images', 'runtime_resources_json', 'runtime_resources_json TEXT');
+  await ensureColumn('bootstrap_images', 'sdk_version', 'sdk_version TEXT');
+  await ensureColumn('bootstrap_images', 'build_started_at', 'build_started_at DATETIME');
+  await ensureColumn('bootstrap_images', 'build_finished_at', 'build_finished_at DATETIME');
 
   // Some older versions used extra_packages; keep column if it exists, but no migration needed.
 

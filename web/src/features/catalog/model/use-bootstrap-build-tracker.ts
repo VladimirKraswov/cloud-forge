@@ -86,15 +86,33 @@ export function useBootstrapBuildTracker() {
 
     const poll = async () => {
       try {
-        const res = await catalogApi.getBuildProgress(build.id);
+        let status = build.status;
+        let logs = build.logs;
+
+        try {
+          const res = await catalogApi.getBuildProgress(build.id);
+          status = res.status;
+          logs = res.logs ?? logs;
+        } catch (error: any) {
+          // If 404, the in-memory progress is gone (server restart), fetch from DB
+          if (error?.response?.status === 404) {
+            const dbImage = await catalogApi.getBootstrapImage(build.id);
+            status = dbImage.status;
+            // For logs, we might need a separate call if we want the full history
+            const logRes = await catalogApi.getBootstrapImageLogs(build.id);
+            logs = logRes.items.map((l) => l.message);
+          } else {
+            throw error;
+          }
+        }
 
         if (cancelled) return;
 
         const current = readSnapshot();
         const next: ActiveBootstrapBuild = {
           id: build.id,
-          status: res.status,
-          logs: res.logs ?? current?.logs ?? [],
+          status,
+          logs,
           imageRef: current?.imageRef ?? build.imageRef,
           startedAt: current?.startedAt ?? build.startedAt,
           updatedAt: new Date().toISOString(),

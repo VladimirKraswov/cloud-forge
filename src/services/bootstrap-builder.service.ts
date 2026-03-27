@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import db from '../db';
 
 export interface BootstrapEnvironmentInput {
@@ -17,16 +17,18 @@ export interface BuildOptions {
   tag: string;
   dockerfileText: string;
   environments: BootstrapEnvironmentInput[];
+  runtimeResources?: Record<string, unknown> | null;
   dockerUser: string;
   dockerPass: string;
 }
 
 export interface BuildProgress {
-  status: 'building' | 'pushing' | 'completed' | 'failed';
+  status: 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
   logs: string[];
 }
 
 const buildStatus = new Map<string, BuildProgress>();
+const activeProcesses = new Map<string, ChildProcess>();
 
 const appendLog = async (
   imageId: string,
@@ -103,6 +105,42 @@ export class BootstrapBuilderService {
     return buildStatus.get(id);
   }
 
+  static async cancelBuild(id: string): Promise<void> {
+    const proc = activeProcesses.get(id);
+    if (proc) {
+      console.log(`[Builder] Cancelling build ${id}, killing process`);
+      proc.kill('SIGTERM');
+      activeProcesses.delete(id);
+    }
+
+    const progress = buildStatus.get(id);
+    if (progress) {
+      progress.status = 'cancelled';
+      progress.logs.push('Build cancelled by user.');
+    }
+
+    await this.updateImageStatus(id, 'cancelled', 'Build cancelled by user');
+    await appendLog(id, 'Build cancelled by user', 'info');
+  }
+
+  static async cleanupInterruptedBuilds() {
+    return new Promise<void>((resolve, reject) => {
+      db.run(
+        `
+        UPDATE bootstrap_images
+        SET status = 'failed',
+            error = 'Build interrupted by server restart',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status IN ('building', 'pushing')
+        `,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+  }
+
   static generateDockerfile(
     baseImage: string,
     environments: BootstrapEnvironmentInput[],
@@ -176,6 +214,15 @@ ENTRYPOINT ["python3", "/opt/cloudforge/runner.py"]
     buildStatus.set(id, { status: 'building', logs: ['Starting build...'] });
 
     try {
+      // Check if docker is available
+      try {
+        await this.runCommand('docker', ['--version'], os.tmpdir(), id, undefined, false, true);
+      } catch (err) {
+        throw new Error(
+          'Docker CLI is not available in the orchestrator environment. Please ensure Docker is installed and the socket is mounted.',
+        );
+      }
+
       await this.createOrUpdateBuildRecord(options, fullImageName);
       await appendLog(id, 'Starting build...');
 
@@ -273,9 +320,11 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
     imageId: string,
     stdin?: string,
     maskStdinInLogs = false,
+    silent = false,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const proc = spawn(command, args, { cwd });
+      activeProcesses.set(imageId, proc);
 
       if (stdin) {
         proc.stdin.write(stdin);
@@ -283,28 +332,36 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
       }
 
       proc.stdout.on('data', async (data) => {
+        if (silent) return;
         const text = data.toString();
         await appendLog(imageId, text.trimEnd());
       });
 
       proc.stderr.on('data', async (data) => {
+        if (silent) return;
         const text = data.toString();
         await appendLog(imageId, text.trimEnd(), 'error');
       });
 
       proc.on('error', (err) => {
+        activeProcesses.delete(imageId);
         reject(err);
       });
 
       proc.on('close', async (code) => {
+        activeProcesses.delete(imageId);
+
         const renderedArgs =
           stdin && maskStdinInLogs
             ? `${command} ${args.join(' ')} [stdin hidden]`
             : `${command} ${args.join(' ')}`;
 
         if (code === 0) {
-          await appendLog(imageId, `Command succeeded: ${renderedArgs}`);
+          if (!silent) await appendLog(imageId, `Command succeeded: ${renderedArgs}`);
           resolve();
+        } else if (code === null) {
+          // Process was killed
+          reject(new Error(`${command} was terminated`));
         } else {
           reject(new Error(`${command} exited with code ${code}`));
         }
@@ -319,16 +376,17 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
     return new Promise((resolve, reject) => {
       db.run(
         `
-        INSERT INTO custom_bootstrap_images (
+        INSERT INTO bootstrap_images (
           id, name, base_image, tag, dockerfile_text, environments_json,
-          sdk_version, full_image_name, status, error, build_started_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          runtime_resources_json, sdk_version, full_image_name, status, error, build_started_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_image = excluded.base_image,
           tag = excluded.tag,
           dockerfile_text = excluded.dockerfile_text,
           environments_json = excluded.environments_json,
+          runtime_resources_json = excluded.runtime_resources_json,
           sdk_version = excluded.sdk_version,
           full_image_name = excluded.full_image_name,
           status = excluded.status,
@@ -343,6 +401,7 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
           options.tag,
           options.dockerfileText,
           JSON.stringify(options.environments || []),
+          JSON.stringify(options.runtimeResources || {}),
           '1',
           fullImageName,
           'building',
@@ -357,16 +416,16 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
 
   private static updateImageStatus(
     id: string,
-    status: 'building' | 'pushing' | 'completed' | 'failed',
+    status: 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled',
     error?: string,
   ): Promise<void> {
     const finishedAt =
-      status === 'completed' || status === 'failed' ? 'CURRENT_TIMESTAMP' : 'NULL';
+      ['completed', 'failed', 'cancelled'].includes(status) ? 'CURRENT_TIMESTAMP' : 'NULL';
 
     return new Promise((resolve, reject) => {
       db.run(
         `
-        UPDATE custom_bootstrap_images
+        UPDATE bootstrap_images
         SET
           status = ?,
           error = ?,

@@ -50,20 +50,24 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
   });
 
   it('should complete the full happy path flow', async () => {
+    // 1. Setup a dummy bootstrap image
+    const bootstrap_id = 'img_smoke_test';
+    await new Promise<void>((resolve, reject) => {
+      db.run(
+        `INSERT INTO bootstrap_images (id, name, base_image, tag, full_image_name, dockerfile_text, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [bootstrap_id, 'Smoke Image', 'node:20-slim', 'latest', 'node:20-slim', 'FROM node:20-slim', 'completed'],
+        (err) => (err ? reject(err) : resolve()),
+      );
+    });
+
     const validateRes = await app.inject({
       method: 'POST',
       url: '/jobs/validate',
       payload: {
         title: 'Smoke Test Job',
-        containers: [
-          {
-            name: 'bootstrap',
-            image: 'node:20-slim',
-            is_parent: true,
-          },
-        ],
-        execution_code: 'console.log("hello world")',
-        execution_language: 'javascript',
+        bootstrap_image_id: bootstrap_id,
+        entrypoint: 'main.js',
       },
     });
 
@@ -75,15 +79,8 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
       url: '/jobs',
       payload: {
         title: 'Smoke Test Job',
-        containers: [
-          {
-            name: 'bootstrap',
-            image: 'node:20-slim',
-            is_parent: true,
-          },
-        ],
-        execution_code: 'console.log("hello world")',
-        execution_language: 'javascript',
+        bootstrap_image_id: bootstrap_id,
+        entrypoint: 'main.js',
       },
     });
 

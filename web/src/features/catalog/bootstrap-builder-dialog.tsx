@@ -301,10 +301,38 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   const [buildId, setBuildId] = useState<string | null>(null);
   const [progress, setProgress] = useState<BuildProgress | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [progress?.logs]);
+    if (autoScroll) {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [progress?.logs, autoScroll]);
+
+  const handleLogScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isAtBottom =
+      Math.abs(target.scrollHeight - target.clientHeight - target.scrollTop) < 20;
+
+    if (autoScroll !== isAtBottom) {
+      setAutoScroll(isAtBottom);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!buildId) return;
+    setCancelling(true);
+    try {
+      await catalogApi.cancelBuild(buildId);
+      toast.success('Build cancellation requested');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to cancel build');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout | undefined;
@@ -389,7 +417,7 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     try {
       const res = await catalogApi.previewDockerfile({
         baseImage: formData.baseImage,
-        extraPackages: formData.extraPackages,
+        environments: [{ name: 'default', requirements_text: formData.extraPackages }],
       });
       setDockerfile(res.dockerfile);
       setStep('preview');
@@ -410,7 +438,11 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     setLoading(true);
 
     try {
-      const res = await catalogApi.buildBootstrapImage(formData);
+      const res = await catalogApi.buildBootstrapImage({
+        ...formData,
+        dockerfileText: dockerfile,
+        environments: [{ name: 'default', requirements_text: formData.extraPackages }],
+      });
 
       startTracking({
         id: res.id,
@@ -751,14 +783,27 @@ datasets>=3.6.0`}
               </div>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Terminal className="h-4 w-4" />
                     Raw build logs
                   </CardTitle>
+                  {!autoScroll && progress?.status === 'building' && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="h-7 px-2 text-[10px]"
+                      onClick={() => setAutoScroll(true)}
+                    >
+                      Resume auto-scroll
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[540px] overflow-y-auto rounded-2xl bg-black p-4 font-mono text-[11px] text-white">
+                  <div
+                    className="h-[540px] overflow-y-auto rounded-2xl bg-black p-4 font-mono text-[11px] text-white"
+                    onScroll={handleLogScroll}
+                  >
                     {progress?.logs.length ? (
                       progress.logs.map((log, index) => (
                         <div key={`${index}-${log.slice(0, 20)}`} className="mb-1 break-all leading-tight">
@@ -774,13 +819,31 @@ datasets>=3.6.0`}
               </Card>
             </div>
 
-            {progress?.status === 'completed' || progress?.status === 'failed' ? (
-              <Button variant="ghost" onClick={clearTracking}>
-                Clear build status
-              </Button>
-            ) : null}
-
-            <div className="flex justify-end pt-1">
+            <div className="flex justify-between items-center pt-1">
+              <div>
+                {progress?.status === 'completed' || progress?.status === 'failed' || progress?.status === 'cancelled' ? (
+                  <Button variant="ghost" size="sm" onClick={clearTracking}>
+                    Clear build status
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={cancelling}
+                    onClick={handleCancel}
+                  >
+                    {cancelling ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      'Cancel build'
+                    )}
+                  </Button>
+                )}
+              </div>
               <Button
                 variant={
                   progress?.status === 'completed' || progress?.status === 'failed'
