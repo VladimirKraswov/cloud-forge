@@ -34,6 +34,7 @@ import {
   normalizePayloadContainers as globalNormalizePayloadContainers,
 } from '@/features/jobs/job-form/job-form-helpers';
 import { TemplatePickerDialog } from '@/features/jobs/job-form/template-picker-dialog';
+import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
 import { CodeBlock } from '@/shared/components/app/code-block';
 import { getApiErrorMessage } from '@/shared/lib/api-error';
 
@@ -309,6 +310,7 @@ export function JobBuilderForm({
         </Tabs>
 
         <div className="flex flex-wrap items-center gap-2">
+          <BootstrapBuilderDialog />
           <TemplatePickerDialog
             onApplyTemplate={(template) => applyTemplateToForm(template, true)}
             onApplyContainerPreset={(preset) => applyContainerPresetToForm(preset, true)}

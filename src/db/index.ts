@@ -112,6 +112,21 @@ export const initDb = async (): Promise<void> => {
     )
   `);
 
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS custom_bootstrap_images (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      base_image TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      extra_packages TEXT,
+      full_image_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      error TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_job_id ON share_tokens(job_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_token ON share_tokens(token)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_job_id ON runs(job_id)`);

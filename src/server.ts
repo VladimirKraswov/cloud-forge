@@ -17,6 +17,7 @@ import tokensRoutes from './routes/tokens';
 import dashboardRoutes from './routes/dashboard';
 import catalogRoutes from './routes/catalog';
 import healthRoutes from './routes/health';
+import bootstrapImageRoutes from './routes/bootstrap-images';
 import { ArtifactService } from './services/artifact.service';
 import { RunWatchdogService } from './services/run-watchdog.service';
 
@@ -78,7 +79,7 @@ const start = async () => {
     }
 
     await app.register(cors, {
-      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174'],
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     });
@@ -108,6 +109,7 @@ const start = async () => {
     await app.register(healthRoutes);
     await app.register(wsRoutes);
     await app.register(catalogRoutes);
+    await app.register(bootstrapImageRoutes);
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
     await app.register(workersRoutes);

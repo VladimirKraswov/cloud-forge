@@ -5,6 +5,7 @@ import { catalogApi } from '@/api/catalog';
 import { EmptyState } from '@/shared/components/app/empty-state';
 import { PageHeader } from '@/shared/components/app/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
 
 function SupportBadge({ value }: { value: 'supported' | 'future' }) {
   return (
@@ -39,6 +40,7 @@ export function CatalogPage() {
         eyebrow="Catalog"
         title="Templates & presets"
         description="Click any template or preset to open the job editor with that configuration pre-filled."
+        actions={<BootstrapBuilderDialog onSuccess={() => presetsQuery.refetch()} />}
       />
 
       <div className="space-y-8">

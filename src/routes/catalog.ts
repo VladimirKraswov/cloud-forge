@@ -1,5 +1,7 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { containerPresets, jobTemplates } from '../catalog/presets';
+import db from '../db';
+import { ContainerPreset } from '../models/job';
 
 export default async function catalogRoutes(app: FastifyInstance) {
   app.get(
@@ -10,9 +12,42 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async () => {
+      // Fetch custom bootstrap images from database
+      const customImages: any[] = await new Promise((resolve, reject) => {
+        db.all(
+          `SELECT * FROM custom_bootstrap_images WHERE status = 'completed'`,
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          },
+        );
+      });
+
+      // Map to ContainerPreset format
+      const customPresets: ContainerPreset[] = customImages.map((img) => ({
+        id: img.id,
+        name: `${img.name} (Custom)`,
+        category: 'bootstrap',
+        description: `Custom bootstrap image based on ${img.base_image}`,
+        recommended_for: ['custom', 'ml'],
+        support_level: 'supported',
+        container: {
+          name: 'bootstrap',
+          image: img.full_image_name,
+          is_parent: true,
+          resources: {
+            shm_size: '2g',
+            cpu_limit: 2,
+            memory_limit: '4g',
+          },
+        },
+      }));
+
+      const allPresets = [...containerPresets, ...customPresets];
+
       return {
-        items: containerPresets,
-        total: containerPresets.length,
+        items: allPresets,
+        total: allPresets.length,
       };
     },
   );
