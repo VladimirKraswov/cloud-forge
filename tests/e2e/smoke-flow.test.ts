@@ -88,7 +88,7 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
     });
 
     expect(createJobRes.statusCode).toBe(201);
-    const { job_id } = createJobRes.json() as { job_id: string };
+    const { id: job_id } = createJobRes.json() as { id: string };
 
     const patchRes = await app.inject({
       method: 'PATCH',
@@ -121,16 +121,14 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
     expect(createTokenRes.statusCode).toBe(201);
 
     const {
-      share_token,
+      token,
       docker_image,
       docker_command,
     } = createTokenRes.json() as {
-      share_token: { token: string };
+      token: string;
       docker_image: string;
       docker_command: string;
     };
-
-    const token = share_token.token;
 
     expect(docker_image).toBe('xproger/cloud-forge-worker:0.1.0');
     expect(docker_command).toContain('xproger/cloud-forge-worker:0.1.0');
@@ -217,12 +215,12 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
 
     expect(runDetailsRes.statusCode).toBe(200);
     const runDetails = runDetailsRes.json() as {
-      run: { status: string };
+      status: string;
       logs: Array<{ message: string }>;
       artifacts: Array<{ filename: string }>;
     };
 
-    expect(runDetails.run.status).toBe('finished');
+    expect(runDetails.status).toBe('finished');
     expect(runDetails.logs.length).toBeGreaterThan(0);
     expect(runDetails.logs[0].message).toBe('Job started');
     expect(runDetails.artifacts.length).toBeGreaterThan(0);
@@ -234,8 +232,7 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
       payload: { max_claims: 1 },
     });
 
-    const activeToken = (activeTokenRes.json() as { share_token: { token: string } }).share_token
-      .token;
+    const activeToken = (activeTokenRes.json() as { token: string }).token;
 
     await app.inject({
       method: 'GET',

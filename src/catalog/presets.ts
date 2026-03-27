@@ -264,7 +264,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: HELLO_WORLD_PYTHON,
       execution_language: 'python',
-      entrypoint: 'python3 /workspace/code/main.py',
+      entrypoint: 'main.py',
     },
   },
   {
@@ -283,7 +283,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: PYTHON_SAMPLE,
       execution_language: 'python',
-      entrypoint: 'python3 /workspace/code/main.py',
+      entrypoint: 'main.py',
     },
   },
   {
@@ -302,7 +302,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: JAVASCRIPT_SAMPLE,
       execution_language: 'javascript',
-      entrypoint: 'node /workspace/code/index.js',
+      entrypoint: 'main.js',
     },
   },
   {
@@ -336,7 +336,7 @@ checkpoint.write_text("demo checkpoint", encoding="utf-8")
 info("training finished")
 `,
       execution_language: 'python',
-      entrypoint: 'python3 /workspace/code/train.py',
+      entrypoint: 'train.py',
     },
   },
   {
@@ -365,7 +365,7 @@ raise_if_cancel_requested()
 info("connect to vLLM runtime and execute prompts here")
 `,
       execution_language: 'python',
-      entrypoint: 'python3 /workspace/code/main.py',
+      entrypoint: 'main.py',
     },
   },
 ];

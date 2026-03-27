@@ -249,6 +249,7 @@ export class JobService {
       base_url: baseUrl,
       claim_url: claimUrl,
       share_url: claimUrl,
+      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
       docker_command: dockerCommand,
       worker_command: dockerCommand,
     };
@@ -276,7 +277,7 @@ export class JobService {
       expiresAt?: string | null;
       maxClaims?: number;
     },
-    _baseUrl: string,
+    baseUrl: string,
   ) {
     const job = await JobModel.findById(jobId);
     if (!job) {
@@ -305,12 +306,12 @@ export class JobService {
       max_claims: options.maxClaims ?? null,
     });
 
-    const created = await ShareTokenModel.findByToken(token);
+    const created = await this.getShareToken(shareTokenId, baseUrl);
     if (!created) {
       throw new Error('Failed to create share token');
     }
 
-    return this.normalizeShareToken(created);
+    return created;
   }
 
   static async claimRunByToken(token: string) {

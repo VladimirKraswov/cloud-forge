@@ -407,10 +407,14 @@ if not execution_code and not entrypoint:
     )
     sys.exit(1)
 
-if execution_language == "javascript":
-    code_file = code_dir / "main.js"
+# Determine script filename from entrypoint or defaults
+if entrypoint:
+    # Use only the filename if entrypoint looks like a path
+    script_filename = Path(entrypoint).name
 else:
-    code_file = code_dir / "main.py"
+    script_filename = "main.js" if execution_language == "javascript" else "main.py"
+
+code_file = code_dir / script_filename
 
 if execution_code:
     code_file.write_text(execution_code, encoding="utf-8")
@@ -471,11 +475,10 @@ def heartbeat_loop():
 heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
 heartbeat_thread.start()
 
-if entrypoint:
-    command = ["/bin/sh", "-lc", entrypoint]
-elif execution_language == "javascript":
+if execution_language == "javascript":
     command = ["node", str(code_file)]
 else:
+    # Python execution: ensure we use the same python interpreter
     command = [sys.executable, str(code_file)]
 
 safe_log(run_id, f"⚙️ Starting process: {' '.join(command)}")

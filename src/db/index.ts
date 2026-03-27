@@ -1,5 +1,13 @@
 import sqlite3 from 'sqlite3';
+import path from 'path';
+import fs from 'fs';
 import { config } from '../utils/config';
+
+// Ensure the directory for the database exists
+const dbDir = path.dirname(config.databaseUrl);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 const db = new sqlite3.Database(config.databaseUrl);
 

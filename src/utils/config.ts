@@ -9,7 +9,7 @@ const normalizeBaseUrl = (value?: string): string | undefined => {
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
-  databaseUrl: process.env.DATABASE_URL || 'db.sqlite',
+  databaseUrl: process.env.DATABASE_URL || 'data/db.sqlite',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   minioEndpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
   minioAccessKey: process.env.MINIO_ACCESS_KEY || 'cloudforge',

@@ -209,7 +209,7 @@ export function JobBuilderForm({
         execution_language: nextLanguage,
         execution_code: draft.execution_code ?? '',
         entrypoint:
-          draft.entrypoint || (nextLanguage === 'javascript' ? 'index.js' : 'main.py'),
+          draft.entrypoint || (nextLanguage === 'javascript' ? 'main.js' : 'main.py'),
         environments: Object.entries(draft.environments || {}).map(([key, value]) => ({
           key,
           value: String(value ?? ''),
@@ -423,11 +423,11 @@ export function JobBuilderForm({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="entrypoint">Entrypoint</Label>
+                  <Label htmlFor="entrypoint">Entrypoint filename</Label>
                   <Input
                     id="entrypoint"
                     {...form.register('entrypoint')}
-                    placeholder="main.py"
+                    placeholder={language === 'javascript' ? 'main.js' : 'main.py'}
                   />
                   {form.formState.errors.entrypoint ? (
                     <p className="text-xs text-destructive">
