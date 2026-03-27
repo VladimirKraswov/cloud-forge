@@ -1,27 +1,38 @@
 import {
-  createRootRoute,
+  Outlet,
+  createRootRouteWithContext,
   createRoute,
   createRouter,
-  Outlet,
 } from '@tanstack/react-router';
-import { Layout } from './layout';
-import { DashboardPage } from '@/pages/dashboard';
-import { JobsListPage } from '@/pages/jobs';
-import { JobDetailsPage } from '@/pages/job-details';
-import { JobEditorPage } from '@/pages/job-editor';
-import { RunDetailsPage } from '@/pages/run-details';
-import { WorkersPage } from '@/pages/workers';
-import { CatalogPage } from '@/pages/catalog';
+import type { QueryClient } from '@tanstack/react-query';
+import { AppShell } from '@/app/shell/app-shell';
+import { RouteErrorBoundary } from '@/app/route-error-boundary';
+import { DashboardPage } from '@/pages/dashboard-page';
+import { JobsListPage } from '@/pages/jobs/jobs-list-page';
+import { JobDetailsPage } from '@/pages/jobs/job-details-page';
+import { JobEditorPage } from '@/pages/jobs/job-editor-page';
+import { JobRunsPage } from '@/pages/jobs/job-runs-page';
+import { JobTokensPage } from '@/pages/jobs/job-tokens-page';
+import { RunDetailsPage } from '@/pages/runs/run-details-page';
+import { WorkersListPage } from '@/pages/workers/workers-list-page';
+import { CatalogPage } from '@/pages/catalog/catalog-page';
+import { NotFoundPage } from '@/pages/not-found-page';
 
-const rootRoute = createRootRoute({
+export interface RouterContext {
+  queryClient: QueryClient;
+}
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
-    <Layout>
+    <AppShell>
       <Outlet />
-    </Layout>
+    </AppShell>
   ),
+  errorComponent: RouteErrorBoundary,
+  notFoundComponent: NotFoundPage,
 });
 
-const indexRoute = createRoute({
+const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: DashboardPage,
@@ -33,25 +44,42 @@ const jobsRoute = createRoute({
   component: JobsListPage,
 });
 
+const createJobRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/create',
+  validateSearch: (search: Record<string, unknown>) => ({
+    templateId: typeof search.templateId === 'string' ? search.templateId : undefined,
+    containerPresetId:
+      typeof search.containerPresetId === 'string' ? search.containerPresetId : undefined,
+  }),
+  component: JobEditorPage,
+});
+
 const jobDetailsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/jobs/$jobId',
   component: JobDetailsPage,
 });
 
-const jobEditorRoute = createRoute({
+const editJobRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/jobs/edit/$jobId',
+  path: '/jobs/$jobId/edit',
   component: JobEditorPage,
 });
 
-const jobCreateRoute = createRoute({
+const jobRunsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/jobs/create',
-  component: JobEditorPage,
+  path: '/jobs/$jobId/runs',
+  component: JobRunsPage,
 });
 
-const runsRoute = createRoute({
+const jobTokensRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs/$jobId/tokens',
+  component: JobTokensPage,
+});
+
+const runDetailsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/runs/$runId',
   component: RunDetailsPage,
@@ -60,7 +88,7 @@ const runsRoute = createRoute({
 const workersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workers',
-  component: WorkersPage,
+  component: WorkersListPage,
 });
 
 const catalogRoute = createRoute({
@@ -70,17 +98,25 @@ const catalogRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  indexRoute,
+  dashboardRoute,
   jobsRoute,
+  createJobRoute,
   jobDetailsRoute,
-  jobEditorRoute,
-  jobCreateRoute,
-  runsRoute,
+  editJobRoute,
+  jobRunsRoute,
+  jobTokensRoute,
+  runDetailsRoute,
   workersRoute,
   catalogRoute,
 ]);
 
-export const router = createRouter({ routeTree });
+export const router = createRouter({
+  routeTree,
+  context: {
+    queryClient: undefined as unknown as QueryClient,
+  },
+  scrollRestoration: true,
+});
 
 declare module '@tanstack/react-router' {
   interface Register {

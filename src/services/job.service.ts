@@ -39,16 +39,14 @@ const buildAttachedFilesConfig = (attachedFiles: AttachedFile[]) =>
 
 /**
  * Generates a docker run command for remote execution.
- * MVP: Uses official published worker image. User code executes inside this container.
- * Future: Worker will become an executor and orchestrate additional containers defined in job config.
+ * The published worker image is expected to contain the Cloud Forge SDK + worker runtime.
  */
 const buildDockerCommand = (job: Job, token: string, baseUrl: string): string => {
-  // We use the first container (or bootstrap) resources as a hint for the worker run command
   const bootstrap =
     job.containers.find((container) => container.name === 'bootstrap' || container.is_parent) ||
     job.containers[0];
 
-  const parts: string[] = ['docker run --rm'];
+  const parts: string[] = ['docker run --pull always --rm'];
 
   if (bootstrap?.resources?.gpus) {
     parts.push(`--gpus ${bootstrap.resources.gpus}`);
@@ -56,6 +54,14 @@ const buildDockerCommand = (job: Job, token: string, baseUrl: string): string =>
 
   if (bootstrap?.resources?.shm_size) {
     parts.push(`--shm-size ${bootstrap.resources.shm_size}`);
+  }
+
+  if (bootstrap?.resources?.memory_limit) {
+    parts.push(`--memory ${bootstrap.resources.memory_limit}`);
+  }
+
+  if (bootstrap?.resources?.cpu_limit) {
+    parts.push(`--cpus ${bootstrap.resources.cpu_limit}`);
   }
 
   parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
@@ -120,7 +126,12 @@ export class JobService {
 
     await JobModel.create(this.toCreateJobData(normalized, id));
 
-    return { id, normalized };
+    const created = await JobModel.findById(id);
+    if (!created) {
+      throw new Error('Failed to load created job');
+    }
+
+    return created;
   }
 
   static async listJobs(filters: {
@@ -152,20 +163,26 @@ export class JobService {
     };
   }
 
-  static async updateJob(jobId: string, payload: any) {
-    const job = await JobModel.findById(jobId);
-    if (!job) throw new Error('Job not found');
+  static async updateJob(jobId: string, payload: Partial<Job>) {
+    const existing = await JobModel.findById(jobId);
+    if (!existing) throw new Error('Job not found');
 
-    // For PATCH, we merge with existing job data to validate
     const merged = {
-      ...this.toCreateJobData(assertValidCreateJobPayload(job), jobId),
+      ...existing,
       ...payload,
+      id: jobId,
     };
 
     const normalized = assertValidCreateJobPayload(merged);
+
     await JobModel.update(jobId, normalized);
 
-    return { id: jobId, normalized };
+    const updated = await JobModel.findById(jobId);
+    if (!updated) {
+      throw new Error('Failed to load updated job');
+    }
+
+    return updated;
   }
 
   static async deleteJob(jobId: string) {
@@ -194,19 +211,19 @@ export class JobService {
 
     await JobModel.create(clonedData);
 
-    return { id: newId, title: clonedData.title };
+    const cloned = await JobModel.findById(newId);
+    if (!cloned) {
+      throw new Error('Failed to load cloned job');
+    }
+
+    return cloned;
   }
 
   static async listJobRuns(jobId: string, limit = 10, offset = 0) {
     const job = await JobModel.findById(jobId);
     if (!job) throw new Error('Job not found');
 
-    const [runs, total] = await Promise.all([
-      RunModel.listByJobIdPaginated(jobId, limit, offset),
-      RunModel.countByJobId(jobId),
-    ]);
-
-    return { runs, total, limit, offset };
+    return RunModel.listByJobIdPaginated(jobId, limit, offset);
   }
 
   static async listJobShareTokens(jobId: string) {
@@ -214,7 +231,7 @@ export class JobService {
     if (!job) throw new Error('Job not found');
 
     const tokens = await ShareTokenModel.listByJobId(jobId);
-    return tokens.map((t) => this.normalizeShareToken(t));
+    return tokens.map((token) => this.normalizeShareToken(token));
   }
 
   static async getShareToken(tokenId: string, baseUrl: string) {
@@ -224,26 +241,24 @@ export class JobService {
     const job = await JobModel.findById(token.job_id);
     if (!job) return null;
 
+    const claimUrl = `${baseUrl}/api/run-config?token=${token.token}`;
+    const dockerCommand = buildDockerCommand(job, token.token, baseUrl);
+
     return {
       ...this.normalizeShareToken(token),
-      job_config_url: `${baseUrl}/api/run-config?token=${token.token}`,
-      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
-      docker_command: buildDockerCommand(job, token.token, baseUrl),
+      base_url: baseUrl,
+      claim_url: claimUrl,
+      share_url: claimUrl,
+      docker_command: dockerCommand,
+      worker_command: dockerCommand,
     };
   }
 
   private static normalizeShareToken(token: ShareToken) {
     return {
-      id: token.id,
-      token: token.token,
-      revoked: token.revoked,
-      expires_at: token.expires_at,
-      max_claims: token.max_claims,
-      claim_count: token.claim_count,
+      ...token,
       remaining_claims:
         token.max_claims != null ? Math.max(0, token.max_claims - token.claim_count) : null,
-      last_claimed_at: token.last_claimed_at,
-      created_at: token.created_at,
     };
   }
 
@@ -256,8 +271,12 @@ export class JobService {
 
   static async createShareToken(
     jobId: string,
-    options: { expiresInSeconds?: number; maxClaims?: number },
-    baseUrl: string,
+    options: {
+      expiresInSeconds?: number;
+      expiresAt?: string | null;
+      maxClaims?: number;
+    },
+    _baseUrl: string,
   ) {
     const job = await JobModel.findById(jobId);
     if (!job) {
@@ -266,10 +285,17 @@ export class JobService {
 
     const shareTokenId = makeId('st');
     const token = `cf_${uuidv4().replace(/-/g, '')}`;
-    const expiresAt =
-      options.expiresInSeconds && options.expiresInSeconds > 0
-        ? new Date(Date.now() + options.expiresInSeconds * 1000).toISOString()
-        : null;
+
+    let expiresAt: string | null = null;
+
+    if (options.expiresAt) {
+      const parsed = new Date(options.expiresAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiresAt = parsed.toISOString();
+      }
+    } else if (options.expiresInSeconds && options.expiresInSeconds > 0) {
+      expiresAt = new Date(Date.now() + options.expiresInSeconds * 1000).toISOString();
+    }
 
     await ShareTokenModel.create({
       id: shareTokenId,
@@ -284,12 +310,7 @@ export class JobService {
       throw new Error('Failed to create share token');
     }
 
-    return {
-      share_token: this.normalizeShareToken(created),
-      job_config_url: `${baseUrl}/api/run-config?token=${token}`,
-      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
-      docker_command: buildDockerCommand(job, token, baseUrl),
-    };
+    return this.normalizeShareToken(created);
   }
 
   static async claimRunByToken(token: string) {
@@ -578,9 +599,10 @@ export class JobService {
     ]);
 
     return {
-      run,
+      ...run,
+      worker_id: run.worker_id ?? worker?.id ?? null,
+      worker_name: run.worker_name ?? worker?.name ?? null,
       logs,
-      worker: worker ? normalizeWorkerStatus(worker) : null,
       artifacts: artifacts.map((artifact) => ({
         ...artifact,
         download_path: `/artifacts/download?key=${encodeURIComponent(artifact.storage_key)}`,
@@ -597,5 +619,9 @@ export class JobService {
     const worker = await WorkerModel.findById(workerId);
     if (!worker) return null;
     return normalizeWorkerStatus(worker);
+  }
+
+  static async getJob(jobId: string) {
+    return JobModel.findById(jobId);
   }
 }

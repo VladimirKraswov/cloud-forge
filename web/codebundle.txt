@@ -1,0 +1,4295 @@
+=== CODE BUNDLE ===
+root: /Volumes/Extend/work/cloud-forge/web
+ignore: .codebundleignore
+generated: 2026-03-27T07:32:09.964Z
+
+
+
+path: /.gitignore
+----------------------------------------
+node_modules
+dist
+.vercel
+.next
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+
+path: /eslint.config.js
+----------------------------------------
+import js from '@eslint/js';
+import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+import tseslint from 'typescript-eslint';
+import prettier from 'eslint-config-prettier';
+
+export default tseslint.config(
+  { ignores: ['dist'] },
+  {
+    extends: [js.configs.recommended, ...tseslint.configs.recommended, prettier],
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: globals.browser,
+    },
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      '@typescript-eslint/no-explicit-any': 'off'
+    }
+  }
+);
+
+
+path: /package.json
+----------------------------------------
+{
+  "name": "cloud-forge-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@radix-ui/react-alert-dialog": "^1.1.14",
+    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-select": "^2.2.5",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tailwindcss/vite": "^4.2.2",
+    "@tanstack/react-query": "^5.95.2",
+    "@tanstack/react-query-devtools": "^5.95.2",
+    "@tanstack/react-router": "^1.168.7",
+    "@tanstack/react-router-devtools": "^1.166.11",
+    "axios": "^1.13.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.511.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-hook-form": "^7.72.0",
+    "recharts": "^3.2.1",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^4.2.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.7.0",
+    "@types/react": "^19.1.14",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.1.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vite": "^7.1.7"
+  }
+}
+
+
+path: /src/api/artifacts.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { AttachedFile } from '@/api/types';
+
+export const artifactsApi = {
+  uploadJobFile: async (jobId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return unwrap(
+      api.post<AttachedFile>('/artifacts/upload-job', formData, {
+        params: { jobId },
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    );
+  },
+};
+
+
+path: /src/api/catalog.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { ContainerPreset, JobTemplate, PaginatedResponse } from '@/api/types';
+
+export const catalogApi = {
+  listTemplates: () => unwrap(api.get<PaginatedResponse<JobTemplate>>('/catalog/job-templates')),
+  getTemplate: (templateId: string) => unwrap(api.get<JobTemplate>(`/catalog/job-templates/${templateId}`)),
+  listContainerPresets: () => unwrap(api.get<PaginatedResponse<ContainerPreset>>('/catalog/container-presets')),
+};
+
+
+path: /src/api/client.ts
+----------------------------------------
+import axios, { AxiosError } from 'axios';
+
+interface ErrorPayload {
+  error?: string;
+  message?: string;
+  errors?: string[];
+  warnings?: string[];
+}
+
+export class ApiClientError extends Error {
+  status?: number;
+  payload?: ErrorPayload | unknown;
+
+  constructor(message: string, status?: number, payload?: ErrorPayload | unknown) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+export const apiBaseUrl =
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+
+export const api = axios.create({
+  baseURL: apiBaseUrl,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<ErrorPayload>) => {
+    const payload = error.response?.data;
+    const message =
+      (Array.isArray(payload?.errors) && payload.errors.length ? payload.errors.join('\n') : undefined) ||
+      payload?.error ||
+      payload?.message ||
+      error.message ||
+      'Request failed';
+
+    return Promise.reject(new ApiClientError(message, error.response?.status, payload));
+  },
+);
+
+export function unwrap<T>(promise: Promise<{ data: T }>): Promise<T> {
+  return promise.then((response) => response.data);
+}
+
+export function buildArtifactDownloadUrl(storageKey: string) {
+  return `${apiBaseUrl}/artifacts/download?key=${encodeURIComponent(storageKey)}`;
+}
+
+export function buildRunWebSocketUrl(runId: string) {
+  const url = new URL(apiBaseUrl);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = `/ws/runs/${runId}`;
+  return url.toString();
+}
+
+
+path: /src/api/dashboard.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { DashboardSummary, RecentEvent, Run, Worker } from '@/api/types';
+
+export const dashboardApi = {
+  getSummary: () => unwrap(api.get<DashboardSummary>('/dashboard/summary')),
+  getActiveRuns: () => unwrap(api.get<Run[]>('/dashboard/active-runs')),
+  getActiveWorkers: () => unwrap(api.get<Worker[]>('/dashboard/active-workers')),
+  getRecentEvents: () => unwrap(api.get<RecentEvent[]>('/dashboard/recent-events')),
+};
+
+
+path: /src/api/jobs.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { Job, JobsListResponse, Run, ShareToken } from '@/api/types';
+
+export interface JobsListParams {
+  search?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CreateShareTokenPayload {
+  expires_at?: string | null;
+  max_claims?: number | null;
+}
+
+export const jobsApi = {
+  list: (params?: JobsListParams) => unwrap(api.get<JobsListResponse>('/jobs', { params })),
+  get: (jobId: string) => unwrap(api.get<Job>(`/jobs/${jobId}`)),
+  create: (payload: Partial<Job> & Pick<Job, 'id' | 'title' | 'execution_code' | 'execution_language' | 'containers' | 'environments' | 'attached_files'>) => unwrap(api.post<Job>('/jobs', payload)),
+  update: (jobId: string, payload: Partial<Job>) => unwrap(api.patch<Job>(`/jobs/${jobId}`, payload)),
+  delete: (jobId: string) => unwrap(api.delete<{ ok?: boolean }>(`/jobs/${jobId}`)),
+  clone: (jobId: string) => unwrap(api.post<Job>(`/jobs/${jobId}/clone`)),
+  listRuns: (jobId: string, params?: { limit?: number; offset?: number }) => unwrap(api.get<Run[]>(`/jobs/${jobId}/runs`, { params })),
+  listShareTokens: (jobId: string) => unwrap(api.get<ShareToken[]>(`/jobs/${jobId}/share-tokens`)),
+  createShareToken: (jobId: string, payload: CreateShareTokenPayload) => unwrap(api.post<ShareToken>(`/jobs/${jobId}/share-tokens`, payload)),
+};
+
+
+path: /src/api/runs.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { Run } from '@/api/types';
+
+export const runsApi = {
+  get: (runId: string) => unwrap(api.get<Run>(`/api/runs/${runId}`)),
+  cancel: (runId: string, reason?: string) => unwrap(api.post<{ ok?: boolean; final?: boolean }>(`/api/runs/${runId}/cancel`, { reason })),
+};
+
+
+path: /src/api/tokens.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { ShareTokenDetails } from '@/api/types';
+
+export const tokensApi = {
+  get: (tokenId: string) => unwrap(api.get<ShareTokenDetails>(`/share-tokens/${tokenId}`)),
+  revoke: (tokenId: string) => unwrap(api.post<{ ok: boolean }>(`/share-tokens/${tokenId}/revoke`)),
+};
+
+
+path: /src/api/types.ts
+----------------------------------------
+export type ExecutionLanguage = 'python' | 'javascript';
+export type RunStatus = 'created' | 'running' | 'finished' | 'failed' | 'cancelled' | 'lost';
+export type WorkerStatus = 'online' | 'busy' | 'offline';
+export type LogLevel = 'info' | 'warn' | 'error';
+
+export interface Container {
+  name: string;
+  image: string;
+  is_parent?: boolean;
+  resources?: {
+    gpus?: string;
+    shm_size?: string;
+    cpu_limit?: number;
+    memory_limit?: string;
+  };
+  env?: Record<string, string>;
+}
+
+export interface AttachedFile {
+  id: string;
+  filename: string;
+  size_bytes: number;
+  storage_key: string;
+  mime_type: string;
+}
+
+export interface Job {
+  id: string;
+  title: string;
+  description?: string | null;
+  owner_id?: string | null;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: AttachedFile[];
+  execution_code: string;
+  execution_language: ExecutionLanguage;
+  entrypoint?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobListItem extends Job {
+  latest_run_status?: RunStatus | null;
+  latest_run_at?: string | null;
+  runs_count?: number;
+  active_runs_count?: number;
+}
+
+export interface WorkspaceLayout {
+  root: string;
+  code_dir: string;
+  input_dir: string;
+  output_dir: string;
+  artifacts_dir: string;
+  tmp_dir: string;
+}
+
+export interface RunConfigSnapshot {
+  job_id: string;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: AttachedFile[];
+  execution_code: string;
+  execution_language: ExecutionLanguage;
+  entrypoint?: string | null;
+  workspace: WorkspaceLayout;
+}
+
+export interface LogEntry {
+  id?: number;
+  run_id: string;
+  level: LogLevel;
+  message: string;
+  timestamp?: string;
+}
+
+export interface RunArtifact {
+  id: string;
+  run_id: string;
+  filename: string;
+  relative_path: string;
+  size_bytes: number;
+  storage_key: string;
+  mime_type: string;
+  created_at: string;
+  download_path?: string;
+}
+
+export interface Run {
+  id: string;
+  job_id: string;
+  share_token_id?: string;
+  worker_id?: string | null;
+  worker_name?: string | null;
+  status: RunStatus;
+  result?: string | null;
+  metrics?: unknown;
+  config_snapshot: RunConfigSnapshot;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_heartbeat_at?: string | null;
+  cancel_requested_at?: string | null;
+  cancel_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  logs?: LogEntry[];
+  artifacts?: RunArtifact[];
+  job_title?: string;
+}
+
+export interface ShareToken {
+  id: string;
+  job_id: string;
+  token: string;
+  expires_at?: string | null;
+  max_claims?: number | null;
+  claim_count: number;
+  revoked: boolean;
+  last_claimed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShareTokenDetails extends ShareToken {
+  base_url?: string;
+  claim_url?: string;
+  share_url?: string;
+  docker_command?: string;
+  worker_command?: string;
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  host?: string | null;
+  status: WorkerStatus;
+  current_run_id?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  last_seen_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardSummary {
+  jobs_total: number;
+  runs_total: number;
+  runs_by_status: Partial<Record<RunStatus, number>>;
+  workers_online: number;
+  workers_total: number;
+}
+
+export interface RecentEvent {
+  id?: string;
+  type?: string;
+  status?: RunStatus;
+  message: string;
+  details?: string;
+  created_at: string;
+}
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  preset: {
+    containers?: Container[];
+    environments?: Record<string, string>;
+    execution_code: string;
+    execution_language: ExecutionLanguage;
+    entrypoint?: string | null;
+  };
+}
+
+export interface ContainerPreset {
+  id: string;
+  name: string;
+  description?: string;
+  image: string;
+  tags?: string[];
+  resources?: Container['resources'];
+  env?: Record<string, string>;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+}
+
+export interface JobsListResponse {
+  jobs: JobListItem[];
+  total: number;
+}
+
+
+path: /src/api/workers.ts
+----------------------------------------
+import { api, unwrap } from '@/api/client';
+import type { Worker } from '@/api/types';
+
+export const workersApi = {
+  list: () => unwrap(api.get<Worker[]>('/workers')),
+  get: (workerId: string) => unwrap(api.get<Worker>(`/workers/${workerId}`)),
+};
+
+
+path: /src/app/providers.tsx
+----------------------------------------
+import type { PropsWithChildren } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
+import { Toaster } from 'sonner';
+import { router } from '@/app/router';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 10_000,
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
+
+router.update({
+  context: {
+    queryClient,
+  },
+});
+
+export function AppProviders({ children }: PropsWithChildren) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <Toaster richColors closeButton position="top-right" />
+      {import.meta.env.DEV ? (
+        <>
+          <ReactQueryDevtools initialIsOpen={false} />
+          <TanStackRouterDevtools router={router} position="bottom-right" />
+        </>
+      ) : null}
+    </QueryClientProvider>
+  );
+}
+
+
+path: /src/app/route-error-boundary.tsx
+----------------------------------------
+import { AlertTriangle } from 'lucide-react';
+import { Button } from '@/shared/components/ui/button';
+
+export function RouteErrorBoundary({ error }: { error: Error }) {
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-border bg-card p-10 text-center shadow-[var(--shadow-soft)]">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+        <AlertTriangle className="h-7 w-7" />
+      </div>
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Something went wrong</h1>
+        <p className="max-w-lg text-sm text-muted-foreground">{error.message}</p>
+      </div>
+      <Button onClick={() => window.location.reload()}>Reload application</Button>
+    </div>
+  );
+}
+
+
+path: /src/app/router.tsx
+----------------------------------------
+import { Outlet, createRootRouteWithContext, createRoute, createRouter } from '@tanstack/react-router';
+import type { QueryClient } from '@tanstack/react-query';
+import { AppShell } from '@/app/shell/app-shell';
+import { RouteErrorBoundary } from '@/app/route-error-boundary';
+import { DashboardPage } from '@/pages/dashboard-page';
+import { JobsListPage } from '@/pages/jobs/jobs-list-page';
+import { JobDetailsPage } from '@/pages/jobs/job-details-page';
+import { JobEditorPage } from '@/pages/jobs/job-editor-page';
+import { JobRunsPage } from '@/pages/jobs/job-runs-page';
+import { JobTokensPage } from '@/pages/jobs/job-tokens-page';
+import { RunDetailsPage } from '@/pages/runs/run-details-page';
+import { WorkersListPage } from '@/pages/workers/workers-list-page';
+import { CatalogPage } from '@/pages/catalog/catalog-page';
+import { NotFoundPage } from '@/pages/not-found-page';
+
+export interface RouterContext {
+  queryClient: QueryClient;
+}
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
+  component: () => (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  ),
+  errorComponent: RouteErrorBoundary,
+  notFoundComponent: NotFoundPage,
+});
+
+const dashboardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: DashboardPage });
+const jobsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs', component: JobsListPage });
+const createJobRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/create', component: JobEditorPage });
+const jobDetailsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId', component: JobDetailsPage });
+const editJobRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId/edit', component: JobEditorPage });
+const jobRunsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId/runs', component: JobRunsPage });
+const jobTokensRoute = createRoute({ getParentRoute: () => rootRoute, path: '/jobs/$jobId/tokens', component: JobTokensPage });
+const runDetailsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/runs/$runId', component: RunDetailsPage });
+const workersRoute = createRoute({ getParentRoute: () => rootRoute, path: '/workers', component: WorkersListPage });
+const catalogRoute = createRoute({ getParentRoute: () => rootRoute, path: '/catalog', component: CatalogPage });
+
+const routeTree = rootRoute.addChildren([
+  dashboardRoute,
+  jobsRoute,
+  createJobRoute,
+  jobDetailsRoute,
+  editJobRoute,
+  jobRunsRoute,
+  jobTokensRoute,
+  runDetailsRoute,
+  workersRoute,
+  catalogRoute,
+]);
+
+export const router = createRouter({
+  routeTree,
+  context: {
+    queryClient: undefined as unknown as QueryClient,
+  },
+  scrollRestoration: true,
+});
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router;
+  }
+}
+
+
+path: /src/app/shell/app-shell.tsx
+----------------------------------------
+import type { PropsWithChildren } from 'react';
+import { useState } from 'react';
+import { Bell, Cpu, Menu, Search, Sparkles, X } from 'lucide-react';
+import { Link, useLocation } from '@tanstack/react-router';
+import { Button } from '@/shared/components/ui/button';
+import { Input } from '@/shared/components/ui/input';
+import { cn } from '@/shared/utils/cn';
+
+const navigation = [
+  { to: '/', label: 'Dashboard' },
+  { to: '/jobs', label: 'Jobs' },
+  { to: '/workers', label: 'Workers' },
+  { to: '/catalog', label: 'Catalog' },
+];
+
+function NavLink({ to, label, onClick }: { to: string; label: string; onClick?: () => void }) {
+  const location = useLocation();
+  const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className={cn(
+        'flex items-center rounded-xl px-4 py-3 text-sm font-medium transition-all',
+        active
+          ? 'bg-primary text-primary-foreground shadow-[var(--shadow-soft)]'
+          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+      )}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <aside className="flex h-full flex-col gap-6 rounded-none border-r border-border bg-card/90 p-6 backdrop-blur">
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
+          <Cpu className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-lg font-semibold tracking-tight">Cloud Forge</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-primary">Control plane</p>
+        </div>
+      </div>
+
+      <nav className="space-y-2">
+        {navigation.map((item) => (
+          <NavLink key={item.to} to={item.to} label={item.label} onClick={onNavigate} />
+        ))}
+      </nav>
+
+      <div className="mt-auto rounded-2xl border border-border bg-muted/60 p-4">
+        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <Sparkles className="h-4 w-4 text-primary" />
+          Production-ready frontend
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">
+          React 19 + TanStack Router/Query + Tailwind v4 + shadcn/ui primitives.
+        </p>
+      </div>
+    </aside>
+  );
+}
+
+export function AppShell({ children }: PropsWithChildren) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-transparent text-foreground">
+      <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
+        <div className="hidden lg:block">
+          <Sidebar />
+        </div>
+
+        {open && (
+          <div className="fixed inset-0 z-50 bg-slate-950/30 lg:hidden">
+            <div className="h-full w-[280px] bg-card">
+              <div className="flex items-center justify-end p-3">
+                <Button variant="ghost" size="icon" onClick={() => setOpen(false)}>
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <Sidebar onNavigate={() => setOpen(false)} />
+            </div>
+          </div>
+        )}
+
+        <div className="min-w-0">
+          <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
+            <div className="mx-auto flex h-18 max-w-7xl items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
+              <Button variant="outline" size="icon" className="lg:hidden" onClick={() => setOpen(true)}>
+                <Menu className="h-5 w-5" />
+              </Button>
+
+              <div className="relative hidden max-w-md flex-1 md:block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input readOnly value="" placeholder="Search jobs, runs, workers..." className="h-11 rounded-2xl border-border bg-card pl-10" />
+              </div>
+
+              <div className="ml-auto flex items-center gap-3">
+                <div className="hidden rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:block">
+                  {import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}
+                </div>
+                <Button variant="outline" size="icon" className="rounded-full">
+                  <Bell className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-3 rounded-full border border-border bg-card px-2.5 py-1.5 shadow-[var(--shadow-soft)]">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">CF</div>
+                  <div className="hidden sm:block">
+                    <p className="text-sm font-medium">Cloud Forge</p>
+                    <p className="text-xs text-muted-foreground">Admin workspace</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/entities/runs/ui/run-status-badge.tsx
+----------------------------------------
+import type { RunStatus } from '@/api/types';
+import { Badge } from '@/shared/components/ui/badge';
+
+const variants: Record<RunStatus, string> = {
+  created: 'bg-amber-50 text-amber-700 border-amber-200',
+  running: 'bg-blue-50 text-blue-700 border-blue-200',
+  finished: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  failed: 'bg-red-50 text-red-700 border-red-200',
+  cancelled: 'bg-slate-100 text-slate-700 border-slate-200',
+  lost: 'bg-violet-50 text-violet-700 border-violet-200',
+};
+
+export function RunStatusBadge({ status }: { status: RunStatus }) {
+  return <Badge className={variants[status]}>{status}</Badge>;
+}
+
+
+path: /src/entities/workers/ui/worker-status-badge.tsx
+----------------------------------------
+import type { WorkerStatus } from '@/api/types';
+import { Badge } from '@/shared/components/ui/badge';
+
+const variants: Record<WorkerStatus, string> = {
+  online: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  busy: 'bg-blue-50 text-blue-700 border-blue-200',
+  offline: 'bg-slate-100 text-slate-700 border-slate-200',
+};
+
+export function WorkerStatusBadge({ status }: { status: WorkerStatus }) {
+  return <Badge className={variants[status]}>{status}</Badge>;
+}
+
+
+path: /src/features/jobs/job-form/attached-files-field.tsx
+----------------------------------------
+import { FileUp, Paperclip, Trash2 } from 'lucide-react';
+import type { AttachedFile } from '@/api/types';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/card';
+import { formatFileSize } from '@/shared/utils/format';
+
+export function AttachedFilesField({
+  existingFiles,
+  pendingFiles,
+  onPickFiles,
+  onRemoveExisting,
+  onRemovePending,
+}: {
+  existingFiles: AttachedFile[];
+  pendingFiles: File[];
+  onPickFiles: (files: FileList | null) => void;
+  onRemoveExisting: (fileId: string) => void;
+  onRemovePending: (fileName: string) => void;
+}) {
+  const combinedItems = [
+    ...existingFiles,
+    ...pendingFiles.map((file) => ({
+      id: file.name,
+      filename: file.name,
+      size_bytes: file.size,
+      storage_key: '__pending__',
+      mime_type: file.type || 'application/octet-stream',
+    })),
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">Attached files</h3>
+          <p className="text-sm text-muted-foreground">
+            Upload reference files that should be mounted into the job workspace.
+          </p>
+        </div>
+
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent">
+          <FileUp className="h-4 w-4" />
+          Upload files
+          <input
+            className="hidden"
+            type="file"
+            multiple
+            onChange={(event) => {
+              onPickFiles(event.target.files);
+              event.currentTarget.value = '';
+            }}
+          />
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        {combinedItems.length === 0 ? (
+          <Card className="border-dashed shadow-none">
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              No files attached yet.
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {existingFiles.map((file) => (
+          <Card key={file.id} className="shadow-none">
+            <CardContent className="flex items-center justify-between gap-4 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                  <Paperclip className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{file.filename}</p>
+                  <p className="text-xs text-muted-foreground">{formatFileSize(file.size_bytes)}</p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onRemoveExisting(file.id)}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+
+        {pendingFiles.map((file) => (
+          <Card key={file.name} className="border-blue-200 bg-blue-50 shadow-none">
+            <CardContent className="flex items-center justify-between gap-4 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+                  <FileUp className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{file.name}</p>
+                  <p className="text-xs text-blue-700/80">
+                    Pending upload · {formatFileSize(file.size)}
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onRemovePending(file.name)}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/features/jobs/job-form/containers-field-array.tsx
+----------------------------------------
+import { Plus, Trash2 } from 'lucide-react';
+import { useFieldArray, useWatch, type Control, type UseFormRegister, type UseFormSetValue } from 'react-hook-form';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
+import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
+import { Checkbox } from '@/shared/components/ui/checkbox';
+
+export function ContainersFieldArray({
+  control,
+  register,
+  setValue,
+}: {
+  control: Control<JobFormValues>;
+  register: UseFormRegister<JobFormValues>;
+  setValue: UseFormSetValue<JobFormValues>;
+}) {
+  const { fields, append, remove } = useFieldArray({ control, name: 'containers' });
+  const containers = useWatch({ control, name: 'containers' }) ?? [];
+
+  const makeParent = (targetIndex: number) => {
+    const next = containers.map((container, index) => ({
+      ...container,
+      is_parent: index === targetIndex,
+    }));
+
+    setValue('containers', next, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+  };
+
+  const handleAppend = () => {
+    append({
+      name: '',
+      image: '',
+      is_parent: fields.length === 0,
+      env: [],
+      resources: {
+        cpu_limit: '',
+        memory_limit: '',
+        gpus: '',
+        shm_size: '',
+      },
+    });
+  };
+
+  const handleRemove = (index: number) => {
+    const removingParent = containers[index]?.is_parent;
+    remove(index);
+
+    const nextLength = fields.length - 1;
+    if (nextLength <= 0) {
+      return;
+    }
+
+    if (removingParent) {
+      queueMicrotask(() => {
+        const nextContainers = (containers.filter((_, i) => i !== index) ?? []).map((container, i) => ({
+          ...container,
+          is_parent: i === 0,
+        }));
+
+        setValue('containers', nextContainers, {
+          shouldDirty: true,
+          shouldTouch: true,
+          shouldValidate: true,
+        });
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Containers</h3>
+          <p className="text-sm text-muted-foreground">
+            Configure the bootstrap container and any sidecars required by the job.
+          </p>
+        </div>
+
+        <Button type="button" variant="outline" onClick={handleAppend}>
+          <Plus className="h-4 w-4" />
+          Add container
+        </Button>
+      </div>
+
+      <div className="space-y-4">
+        {fields.map((field, index) => (
+          <Card key={field.id}>
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardTitle className="text-base">Container #{index + 1}</CardTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => handleRemove(index)}
+                disabled={fields.length === 1}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </CardHeader>
+
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor={`containers.${index}.name`}>Name</Label>
+                  <Input id={`containers.${index}.name`} {...register(`containers.${index}.name`)} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`containers.${index}.image`}>Docker image</Label>
+                  <Input id={`containers.${index}.image`} {...register(`containers.${index}.image`)} />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-3 text-sm">
+                <Checkbox
+                  checked={Boolean(containers[index]?.is_parent)}
+                  onChange={() => makeParent(index)}
+                />
+                Bootstrap / parent container
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor={`containers.${index}.resources.cpu_limit`}>CPU limit</Label>
+                  <Input
+                    id={`containers.${index}.resources.cpu_limit`}
+                    placeholder="e.g. 2"
+                    {...register(`containers.${index}.resources.cpu_limit`)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`containers.${index}.resources.memory_limit`}>Memory limit</Label>
+                  <Input
+                    id={`containers.${index}.resources.memory_limit`}
+                    placeholder="e.g. 4g"
+                    {...register(`containers.${index}.resources.memory_limit`)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`containers.${index}.resources.gpus`}>GPUs</Label>
+                  <Input
+                    id={`containers.${index}.resources.gpus`}
+                    placeholder="e.g. all"
+                    {...register(`containers.${index}.resources.gpus`)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`containers.${index}.resources.shm_size`}>Shared memory</Label>
+                  <Input
+                    id={`containers.${index}.resources.shm_size`}
+                    placeholder="e.g. 1g"
+                    {...register(`containers.${index}.resources.shm_size`)}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/features/jobs/job-form/environments-field-array.tsx
+----------------------------------------
+import { Plus, Trash2 } from 'lucide-react';
+import { useFieldArray, type Control, type UseFormRegister } from 'react-hook-form';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/card';
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
+import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
+
+export function EnvironmentsFieldArray({ control, register, name = 'environments' }: { control: Control<JobFormValues>; register: UseFormRegister<JobFormValues>; name?: 'environments'; }) {
+  const { fields, append, remove } = useFieldArray({ control, name });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Environment variables</h3>
+          <p className="text-sm text-muted-foreground">Define key/value pairs available during execution.</p>
+        </div>
+        <Button type="button" variant="outline" onClick={() => append({ key: '', value: '' })}>
+          <Plus className="h-4 w-4" />
+          Add variable
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {fields.length === 0 ? (
+          <Card className="border-dashed shadow-none"><CardContent className="p-6 text-sm text-muted-foreground">No variables configured yet.</CardContent></Card>
+        ) : null}
+
+        {fields.map((field, index) => (
+          <Card key={field.id} className="shadow-none">
+            <CardContent className="grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <div className="space-y-2">
+                <Label htmlFor={`${name}.${index}.key`}>Key</Label>
+                <Input id={`${name}.${index}.key`} {...register(`${name}.${index}.key`)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`${name}.${index}.value`}>Value</Label>
+                <Input id={`${name}.${index}.value`} {...register(`${name}.${index}.value`)} />
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="md:mb-0.5" onClick={() => remove(index)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/features/jobs/job-form/job-builder-form.tsx
+----------------------------------------
+import { useEffect, useMemo, useState } from 'react';
+import { useFieldArray, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import type { ContainerPreset, Job, JobTemplate } from '@/api/types';
+import { artifactsApi } from '@/api/artifacts';
+import { jobsApi } from '@/api/jobs';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+import { Textarea } from '@/shared/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select';
+import { AttachedFilesField } from '@/features/jobs/job-form/attached-files-field';
+import { ContainersFieldArray } from '@/features/jobs/job-form/containers-field-array';
+import { EnvironmentsFieldArray } from '@/features/jobs/job-form/environments-field-array';
+import {
+  jobFormSchema,
+  type JobFormValues,
+} from '@/features/jobs/job-form/job-form-schema';
+import {
+  mapFormValuesToPayload,
+  mapJobToFormValues,
+} from '@/features/jobs/job-form/job-form-mappers';
+import { TemplatePickerDialog } from '@/features/jobs/job-form/template-picker-dialog';
+import { CodeBlock } from '@/shared/components/app/code-block';
+import { getApiErrorMessage } from '@/shared/lib/api-error';
+
+type FormContainer = JobFormValues['containers'][number];
+
+function makeBootstrapContainer(
+  language: JobFormValues['execution_language'],
+): FormContainer {
+  return {
+    name: 'bootstrap',
+    image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
+    is_parent: true,
+    env: [],
+    resources: {
+      cpu_limit: '',
+      memory_limit: '',
+      gpus: '',
+      shm_size: '',
+    },
+  };
+}
+
+function normalizeFormContainers(
+  containers: FormContainer[] | undefined,
+  language: JobFormValues['execution_language'],
+): FormContainer[] {
+  const list = Array.isArray(containers) ? [...containers] : [];
+
+  if (list.length === 0) {
+    return [makeBootstrapContainer(language)];
+  }
+
+  const parentIndex = list.findIndex((item) => item.is_parent);
+
+  if (parentIndex === -1) {
+    list[0] = { ...list[0], is_parent: true };
+    return list;
+  }
+
+  return list.map((item, index) => ({
+    ...item,
+    is_parent: index === parentIndex,
+  }));
+}
+
+function normalizePayloadContainers(
+  containers:
+    | Array<{
+        name: string;
+        image: string;
+        is_parent?: boolean;
+        env?: Record<string, string>;
+        resources?: {
+          cpu_limit?: number;
+          memory_limit?: string;
+          gpus?: string;
+          shm_size?: string;
+        };
+      }>
+    | undefined,
+  language: JobFormValues['execution_language'],
+) {
+  const list = Array.isArray(containers) ? [...containers] : [];
+
+  if (list.length === 0) {
+    return [
+      {
+        name: 'bootstrap',
+        image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
+        is_parent: true,
+        env: {},
+        resources: {},
+      },
+    ];
+  }
+
+  const parentIndex = list.findIndex((item) => item.is_parent);
+
+  if (parentIndex === -1) {
+    list[0] = { ...list[0], is_parent: true };
+    return list;
+  }
+
+  return list.map((item, index) => ({
+    ...item,
+    is_parent: index === parentIndex,
+  }));
+}
+
+export function JobBuilderForm({
+  jobId,
+  initialJob,
+  onSaved,
+}: {
+  jobId?: string;
+  initialJob?: Job | null;
+  onSaved: (job: Job) => Promise<void> | void;
+}) {
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [tab, setTab] = useState('general');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const isEditMode = Boolean(jobId);
+
+  const initialValues = useMemo(() => mapJobToFormValues(initialJob), [initialJob]);
+
+  const form = useForm<JobFormValues>({
+    resolver: zodResolver(jobFormSchema),
+    defaultValues: initialValues,
+  });
+
+  useEffect(() => {
+    if (isEditMode && !initialJob) {
+      return;
+    }
+
+    form.reset(initialValues);
+    setPendingFiles([]);
+    setSubmitError(null);
+    setTab('general');
+  }, [form, initialValues, initialJob, isEditMode]);
+
+  const attachmentsFieldArray = useFieldArray({
+    control: form.control,
+    name: 'attached_files',
+  });
+
+  const existingAttachments = form.watch('attached_files');
+  const codePreview = form.watch('execution_code');
+  const language = form.watch('execution_language');
+
+  const addPendingFiles = (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+
+    const nextFiles = Array.from(fileList).filter(
+      (file) => !pendingFiles.some((current) => current.name === file.name),
+    );
+
+    setPendingFiles((previous) => [...previous, ...nextFiles]);
+  };
+
+  const onApplyTemplate = (template: JobTemplate) => {
+    try {
+      const preset =
+        (template as any).preset ?? {
+          execution_language: (template as any).execution_language ?? 'python',
+          execution_code: (template as any).execution_code ?? '',
+          entrypoint: (template as any).entrypoint ?? '',
+          environments: (template as any).environments ?? {},
+          containers: (template as any).containers ?? [],
+        };
+
+      const nextLanguage = (preset.execution_language ??
+        'python') as JobFormValues['execution_language'];
+
+      const mappedContainers: FormContainer[] = (preset.containers || []).map(
+        (container: any) => ({
+          name: container.name ?? '',
+          image: container.image ?? '',
+          is_parent: Boolean(container.is_parent),
+          env: Object.entries(container.env || {}).map(([key, value]) => ({
+            key,
+            value: String(value ?? ''),
+          })),
+          resources: {
+            cpu_limit:
+              container.resources?.cpu_limit !== undefined
+                ? String(container.resources.cpu_limit)
+                : '',
+            memory_limit: container.resources?.memory_limit ?? '',
+            gpus: container.resources?.gpus ?? '',
+            shm_size: container.resources?.shm_size ?? '',
+          },
+        }),
+      );
+
+      form.reset({
+        ...form.getValues(),
+        title: template.name ?? form.getValues('title'),
+        description: template.description || '',
+        execution_language: nextLanguage,
+        execution_code: preset.execution_code ?? '',
+        entrypoint:
+          preset.entrypoint || (nextLanguage === 'javascript' ? 'index.js' : 'main.py'),
+        environments: Object.entries(preset.environments || {}).map(([key, value]) => ({
+          key,
+          value: String(value ?? ''),
+        })),
+        containers: normalizeFormContainers(mappedContainers, nextLanguage),
+        attached_files: form.getValues('attached_files'),
+      });
+
+      form.clearErrors();
+      setSubmitError(null);
+      toast.success(`Applied template: ${template.name}`);
+    } catch (error) {
+      console.error('Failed to apply template', error, template);
+      toast.error('Failed to apply template');
+    }
+  };
+
+  const onApplyContainerPreset = (preset: ContainerPreset) => {
+    const currentContainers = form.getValues('containers');
+    const nextContainers = normalizeFormContainers(
+      [
+        ...currentContainers,
+        {
+          name: preset.name,
+          image: preset.image,
+          is_parent: false,
+          env: Object.entries(preset.env || {}).map(([key, value]) => ({
+            key,
+            value: String(value ?? ''),
+          })),
+          resources: {
+            cpu_limit: preset.resources?.cpu_limit?.toString() || '',
+            memory_limit: preset.resources?.memory_limit || '',
+            gpus: preset.resources?.gpus || '',
+            shm_size: preset.resources?.shm_size || '',
+          },
+        },
+      ],
+      form.getValues('execution_language'),
+    );
+
+    form.setValue('containers', nextContainers, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+
+    setSubmitError(null);
+    toast.success(`Added container preset: ${preset.name}`);
+  };
+
+  const submit = form.handleSubmit(
+    async (values) => {
+      setSubmitError(null);
+
+      try {
+        if (isEditMode && !jobId) {
+          throw new Error('Cannot update job: missing job id');
+        }
+
+        const payload = mapFormValuesToPayload(values);
+        const normalizedPayload = {
+          ...payload,
+          containers: normalizePayloadContainers(
+            payload.containers,
+            payload.execution_language,
+          ),
+        };
+
+        const savedJob =
+          isEditMode && jobId
+            ? await jobsApi.update(jobId, normalizedPayload)
+            : await jobsApi.create({
+                ...normalizedPayload,
+                id: crypto.randomUUID(),
+              });
+
+        if (pendingFiles.length) {
+          const uploadedFiles = [];
+
+          for (const file of pendingFiles) {
+            const uploaded = await artifactsApi.uploadJobFile(savedJob.id, file);
+            uploadedFiles.push(uploaded);
+          }
+
+          if (uploadedFiles.length) {
+            const finalFiles = [...values.attached_files, ...uploadedFiles];
+            await jobsApi.update(savedJob.id, { attached_files: finalFiles });
+            savedJob.attached_files = finalFiles;
+          }
+        } else {
+          savedJob.attached_files = values.attached_files;
+        }
+
+        setPendingFiles([]);
+        toast.success(isEditMode ? 'Job updated' : 'Job created');
+        await onSaved(savedJob);
+      } catch (error) {
+        const message = getApiErrorMessage(error);
+        setSubmitError(message);
+        toast.error(message);
+        console.error('Save job failed:', error);
+      }
+    },
+    (errors) => {
+      setSubmitError('Please fix validation errors before saving');
+
+      if (errors.title || errors.description || errors.entrypoint || errors.execution_language) {
+        setTab('general');
+      } else if (errors.execution_code) {
+        setTab('code');
+      } else if (errors.containers) {
+        setTab('containers');
+      } else if (errors.environments || errors.attached_files) {
+        setTab('attachments');
+      }
+
+      toast.error('Please fix validation errors before saving');
+    },
+  );
+
+  const tabs = useMemo(
+    () => [
+      { id: 'general', label: 'General' },
+      { id: 'code', label: 'Execution' },
+      { id: 'containers', label: 'Containers' },
+      { id: 'attachments', label: 'Files & env' },
+    ],
+    [],
+  );
+
+  return (
+    <form className="space-y-6" onSubmit={submit}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            {tabs.map((item) => (
+              <TabsTrigger key={item.id} value={item.id}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <TemplatePickerDialog
+            onApplyTemplate={onApplyTemplate}
+            onApplyContainerPreset={onApplyContainerPreset}
+          />
+          <Button type="submit" disabled={form.formState.isSubmitting}>
+            {form.formState.isSubmitting ? 'Saving...' : 'Save job'}
+          </Button>
+        </div>
+      </div>
+
+      {submitError ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive whitespace-pre-line">
+          {submitError}
+        </div>
+      ) : null}
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsContent value="general">
+          <Card>
+            <CardHeader>
+              <CardTitle>General information</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input id="title" {...form.register('title')} />
+                  {form.formState.errors.title ? (
+                    <p className="text-xs text-destructive">
+                      {form.formState.errors.title.message}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="entrypoint">Entrypoint</Label>
+                  <Input
+                    id="entrypoint"
+                    {...form.register('entrypoint')}
+                    placeholder="main.py"
+                  />
+                  {form.formState.errors.entrypoint ? (
+                    <p className="text-xs text-destructive">
+                      {form.formState.errors.entrypoint.message}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea id="description" {...form.register('description')} />
+                {form.formState.errors.description ? (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors.description.message}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Execution language</Label>
+                <Select
+                  value={form.watch('execution_language')}
+                  onValueChange={(value) =>
+                    form.setValue(
+                      'execution_language',
+                      value as JobFormValues['execution_language'],
+                      {
+                        shouldDirty: true,
+                        shouldTouch: true,
+                        shouldValidate: true,
+                      },
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="python">Python</SelectItem>
+                    <SelectItem value="javascript">JavaScript</SelectItem>
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.execution_language ? (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors.execution_language.message}
+                  </p>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="code">
+          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Execution code</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Textarea
+                  className="min-h-[520px] font-mono text-sm"
+                  spellCheck={false}
+                  {...form.register('execution_code')}
+                />
+                {form.formState.errors.execution_code ? (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors.execution_code.message}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <CodeBlock code={codePreview || '// Start typing…'} language={language} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="containers">
+          <div className="space-y-3">
+            <ContainersFieldArray
+              control={form.control}
+              register={form.register}
+              setValue={form.setValue}
+            />
+            {form.formState.errors.containers ? (
+              <p className="text-xs text-destructive">
+                {Array.isArray(form.formState.errors.containers)
+                  ? 'Please fix container configuration'
+                  : form.formState.errors.containers.message}
+              </p>
+            ) : null}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="attachments">
+          <div className="space-y-6">
+            <AttachedFilesField
+              existingFiles={existingAttachments}
+              pendingFiles={pendingFiles}
+              onPickFiles={addPendingFiles}
+              onRemoveExisting={(fileId) => {
+                const index = existingAttachments.findIndex((file) => file.id === fileId);
+                if (index >= 0) attachmentsFieldArray.remove(index);
+              }}
+              onRemovePending={(fileName) =>
+                setPendingFiles((current) =>
+                  current.filter((file) => file.name !== fileName),
+                )
+              }
+            />
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Job environment</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <EnvironmentsFieldArray
+                  control={form.control}
+                  register={form.register}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </form>
+  );
+}
+
+
+path: /src/features/jobs/job-form/job-form-helpers.ts
+----------------------------------------
+import type { Container, ExecutionLanguage, JobTemplate } from '@/api/types';
+import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
+
+export type FormContainer = JobFormValues['containers'][number];
+
+export function makeBootstrapContainer(language: ExecutionLanguage): FormContainer {
+  return {
+    name: 'bootstrap',
+    image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
+    is_parent: true,
+    env: [],
+    resources: {
+      cpu_limit: '',
+      memory_limit: '',
+      gpus: '',
+      shm_size: '',
+    },
+  };
+}
+
+export function mapApiContainerToFormContainer(container: Container): FormContainer {
+  return {
+    name: container.name ?? '',
+    image: container.image ?? '',
+    is_parent: Boolean(container.is_parent),
+    env: Object.entries(container.env || {}).map(([key, value]) => ({
+      key,
+      value: String(value ?? ''),
+    })),
+    resources: {
+      cpu_limit:
+        container.resources?.cpu_limit !== undefined ? String(container.resources.cpu_limit) : '',
+      memory_limit: container.resources?.memory_limit ?? '',
+      gpus: container.resources?.gpus ?? '',
+      shm_size: container.resources?.shm_size ?? '',
+    },
+  };
+}
+
+export function normalizeFormContainers(
+  containers: FormContainer[] | undefined,
+  language: ExecutionLanguage,
+): FormContainer[] {
+  const list = Array.isArray(containers)
+    ? containers.map((container) => ({
+        ...container,
+        env: container.env ?? [],
+        resources: {
+          cpu_limit: container.resources?.cpu_limit ?? '',
+          memory_limit: container.resources?.memory_limit ?? '',
+          gpus: container.resources?.gpus ?? '',
+          shm_size: container.resources?.shm_size ?? '',
+        },
+      }))
+    : [];
+
+  if (list.length === 0) {
+    return [makeBootstrapContainer(language)];
+  }
+
+  const parentIndex = list.findIndex((item) => item.is_parent);
+
+  if (parentIndex === -1) {
+    return [{ ...list[0], is_parent: true }, ...list.slice(1).map((item) => ({ ...item, is_parent: false }))];
+  }
+
+  return list.map((item, index) => ({
+    ...item,
+    is_parent: index === parentIndex,
+  }));
+}
+
+export function normalizePayloadContainers(
+  containers: Array<{
+    name: string;
+    image: string;
+    is_parent?: boolean;
+    env?: Record<string, string>;
+    resources?: {
+      cpu_limit?: number;
+      memory_limit?: string;
+      gpus?: string;
+      shm_size?: string;
+    };
+  }> | undefined,
+  language: ExecutionLanguage,
+) {
+  const list = Array.isArray(containers) ? [...containers] : [];
+
+  if (list.length === 0) {
+    return [
+      {
+        name: 'bootstrap',
+        image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
+        is_parent: true,
+        env: {},
+        resources: {},
+      },
+    ];
+  }
+
+  const parentIndex = list.findIndex((item) => item.is_parent);
+
+  if (parentIndex === -1) {
+    return list.map((item, index) => ({
+      ...item,
+      is_parent: index === 0,
+    }));
+  }
+
+  return list.map((item, index) => ({
+    ...item,
+    is_parent: index === parentIndex,
+  }));
+}
+
+export function mapTemplateToFormValues(
+  template: JobTemplate,
+  currentValues: JobFormValues,
+): JobFormValues {
+  const preset = template.preset || {
+    execution_language: 'python' as ExecutionLanguage,
+    execution_code: '',
+    entrypoint: '',
+    environments: {},
+    containers: [],
+  };
+
+  const nextLanguage = preset.execution_language ?? 'python';
+  const templateContainers = (preset.containers || []).map(mapApiContainerToFormContainer);
+
+  return {
+    ...currentValues,
+    title: template.name ?? currentValues.title,
+    description: template.description || '',
+    execution_language: nextLanguage,
+    execution_code: preset.execution_code ?? '',
+    entrypoint: preset.entrypoint || (nextLanguage === 'javascript' ? 'index.js' : 'main.py'),
+    environments: Object.entries(preset.environments || {}).map(([key, value]) => ({
+      key,
+      value: String(value ?? ''),
+    })),
+    containers: normalizeFormContainers(templateContainers, nextLanguage),
+  };
+}
+
+
+path: /src/features/jobs/job-form/job-form-mappers.ts
+----------------------------------------
+import type { AttachedFile, Container, Job } from '@/api/types';
+import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
+import { compactObject, fromKeyValuePairs, toKeyValuePairs } from '@/shared/utils/object';
+
+function makeBootstrapContainer(
+  language: JobFormValues['execution_language'],
+): JobFormValues['containers'][number] {
+  return {
+    name: 'bootstrap',
+    image: language === 'javascript' ? 'node:20-alpine' : 'python:3.11-slim',
+    is_parent: true,
+    env: [],
+    resources: {
+      cpu_limit: '',
+      memory_limit: '',
+      gpus: '',
+      shm_size: '',
+    },
+  };
+}
+
+function normalizeFormContainers(
+  containers: JobFormValues['containers'],
+  language: JobFormValues['execution_language'],
+): JobFormValues['containers'] {
+  if (!containers.length) {
+    return [makeBootstrapContainer(language)];
+  }
+
+  const parentIndex = containers.findIndex((container) => container.is_parent);
+
+  if (parentIndex === -1) {
+    return containers.map((container, index) => ({
+      ...container,
+      is_parent: index === 0,
+    }));
+  }
+
+  return containers.map((container, index) => ({
+    ...container,
+    is_parent: index === parentIndex,
+  }));
+}
+
+export function mapJobToFormValues(job?: Job | null): JobFormValues {
+  const executionLanguage = job?.execution_language ?? 'python';
+
+  const mappedContainers: JobFormValues['containers'] = (job?.containers ?? []).map((container) => ({
+    name: container.name ?? '',
+    image: container.image ?? '',
+    is_parent: Boolean(container.is_parent),
+    env: toKeyValuePairs(container.env ?? {}),
+    resources: {
+      cpu_limit: container.resources?.cpu_limit?.toString() ?? '',
+      memory_limit: container.resources?.memory_limit ?? '',
+      gpus: container.resources?.gpus ?? '',
+      shm_size: container.resources?.shm_size ?? '',
+    },
+  }));
+
+  return {
+    title: job?.title ?? '',
+    description: job?.description ?? '',
+    execution_language: executionLanguage,
+    execution_code: job?.execution_code ?? '',
+    entrypoint: job?.entrypoint ?? (executionLanguage === 'javascript' ? 'index.js' : 'main.py'),
+    environments: toKeyValuePairs(job?.environments ?? {}),
+    containers: normalizeFormContainers(mappedContainers, executionLanguage),
+    attached_files: job?.attached_files ?? [],
+  };
+}
+
+export function mapFormValuesToPayload(values: JobFormValues) {
+  const parentIndex = values.containers.findIndex((container) => container.is_parent);
+
+  const normalizedContainers = values.containers.map((container, index) => ({
+    ...container,
+    is_parent: index === (parentIndex === -1 ? 0 : parentIndex),
+  }));
+
+  const containers: Container[] = normalizedContainers.map((container) => ({
+    name: container.name.trim(),
+    image: container.image.trim(),
+    is_parent: container.is_parent,
+    env: fromKeyValuePairs(container.env),
+    resources: compactObject({
+      cpu_limit:
+        container.resources.cpu_limit && container.resources.cpu_limit.trim().length
+          ? Number(container.resources.cpu_limit)
+          : undefined,
+      memory_limit: container.resources.memory_limit,
+      gpus: container.resources.gpus,
+      shm_size: container.resources.shm_size,
+    }),
+  }));
+
+  return {
+    title: values.title.trim(),
+    description: values.description?.trim() || null,
+    execution_language: values.execution_language,
+    execution_code: values.execution_code,
+    entrypoint: values.entrypoint?.trim() || null,
+    environments: fromKeyValuePairs(values.environments),
+    containers,
+    attached_files: values.attached_files as AttachedFile[],
+  };
+}
+
+
+path: /src/features/jobs/job-form/job-form-schema.ts
+----------------------------------------
+import { z } from 'zod';
+
+export const keyValueSchema = z.object({
+  key: z.string().default(''),
+  value: z.string().default(''),
+});
+
+export const resourceSchema = z.object({
+  cpu_limit: z.string().optional(),
+  memory_limit: z.string().optional(),
+  gpus: z.string().optional(),
+  shm_size: z.string().optional(),
+});
+
+export const containerFormSchema = z.object({
+  name: z.string().min(1, 'Container name is required'),
+  image: z.string().min(1, 'Container image is required'),
+  is_parent: z.boolean().default(false),
+  env: z.array(keyValueSchema).default([]),
+  resources: resourceSchema.default({}),
+});
+
+export const attachedFileSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  size_bytes: z.number(),
+  storage_key: z.string(),
+  mime_type: z.string(),
+});
+
+export const jobFormSchema = z.object({
+  title: z.string().min(3, 'Title must contain at least 3 characters'),
+  description: z.string().optional(),
+  execution_language: z.enum(['python', 'javascript']),
+  execution_code: z.string().min(1, 'Execution code is required'),
+  entrypoint: z.string().optional(),
+  environments: z.array(keyValueSchema).default([]),
+  containers: z
+    .array(containerFormSchema)
+    .min(1, 'At least one container is required')
+    .refine(
+      (containers) => containers.filter((container) => container.is_parent).length === 1,
+      'Exactly one bootstrap container is required',
+    ),
+  attached_files: z.array(attachedFileSchema).default([]),
+});
+
+export type JobFormValues = z.infer<typeof jobFormSchema>;
+
+
+path: /src/features/jobs/job-form/template-picker-dialog.tsx
+----------------------------------------
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Sparkles } from 'lucide-react';
+import { catalogApi } from '@/api/catalog';
+import type { ContainerPreset, JobTemplate } from '@/api/types';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/shared/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Skeleton } from '@/shared/components/ui/skeleton';
+
+export function TemplatePickerDialog({
+  onApplyTemplate,
+  onApplyContainerPreset,
+}: {
+  onApplyTemplate: (template: JobTemplate) => void;
+  onApplyContainerPreset: (preset: ContainerPreset) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const templatesQuery = useQuery({
+    queryKey: ['catalog', 'job-templates'],
+    queryFn: catalogApi.listTemplates,
+  });
+
+  const containerPresetsQuery = useQuery({
+    queryKey: ['catalog', 'container-presets'],
+    queryFn: catalogApi.listContainerPresets,
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline">
+          <Sparkles className="h-4 w-4" />
+          Templates & presets
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Catalog</DialogTitle>
+          <DialogDescription>
+            Start from a backend template or reuse a container preset from the catalog.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Tabs defaultValue="templates">
+          <TabsList>
+            <TabsTrigger value="templates">Job templates</TabsTrigger>
+            <TabsTrigger value="containers">Container presets</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="templates">
+            <div className="grid gap-4 md:grid-cols-2">
+              {templatesQuery.isLoading
+                ? Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={index} className="h-40" />
+                  ))
+                : templatesQuery.data?.items.map((template) => (
+                    <Card key={template.id}>
+                      <CardHeader>
+                        <CardTitle className="text-base">{template.name}</CardTitle>
+                        <CardDescription>{template.description}</CardDescription>
+                      </CardHeader>
+
+                      <CardContent className="flex items-center justify-between gap-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {template.tags?.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            onApplyTemplate(template);
+                            setOpen(false);
+                          }}
+                        >
+                          Apply
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="containers">
+            <div className="grid gap-4 md:grid-cols-2">
+              {containerPresetsQuery.isLoading
+                ? Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={index} className="h-36" />
+                  ))
+                : containerPresetsQuery.data?.items.map((preset) => (
+                    <Card key={preset.id}>
+                      <CardHeader>
+                        <CardTitle className="text-base">{preset.name}</CardTitle>
+                        <CardDescription>{preset.description || preset.image}</CardDescription>
+                      </CardHeader>
+
+                      <CardContent className="flex items-center justify-between gap-3">
+                        <div className="text-xs text-muted-foreground">{preset.image}</div>
+
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            onApplyContainerPreset(preset);
+                            setOpen(false);
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+path: /src/features/runs/use-run-websocket.ts
+----------------------------------------
+import { useEffect, useRef } from 'react';
+import { buildRunWebSocketUrl } from '@/api/client';
+import type { LogEntry, RunStatus } from '@/api/types';
+
+interface WebsocketPayload {
+  type: 'run_log' | 'run_status';
+  message?: string;
+  level?: LogEntry['level'];
+  status?: RunStatus;
+}
+
+export function useRunWebsocket({
+  runId,
+  enabled,
+  onLog,
+  onStatus,
+}: {
+  runId: string;
+  enabled: boolean;
+  onLog: (entry: LogEntry) => void;
+  onStatus: (status: RunStatus) => void;
+}) {
+  const onLogRef = useRef(onLog);
+  const onStatusRef = useRef(onStatus);
+
+  useEffect(() => {
+    onLogRef.current = onLog;
+  }, [onLog]);
+
+  useEffect(() => {
+    onStatusRef.current = onStatus;
+  }, [onStatus]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const socket = new WebSocket(buildRunWebSocketUrl(runId));
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as WebsocketPayload;
+
+        if (payload.type === 'run_log' && payload.message) {
+          onLogRef.current({
+            run_id: runId,
+            level: payload.level || 'info',
+            message: payload.message,
+          });
+        }
+
+        if (payload.type === 'run_status' && payload.status) {
+          onStatusRef.current(payload.status);
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [enabled, runId]);
+}
+
+
+path: /src/features/tokens/create-share-token-dialog.tsx
+----------------------------------------
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { jobsApi } from '@/api/jobs';
+import { Button } from '@/shared/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/shared/components/ui/dialog';
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
+import { getApiErrorMessage } from '@/shared/lib/api-error';
+
+function toIsoOrNull(value: string) {
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
+  const [open, setOpen] = useState(false);
+  const [expiresAt, setExpiresAt] = useState('');
+  const [maxClaims, setMaxClaims] = useState('');
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      jobsApi.createShareToken(jobId, {
+        expires_at: toIsoOrNull(expiresAt),
+        max_claims: maxClaims ? Number(maxClaims) : null,
+      }),
+    onSuccess: () => {
+      toast.success('Share token created');
+      queryClient.invalidateQueries({ queryKey: ['job', jobId, 'tokens'] });
+      setOpen(false);
+      setExpiresAt('');
+      setMaxClaims('');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>Create token</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create share token</DialogTitle>
+          <DialogDescription>
+            Issue a reusable execution token for workers or external automation.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="expiresAt">Expires at</Label>
+            <Input
+              id="expiresAt"
+              type="datetime-local"
+              value={expiresAt}
+              onChange={(event) => setExpiresAt(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="maxClaims">Max claims</Label>
+            <Input
+              id="maxClaims"
+              type="number"
+              min={1}
+              value={maxClaims}
+              onChange={(event) => setMaxClaims(event.target.value)}
+              placeholder="Unlimited if empty"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
+          >
+            {createMutation.isPending ? 'Creating…' : 'Create token'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+path: /src/features/tokens/revoke-token-button.tsx
+----------------------------------------
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { tokensApi } from '@/api/tokens';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/shared/components/ui/alert-dialog';
+import { Button } from '@/shared/components/ui/button';
+import { getApiErrorMessage } from '@/shared/lib/api-error';
+
+export function RevokeTokenButton({
+  tokenId,
+  jobId,
+  disabled,
+}: {
+  tokenId: string;
+  jobId: string;
+  disabled?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => tokensApi.revoke(tokenId),
+    onSuccess: () => {
+      toast.success('Token revoked');
+      queryClient.invalidateQueries({ queryKey: ['job', jobId, 'tokens'] });
+      queryClient.invalidateQueries({ queryKey: ['share-token', tokenId] });
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size="sm" disabled={disabled || mutation.isPending}>
+          Revoke
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Revoke token?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The token will stop being claimable by workers immediately.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep token</AlertDialogCancel>
+          <AlertDialogAction disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending ? 'Revoking…' : 'Revoke token'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+
+path: /src/main.tsx
+----------------------------------------
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { RouterProvider } from '@tanstack/react-router';
+import { router } from '@/app/router';
+import { AppProviders } from '@/app/providers';
+import '@/app/styles.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <AppProviders>
+      <RouterProvider router={router} />
+    </AppProviders>
+  </React.StrictMode>,
+);
+
+
+path: /src/pages/catalog/catalog-page.tsx
+----------------------------------------
+import { useQuery } from '@tanstack/react-query';
+import { Boxes, Sparkles } from 'lucide-react';
+import { catalogApi } from '@/api/catalog';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+
+export function CatalogPage() {
+  const templatesQuery = useQuery({ queryKey: ['catalog', 'job-templates'], queryFn: catalogApi.listTemplates });
+  const presetsQuery = useQuery({ queryKey: ['catalog', 'container-presets'], queryFn: catalogApi.listContainerPresets });
+
+  return (
+    <div className="space-y-6">
+      <PageHeader eyebrow="Catalog" title="Templates & presets" description="Browse job templates and container presets exposed by the backend." />
+      <Tabs defaultValue="templates">
+        <TabsList><TabsTrigger value="templates">Job templates</TabsTrigger><TabsTrigger value="presets">Container presets</TabsTrigger></TabsList>
+        <TabsContent value="templates">{templatesQuery.data?.items.length ? <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{templatesQuery.data.items.map((template) => <Card key={template.id}><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" />{template.name}</CardTitle><CardDescription>{template.description}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><div className="flex flex-wrap gap-1.5">{template.tags?.map((tag) => <span key={tag} className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">#{tag}</span>)}</div><div>Language: {template.preset.execution_language}</div><div>Entrypoint: {template.preset.entrypoint || '—'}</div><div>Containers: {template.preset.containers?.length || 0}</div></CardContent></Card>)}</div> : <EmptyState icon={Sparkles} title="No templates" description="The backend did not return any job templates." />}</TabsContent>
+        <TabsContent value="presets">{presetsQuery.data?.items.length ? <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{presetsQuery.data.items.map((preset) => <Card key={preset.id}><CardHeader><CardTitle className="flex items-center gap-2"><Boxes className="h-4 w-4 text-primary" />{preset.name}</CardTitle><CardDescription>{preset.description || preset.image}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><div>Image: {preset.image}</div><div>CPU: {preset.resources?.cpu_limit ?? '—'}</div><div>Memory: {preset.resources?.memory_limit ?? '—'}</div><div className="flex flex-wrap gap-1.5">{preset.tags?.map((tag) => <span key={tag} className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">#{tag}</span>)}</div></CardContent></Card>)}</div> : <EmptyState icon={Boxes} title="No container presets" description="The backend did not return any container presets." />}</TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+
+path: /src/pages/dashboard-page.tsx
+----------------------------------------
+import { useQuery } from '@tanstack/react-query';
+import { Activity, Layers, Play, Server } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Pie, PieChart, ResponsiveContainer, Tooltip, Cell } from 'recharts';
+import { dashboardApi } from '@/api/dashboard';
+import type { RunStatus } from '@/api/types';
+import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
+import { WorkerStatusBadge } from '@/entities/workers/ui/worker-status-badge';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { StatCard } from '@/shared/components/app/stat-card';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { formatRelative } from '@/shared/utils/format';
+
+const chartColors: Record<RunStatus, string> = {
+  created: '#f59e0b',
+  running: '#2563eb',
+  finished: '#16a34a',
+  failed: '#dc2626',
+  cancelled: '#64748b',
+  lost: '#7c3aed',
+};
+
+export function DashboardPage() {
+  const summaryQuery = useQuery({ queryKey: ['dashboard', 'summary'], queryFn: dashboardApi.getSummary });
+  const activeRunsQuery = useQuery({ queryKey: ['dashboard', 'active-runs'], queryFn: dashboardApi.getActiveRuns, refetchInterval: 5_000 });
+  const activeWorkersQuery = useQuery({ queryKey: ['dashboard', 'active-workers'], queryFn: dashboardApi.getActiveWorkers, refetchInterval: 10_000 });
+  const recentEventsQuery = useQuery({ queryKey: ['dashboard', 'recent-events'], queryFn: dashboardApi.getRecentEvents, refetchInterval: 10_000 });
+
+  const pieData = Object.entries(summaryQuery.data?.runs_by_status || {}).map(([status, value]) => ({ name: status, value: value || 0, color: chartColors[status as RunStatus] }));
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Operations overview"
+        title="Dashboard"
+        description="Live view across jobs, runs, workers, and recent system activity."
+        actions={<Button asChild><Link to="/jobs/create">Create job</Link></Button>}
+      />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Jobs" value={summaryQuery.data?.jobs_total ?? '—'} subtitle="Total registered jobs" icon={Layers} />
+        <StatCard title="Runs" value={summaryQuery.data?.runs_total ?? '—'} subtitle="Historical executions" icon={Activity} />
+        <StatCard title="Workers online" value={`${summaryQuery.data?.workers_online ?? 0}/${summaryQuery.data?.workers_total ?? 0}`} subtitle="Cluster availability" icon={Server} />
+        <StatCard title="Active runs" value={activeRunsQuery.data?.length ?? 0} subtitle="Created or running" icon={Play} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card>
+          <CardHeader><CardTitle>Run status distribution</CardTitle><CardDescription>Snapshot of terminal run states.</CardDescription></CardHeader>
+          <CardContent className="h-[320px]">
+            {pieData.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" innerRadius={72} outerRadius={110}>{pieData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}</Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <EmptyState icon={Activity} title="No run data yet" description="The chart will populate after workers start executing jobs." />}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Active workers</CardTitle><CardDescription>Workers currently online or busy.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {activeWorkersQuery.data?.length ? activeWorkersQuery.data.map((worker) => (
+              <div key={worker.id} className="flex items-center justify-between rounded-2xl border border-border bg-muted/50 px-4 py-3">
+                <div><p className="font-medium">{worker.name}</p><p className="text-xs text-muted-foreground">{worker.host || worker.id}</p></div>
+                <WorkerStatusBadge status={worker.status} />
+              </div>
+            )) : <EmptyState icon={Server} title="No active workers" description="Workers will appear here once they heartbeat to the backend." />}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <CardHeader><CardTitle>Active runs</CardTitle><CardDescription>Recently created or currently executing runs.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {activeRunsQuery.data?.length ? activeRunsQuery.data.map((run) => (
+              <Link key={run.id} to="/runs/$runId" params={{ runId: run.id }} className="flex items-center justify-between rounded-2xl border border-border bg-card px-4 py-3 transition hover:bg-accent">
+                <div><p className="font-medium">{run.job_title || run.config_snapshot.job_id}</p><p className="text-xs text-muted-foreground">{run.id}</p></div>
+                <RunStatusBadge status={run.status} />
+              </Link>
+            )) : <EmptyState icon={Play} title="Nothing is running" description="Once a worker claims a run token, active runs will show here." />}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Recent events</CardTitle><CardDescription>Latest terminal state changes across the platform.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {recentEventsQuery.data?.length ? recentEventsQuery.data.map((event, index) => (
+              <div key={`${event.created_at}-${index}`} className="flex items-start justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+                <div className="space-y-1"><p className="font-medium">{event.message}</p><p className="text-sm text-muted-foreground">{event.details || 'State transition recorded'}</p></div>
+                <div className="flex shrink-0 flex-col items-end gap-2">{event.status ? <RunStatusBadge status={event.status} /> : null}<span className="text-xs text-muted-foreground">{formatRelative(event.created_at)}</span></div>
+              </div>
+            )) : <EmptyState icon={Activity} title="No recent events" description="Terminal run events will show here once execution starts." />}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/pages/jobs/job-details-page.tsx
+----------------------------------------
+import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from '@tanstack/react-router';
+import { ArrowLeft, FolderOpen, History, KeyRound, Pencil } from 'lucide-react';
+import { jobsApi } from '@/api/jobs';
+import { CodeBlock } from '@/shared/components/app/code-block';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Skeleton } from '@/shared/components/ui/skeleton';
+import { formatDateTime, formatFileSize, formatRelative } from '@/shared/utils/format';
+
+export function JobDetailsPage() {
+  const { jobId } = useParams({ from: '/jobs/$jobId' });
+
+  const jobQuery = useQuery({
+    queryKey: ['job', jobId],
+    queryFn: () => jobsApi.get(jobId),
+  });
+
+  const runsQuery = useQuery({
+    queryKey: ['job', jobId, 'runs'],
+    queryFn: () => jobsApi.listRuns(jobId, { limit: 10, offset: 0 }),
+  });
+
+  const tokensQuery = useQuery({
+    queryKey: ['job', jobId, 'tokens'],
+    queryFn: () => jobsApi.listShareTokens(jobId),
+  });
+
+  if (jobQuery.isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-24" />
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-6">
+            <Skeleton className="h-96" />
+            <Skeleton className="h-48" />
+          </div>
+          <div className="space-y-6">
+            <Skeleton className="h-80" />
+            <Skeleton className="h-56" />
+            <Skeleton className="h-56" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const job = jobQuery.data;
+
+  if (!job) {
+    return (
+      <EmptyState
+        icon={FolderOpen}
+        title="Job not found"
+        description="The requested job does not exist or could not be loaded."
+        action={
+          <Button asChild>
+            <Link to="/jobs">Back to jobs</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  const environments = job.environments ?? {};
+  const containers = job.containers ?? [];
+  const attachedFiles = job.attached_files ?? [];
+  const recentRuns = runsQuery.data ?? [];
+  const tokens = tokensQuery.data ?? [];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Job details"
+        title={job.title}
+        description={job.description || 'No description provided.'}
+        actions={
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/jobs">
+                <ArrowLeft className="h-4 w-4" />
+                Jobs
+              </Link>
+            </Button>
+
+            <Button variant="outline" asChild>
+              <Link to="/jobs/$jobId/edit" params={{ jobId }}>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+
+            <Button variant="outline" asChild>
+              <Link to="/jobs/$jobId/runs" params={{ jobId }}>
+                <History className="h-4 w-4" />
+                Runs
+              </Link>
+            </Button>
+
+            <Button variant="outline" asChild>
+              <Link to="/jobs/$jobId/tokens" params={{ jobId }}>
+                <KeyRound className="h-4 w-4" />
+                Tokens
+              </Link>
+            </Button>
+          </>
+        }
+      />
+
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuration</CardTitle>
+              <CardDescription>
+                Top-level job metadata and runtime configuration.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-4 text-sm">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Language
+                  </div>
+                  <div className="mt-1 font-medium">{job.execution_language}</div>
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Entrypoint
+                  </div>
+                  <div className="mt-1 font-medium">{job.entrypoint || '—'}</div>
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Created
+                  </div>
+                  <div className="mt-1 font-medium">{formatDateTime(job.created_at)}</div>
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Updated
+                  </div>
+                  <div className="mt-1 font-medium">{formatRelative(job.updated_at)}</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Environment
+                </div>
+
+                <div className="mt-2 grid gap-2">
+                  {Object.entries(environments).length ? (
+                    Object.entries(environments).map(([key, value]) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between rounded-2xl bg-muted/70 px-3 py-2 font-mono text-xs"
+                      >
+                        <span>{key}</span>
+                        <span className="truncate text-muted-foreground">{value}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      No environment variables.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Containers
+                </div>
+
+                <div className="mt-2 space-y-2">
+                  {containers.length ? (
+                    containers.map((container) => (
+                      <div
+                        key={`${container.name}-${container.image}`}
+                        className="rounded-2xl border border-border px-3 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-medium">{container.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {container.image}
+                            </div>
+                          </div>
+
+                          {container.is_parent ? (
+                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">
+                              parent
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      No extra containers configured.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Attached files</CardTitle>
+            </CardHeader>
+
+            <CardContent className="space-y-2">
+              {attachedFiles.length ? (
+                attachedFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="flex items-center justify-between rounded-2xl border border-border px-3 py-3"
+                  >
+                    <div>
+                      <div className="font-medium">{file.filename}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatFileSize(file.size_bytes)}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground">No files attached.</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <CodeBlock code={job.execution_code || ''} language={job.execution_language} />
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent runs</CardTitle>
+            </CardHeader>
+
+            <CardContent className="space-y-3">
+              {recentRuns.length ? (
+                recentRuns.slice(0, 5).map((run) => (
+                  <Link
+                    key={run.id}
+                    to="/runs/$runId"
+                    params={{ runId: run.id }}
+                    className="flex items-center justify-between rounded-2xl border border-border px-4 py-3 transition hover:bg-accent"
+                  >
+                    <div>
+                      <p className="font-medium">{run.id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatRelative(run.created_at)}
+                      </p>
+                    </div>
+                    <RunStatusBadge status={run.status} />
+                  </Link>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground">No runs recorded.</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Share tokens</CardTitle>
+            </CardHeader>
+
+            <CardContent className="space-y-3">
+              {tokens.length ? (
+                tokens.slice(0, 5).map((token) => (
+                  <div
+                    key={token.id}
+                    className="flex items-center justify-between rounded-2xl border border-border px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-medium">{token.id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {token.revoked ? 'Revoked' : `${token.claim_count} claim(s)`}
+                      </p>
+                    </div>
+
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to="/jobs/$jobId/tokens" params={{ jobId }}>
+                        Manage
+                      </Link>
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground">No share tokens yet.</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/pages/jobs/job-editor-page.tsx
+----------------------------------------
+import { useQuery } from '@tanstack/react-query';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { ArrowLeft, FileWarning } from 'lucide-react';
+import { jobsApi } from '@/api/jobs';
+import { JobBuilderForm } from '@/features/jobs/job-form/job-builder-form';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/card';
+import { Skeleton } from '@/shared/components/ui/skeleton';
+
+export function JobEditorPage() {
+  const params = useParams({ strict: false }) as { jobId?: string };
+  const jobId = params.jobId;
+  const isEditMode = Boolean(jobId);
+  const navigate = useNavigate();
+
+  const jobQuery = useQuery({
+    queryKey: ['job', jobId],
+    queryFn: () => jobsApi.get(jobId as string),
+    enabled: isEditMode,
+  });
+
+  if (isEditMode && jobQuery.isLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Edit job"
+          title="Edit job"
+          description="Update the selected job configuration."
+          actions={
+            <Button variant="outline" asChild>
+              <Link to="/jobs/$jobId" params={{ jobId: jobId as string }}>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Link>
+            </Button>
+          }
+        />
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-80" />
+              <Skeleton className="h-32" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isEditMode && !jobQuery.data) {
+    return (
+      <EmptyState
+        icon={FileWarning}
+        title="Job not found"
+        description="The job could not be loaded for editing."
+        action={
+          <Button asChild>
+            <Link to="/jobs">Back to jobs</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow={isEditMode ? 'Edit job' : 'Create job'}
+        title={isEditMode ? `Edit: ${jobQuery.data?.title ?? 'Job'}` : 'Create job'}
+        description={
+          isEditMode
+            ? 'Update the selected job configuration.'
+            : 'Create a new job with code, containers, environment, and attached files.'
+        }
+        actions={
+          <Button variant="outline" asChild>
+            <Link
+              to={isEditMode ? '/jobs/$jobId' : '/jobs'}
+              params={isEditMode ? { jobId: jobId as string } : undefined}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
+          </Button>
+        }
+      />
+
+      <Card>
+        <CardContent className="p-6">
+          <JobBuilderForm
+            key={jobId ?? 'create'}
+            jobId={jobId}
+            initialJob={jobQuery.data ?? null}
+            onSaved={(job) =>
+              navigate({
+                to: '/jobs/$jobId',
+                params: { jobId: job.id },
+              })
+            }
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+path: /src/pages/jobs/job-runs-page.tsx
+----------------------------------------
+import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from '@tanstack/react-router';
+import { ArrowLeft, History } from 'lucide-react';
+import { jobsApi } from '@/api/jobs';
+import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table';
+import { formatDateTime, formatRelative } from '@/shared/utils/format';
+
+export function JobRunsPage() {
+  const { jobId } = useParams({ from: '/jobs/$jobId/runs' });
+  const runsQuery = useQuery({ queryKey: ['job', jobId, 'runs'], queryFn: () => jobsApi.listRuns(jobId), refetchInterval: 5_000 });
+
+  return (
+    <div className="space-y-6">
+      <PageHeader eyebrow="Job runs" title="Run history" description="Inspect execution history for the selected job." actions={<Button variant="outline" asChild><Link to="/jobs/$jobId" params={{ jobId }}><ArrowLeft className="h-4 w-4" />Job details</Link></Button>} />
+      <Card><CardContent className="p-0">{runsQuery.data?.length ? <Table><TableHeader><TableRow><TableHead>Run</TableHead><TableHead>Status</TableHead><TableHead>Worker</TableHead><TableHead>Started</TableHead><TableHead>Finished</TableHead></TableRow></TableHeader><TableBody>{runsQuery.data.map((run) => <TableRow key={run.id}><TableCell><Link to="/runs/$runId" params={{ runId: run.id }} className="font-medium hover:text-primary">{run.id}</Link></TableCell><TableCell><RunStatusBadge status={run.status} /></TableCell><TableCell className="text-sm text-muted-foreground">{run.worker_name || run.worker_id || '—'}</TableCell><TableCell className="text-sm text-muted-foreground">{run.started_at ? formatDateTime(run.started_at) : formatRelative(run.created_at)}</TableCell><TableCell className="text-sm text-muted-foreground">{run.finished_at ? formatDateTime(run.finished_at) : '—'}</TableCell></TableRow>)}</TableBody></Table> : <div className="p-6"><EmptyState icon={History} title="No runs yet" description="Runs will appear here once a worker claims a share token and starts execution." /></div>}</CardContent></Card>
+    </div>
+  );
+}
+
+
+path: /src/pages/jobs/job-tokens-page.tsx
+----------------------------------------
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from '@tanstack/react-router';
+import { ArrowLeft, KeyRound, Terminal } from 'lucide-react';
+import { jobsApi } from '@/api/jobs';
+import { tokensApi } from '@/api/tokens';
+import { CreateShareTokenDialog } from '@/features/tokens/create-share-token-dialog';
+import { RevokeTokenButton } from '@/features/tokens/revoke-token-button';
+import { CopyButton } from '@/shared/components/app/copy-button';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table';
+import { formatDateTime, formatRelative } from '@/shared/utils/format';
+
+export function JobTokensPage() {
+  const { jobId } = useParams({ from: '/jobs/$jobId/tokens' });
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const tokensQuery = useQuery({ queryKey: ['job', jobId, 'tokens'], queryFn: () => jobsApi.listShareTokens(jobId) });
+  const tokenDetailsQuery = useQuery({ queryKey: ['share-token', selectedTokenId], queryFn: () => tokensApi.get(selectedTokenId!), enabled: Boolean(selectedTokenId) });
+  const dockerCommand = tokenDetailsQuery.data?.docker_command || tokenDetailsQuery.data?.worker_command || '';
+
+  return (
+    <div className="space-y-6">
+      <PageHeader eyebrow="Share tokens" title="Share tokens" description="Create, inspect, copy, and revoke worker tokens for this job." actions={<><Button variant="outline" asChild><Link to="/jobs/$jobId" params={{ jobId }}><ArrowLeft className="h-4 w-4" />Job details</Link></Button><CreateShareTokenDialog jobId={jobId} /></>} />
+      <Card><CardContent className="p-0">{tokensQuery.data?.length ? <Table><TableHeader><TableRow><TableHead>Token</TableHead><TableHead>Claims</TableHead><TableHead>Created</TableHead><TableHead>Last claimed</TableHead><TableHead /></TableRow></TableHeader><TableBody>{tokensQuery.data.map((token) => <TableRow key={token.id}><TableCell><button type="button" className="font-medium text-left hover:text-primary" onClick={() => setSelectedTokenId(token.id)}>{token.id}</button></TableCell><TableCell className="text-sm text-muted-foreground">{token.claim_count}{token.max_claims ? ` / ${token.max_claims}` : ''}</TableCell><TableCell className="text-sm text-muted-foreground">{formatDateTime(token.created_at)}</TableCell><TableCell className="text-sm text-muted-foreground">{token.last_claimed_at ? formatRelative(token.last_claimed_at) : 'Never'}</TableCell><TableCell><div className="flex justify-end"><RevokeTokenButton tokenId={token.id} jobId={jobId} disabled={token.revoked} /></div></TableCell></TableRow>)}</TableBody></Table> : <div className="p-6"><EmptyState icon={KeyRound} title="No tokens yet" description="Create a token to allow a worker or external process to claim and execute this job." /></div>}</CardContent></Card>
+
+      <Dialog open={Boolean(selectedTokenId)} onOpenChange={(open) => !open && setSelectedTokenId(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Token details</DialogTitle><DialogDescription>Inspect the token value, claim URL, and worker command generated by the backend.</DialogDescription></DialogHeader>
+          {tokenDetailsQuery.data ? <div className="space-y-5"><div className="rounded-2xl border border-border bg-muted/50 p-4"><div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Token value</div><div className="flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-sm">{tokenDetailsQuery.data.token}</code><CopyButton value={tokenDetailsQuery.data.token} /></div></div><div className="grid gap-4 md:grid-cols-2"><Card className="shadow-none"><CardHeader><CardTitle className="text-base">Metadata</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div>Created: {formatDateTime(tokenDetailsQuery.data.created_at)}</div><div>Expires: {tokenDetailsQuery.data.expires_at ? formatDateTime(tokenDetailsQuery.data.expires_at) : 'Never'}</div><div>Claims: {tokenDetailsQuery.data.claim_count}</div></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle className="text-base">Links</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">{tokenDetailsQuery.data.share_url ? <div className="space-y-1"><div className="text-xs uppercase tracking-wide text-muted-foreground">Share URL</div><div className="flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-xs">{tokenDetailsQuery.data.share_url}</code><CopyButton value={tokenDetailsQuery.data.share_url} /></div></div> : null}{tokenDetailsQuery.data.claim_url ? <div className="space-y-1"><div className="text-xs uppercase tracking-wide text-muted-foreground">Claim URL</div><div className="flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-xs">{tokenDetailsQuery.data.claim_url}</code><CopyButton value={tokenDetailsQuery.data.claim_url} /></div></div> : null}</CardContent></Card></div><Card className="shadow-none"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" />Docker / worker command</CardTitle><CardDescription>This is rendered if the backend returns a generated command.</CardDescription></CardHeader><CardContent>{dockerCommand ? <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-200"><div className="mb-3 flex items-center justify-end"><CopyButton value={dockerCommand} /></div><code className="block whitespace-pre-wrap break-all text-sm">{dockerCommand}</code></div> : <div className="text-sm text-muted-foreground">No generated command returned by the backend for this token.</div>}</CardContent></Card></div> : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+
+path: /src/pages/jobs/jobs-list-page.tsx
+----------------------------------------
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { Copy, Layers, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { jobsApi } from '@/api/jobs';
+import type { RunStatus } from '@/api/types';
+import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { PaginationControls } from '@/shared/components/app/pagination-controls';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/shared/components/ui/alert-dialog';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu';
+import { Input } from '@/shared/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
+import { Skeleton } from '@/shared/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table';
+import { getApiErrorMessage } from '@/shared/lib/api-error';
+import { formatRelative } from '@/shared/utils/format';
+
+const pageSize = 10;
+
+export function JobsListPage() {
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'all' | RunStatus>('all');
+  const [page, setPage] = useState(1);
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['jobs', { search, status, page }],
+    queryFn: () =>
+      jobsApi.list({
+        search: search || undefined,
+        status: status === 'all' ? undefined : status,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      }),
+  });
+
+  const cloneMutation = useMutation({
+    mutationFn: (jobId: string) => jobsApi.clone(jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Job cloned');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (jobId: string) => jobsApi.delete(jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Job deleted');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  const rows = useMemo(() => query.data?.jobs ?? [], [query.data?.jobs]);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Jobs"
+        title="Jobs"
+        description="Search, filter, paginate, clone, and delete jobs from a single control surface."
+        actions={
+          <Button asChild>
+            <Link to="/jobs/create">
+              <Plus className="h-4 w-4" />
+              New job
+            </Link>
+          </Button>
+        }
+      />
+
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search by title or description"
+                className="pl-10"
+              />
+            </div>
+            <div className="w-full lg:w-56">
+              <Select
+                value={status}
+                onValueChange={(value) => {
+                  setStatus(value as typeof status);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by run status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="created">Created</SelectItem>
+                  <SelectItem value="running">Running</SelectItem>
+                  <SelectItem value="finished">Finished</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="lost">Lost</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {query.isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-12" />
+              <Skeleton className="h-12" />
+            </div>
+          ) : rows.length ? (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Job</TableHead>
+                    <TableHead>Latest run</TableHead>
+                    <TableHead>Runs</TableHead>
+                    <TableHead>Updated</TableHead>
+                    <TableHead className="w-16" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((job) => (
+                    <TableRow key={job.id}>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <Link
+                            to="/jobs/$jobId"
+                            params={{ jobId: job.id }}
+                            className="font-medium hover:text-primary"
+                          >
+                            {job.title}
+                          </Link>
+                          <p className="max-w-xl truncate text-sm text-muted-foreground">
+                            {job.description || 'No description'}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {job.latest_run_status ? (
+                          <div className="space-y-1">
+                            <RunStatusBadge status={job.latest_run_status} />
+                            <div className="text-xs text-muted-foreground">
+                              {job.latest_run_at ? formatRelative(job.latest_run_at) : '—'}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">No runs yet</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm font-medium">
+                          {job.runs_count ?? 0}
+                          {job.active_runs_count ? (
+                            <span className="ml-2 text-xs text-primary">
+                              ({job.active_runs_count} active)
+                            </span>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatRelative(job.updated_at)}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link to="/jobs/$jobId/edit" params={{ jobId: job.id }}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => cloneMutation.mutate(job.id)}>
+                              <Copy className="mr-2 h-4 w-4" />
+                              Clone
+                            </DropdownMenuItem>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onSelect={(event) => event.preventDefault()}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete job?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This removes the job, its runs, logs, artifacts, and share tokens.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(job.id)}>
+                                    Delete job
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <PaginationControls
+                page={page}
+                pageSize={pageSize}
+                total={query.data?.total ?? 0}
+                onPageChange={setPage}
+              />
+            </>
+          ) : (
+            <EmptyState
+              icon={Layers}
+              title="No jobs found"
+              description="Try adjusting filters or create the first job for this workspace."
+              action={
+                <Button asChild>
+                  <Link to="/jobs/create">Create job</Link>
+                </Button>
+              }
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+path: /src/pages/not-found-page.tsx
+----------------------------------------
+import { Link } from '@tanstack/react-router';
+import { Compass } from 'lucide-react';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { Button } from '@/shared/components/ui/button';
+
+export function NotFoundPage() {
+  return <EmptyState icon={Compass} title="Page not found" description="The requested page does not exist in the Cloud Forge frontend." action={<Button asChild><Link to="/">Go to dashboard</Link></Button>} />;
+}
+
+
+path: /src/pages/runs/run-details-page.tsx
+----------------------------------------
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useParams } from '@tanstack/react-router';
+import { ArrowLeft, Ban, Download, FileText, Terminal } from 'lucide-react';
+import { toast } from 'sonner';
+import { buildArtifactDownloadUrl } from '@/api/client';
+import { runsApi } from '@/api/runs';
+import type { LogEntry } from '@/api/types';
+import { RunStatusBadge } from '@/entities/runs/ui/run-status-badge';
+import { useRunWebsocket } from '@/features/runs/use-run-websocket';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+import { getApiErrorMessage } from '@/shared/lib/api-error';
+import { formatDateTime, formatFileSize, formatRelative } from '@/shared/utils/format';
+
+export function RunDetailsPage() {
+  const { runId } = useParams({ from: '/runs/$runId' });
+  const queryClient = useQueryClient();
+  const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
+
+  const runQuery = useQuery({
+    queryKey: ['run', runId],
+    queryFn: () => runsApi.get(runId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'created' || status === 'running' ? 3_000 : false;
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => runsApi.cancel(runId),
+    onSuccess: () => {
+      toast.success('Run cancellation requested');
+      queryClient.invalidateQueries({ queryKey: ['run', runId] });
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  const run = runQuery.data;
+
+  const handleLog = useCallback((entry: LogEntry) => {
+    setLiveLogs((current) => [...current, entry]);
+  }, []);
+
+  const handleStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['run', runId] });
+  }, [queryClient, runId]);
+
+  useRunWebsocket({
+    runId,
+    enabled: run?.status === 'created' || run?.status === 'running',
+    onLog: handleLog,
+    onStatus: handleStatus,
+  });
+
+  useEffect(() => {
+    if (!run?.updated_at) return;
+    setLiveLogs([]);
+  }, [run?.updated_at]);
+
+  const mergedLogs = useMemo(() => {
+    const initialLogs = run?.logs || [];
+    if (!liveLogs.length) return initialLogs;
+    return [...initialLogs, ...liveLogs];
+  }, [liveLogs, run?.logs]);
+
+  if (runQuery.isLoading) {
+    return (
+      <EmptyState
+        icon={FileText}
+        title="Loading run"
+        description="Fetching run details, logs, and artifacts from the backend."
+      />
+    );
+  }
+
+  if (!run) {
+    return (
+      <EmptyState
+        icon={FileText}
+        title="Run not found"
+        description="The requested run does not exist or could not be loaded."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Run details"
+        title={run.id}
+        description={`Job ${run.job_id} · ${run.worker_name || run.worker_id || 'unassigned worker'}`}
+        actions={
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/jobs/$jobId/runs" params={{ jobId: run.job_id }}>
+                <ArrowLeft className="h-4 w-4" />
+                Job runs
+              </Link>
+            </Button>
+            {run.status === 'created' || run.status === 'running' ? (
+              <Button
+                variant="destructive"
+                onClick={() => cancelMutation.mutate()}
+                disabled={cancelMutation.isPending}
+              >
+                <Ban className="h-4 w-4" />
+                {cancelMutation.isPending ? 'Cancelling…' : 'Cancel run'}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+
+      <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Execution summary</CardTitle>
+              <CardDescription>Realtime status, worker, and lifecycle timestamps.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex items-center gap-3">
+                <RunStatusBadge status={run.status} />
+                <span className="text-muted-foreground">Last update {formatRelative(run.updated_at)}</span>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Created</div>
+                  <div className="mt-1">{formatDateTime(run.created_at)}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Started</div>
+                  <div className="mt-1">{run.started_at ? formatDateTime(run.started_at) : '—'}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Finished</div>
+                  <div className="mt-1">{run.finished_at ? formatDateTime(run.finished_at) : '—'}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Worker</div>
+                  <div className="mt-1">{run.worker_name || run.worker_id || '—'}</div>
+                </div>
+              </div>
+              {run.cancel_requested_at ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Cancel requested {formatRelative(run.cancel_requested_at)}
+                  {run.cancel_reason ? ` · ${run.cancel_reason}` : ''}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Artifacts</CardTitle>
+              <CardDescription>Files produced by the run and registered in the backend.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {run.artifacts?.length ? (
+                run.artifacts.map((artifact) => (
+                  <div
+                    key={artifact.id}
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-border px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-medium">{artifact.filename}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {artifact.relative_path} · {formatFileSize(artifact.size_bytes)}
+                      </p>
+                    </div>
+                    <Button variant="outline" asChild>
+                      <a
+                        href={artifact.download_path || buildArtifactDownloadUrl(artifact.storage_key)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download
+                      </a>
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  No artifacts registered for this run.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Logs & metrics</CardTitle>
+            <CardDescription>Live logs stream via WebSocket and static run metrics snapshot.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="logs">
+              <TabsList>
+                <TabsTrigger value="logs">Logs</TabsTrigger>
+                <TabsTrigger value="metrics">Metrics</TabsTrigger>
+              </TabsList>
+              <TabsContent value="logs">
+                <div className="mt-4 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
+                  <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <Terminal className="h-4 w-4" />
+                      <span className="text-sm font-medium">Live logs</span>
+                    </div>
+                    <span className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                      {run.status === 'running' || run.status === 'created' ? 'streaming' : 'static'}
+                    </span>
+                  </div>
+                  <div className="custom-scrollbar h-[520px] overflow-y-auto p-4 font-mono text-sm text-slate-200">
+                    {mergedLogs.length ? (
+                      mergedLogs.map((entry, index) => (
+                        <div key={`${entry.message}-${index}`} className="mb-2 grid grid-cols-[56px_1fr] gap-4">
+                          <span className="text-right text-xs text-slate-500">{index + 1}</span>
+                          <span className="whitespace-pre-wrap break-words">{entry.message}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        No logs available yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="metrics">
+                <div className="rounded-3xl border border-border bg-muted/50 p-4">
+                  <pre className="custom-scrollbar overflow-x-auto whitespace-pre-wrap break-words text-sm">
+                    {JSON.stringify(run.metrics || {}, null, 2)}
+                  </pre>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/pages/workers/workers-list-page.tsx
+----------------------------------------
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Search, Server } from 'lucide-react';
+import { workersApi } from '@/api/workers';
+import { WorkerStatusBadge } from '@/entities/workers/ui/worker-status-badge';
+import { EmptyState } from '@/shared/components/app/empty-state';
+import { PageHeader } from '@/shared/components/app/page-header';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Input } from '@/shared/components/ui/input';
+import { formatDateTime, formatRelative } from '@/shared/utils/format';
+
+export function WorkersListPage() {
+  const [search, setSearch] = useState('');
+  const workersQuery = useQuery({ queryKey: ['workers'], queryFn: workersApi.list, refetchInterval: 10_000 });
+  const filteredWorkers = useMemo(() => {
+    const value = search.trim().toLowerCase();
+    if (!value) return workersQuery.data || [];
+    return (workersQuery.data || []).filter((worker) => {
+      const capabilities = JSON.stringify(worker.capabilities || {}).toLowerCase();
+      return worker.name.toLowerCase().includes(value) || worker.id.toLowerCase().includes(value) || capabilities.includes(value);
+    });
+  }, [search, workersQuery.data]);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader eyebrow="Workers" title="Workers" description="Monitor worker availability, capabilities, and recent heartbeat timestamps." />
+      <div className="relative max-w-md"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter by worker name, id, capability" className="pl-10" /></div>
+      {filteredWorkers.length ? <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{filteredWorkers.map((worker) => <Card key={worker.id}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>{worker.name}</CardTitle><CardDescription>{worker.id}</CardDescription></div><WorkerStatusBadge status={worker.status} /></div></CardHeader><CardContent className="space-y-4 text-sm"><div><div className="text-xs uppercase tracking-wide text-muted-foreground">Host</div><div className="mt-1">{worker.host || '—'}</div></div><div><div className="text-xs uppercase tracking-wide text-muted-foreground">Last seen</div><div className="mt-1">{worker.last_seen_at ? formatRelative(worker.last_seen_at) : 'Never'}</div></div><div><div className="text-xs uppercase tracking-wide text-muted-foreground">Created</div><div className="mt-1">{formatDateTime(worker.created_at)}</div></div><div><div className="text-xs uppercase tracking-wide text-muted-foreground">Capabilities</div><pre className="custom-scrollbar mt-2 overflow-x-auto rounded-2xl bg-muted p-3 text-xs">{JSON.stringify(worker.capabilities || {}, null, 2)}</pre></div></CardContent></Card>)}</div> : <EmptyState icon={Server} title="No workers found" description="No worker heartbeats are currently available for this workspace." />}
+    </div>
+  );
+}
+
+
+path: /src/shared/components/app/code-block.tsx
+----------------------------------------
+import { CopyButton } from '@/shared/components/app/copy-button';
+
+export function CodeBlock({ code, language, className = '' }: { code: string; language?: string; className?: string; }) {
+  return (
+    <div className={`overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 ${className}`}>
+      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/80 px-4 py-3">
+        <div className="text-xs uppercase tracking-[0.24em] text-slate-400">{language || 'code'}</div>
+        <CopyButton value={code} label="Code copied" />
+      </div>
+      <pre className="custom-scrollbar overflow-x-auto p-4 text-sm leading-6 text-slate-200"><code>{code}</code></pre>
+    </div>
+  );
+}
+
+
+path: /src/shared/components/app/copy-button.tsx
+----------------------------------------
+import { Copy } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/shared/components/ui/button';
+
+export function CopyButton({ value, label = 'Copied to clipboard' }: { value: string; label?: string; }) {
+  return (
+    <Button type="button" variant="outline" size="icon" onClick={async () => { await navigator.clipboard.writeText(value); toast.success(label); }}>
+      <Copy className="h-4 w-4" />
+    </Button>
+  );
+}
+
+
+path: /src/shared/components/app/empty-state.tsx
+----------------------------------------
+import type { LucideIcon } from 'lucide-react';
+
+export function EmptyState({ icon: Icon, title, description, action }: { icon: LucideIcon; title: string; description: string; action?: React.ReactNode; }) {
+  return (
+    <div className="flex min-h-[220px] flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-card px-6 py-12 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+        <Icon className="h-5 w-5" />
+      </div>
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
+      {action ? <div className="mt-5">{action}</div> : null}
+    </div>
+  );
+}
+
+
+path: /src/shared/components/app/page-header.tsx
+----------------------------------------
+import type { PropsWithChildren, ReactNode } from 'react';
+
+export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: ReactNode; title: ReactNode; description?: ReactNode; actions?: ReactNode; }) {
+  return (
+    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-2">
+        {eyebrow ? <div className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">{eyebrow}</div> : null}
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+          {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+        </div>
+      </div>
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </div>
+  );
+}
+
+export function HeaderActions({ children }: PropsWithChildren) {
+  return <div className="flex flex-wrap items-center gap-2">{children}</div>;
+}
+
+
+path: /src/shared/components/app/pagination-controls.tsx
+----------------------------------------
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/shared/components/ui/button';
+
+export function PaginationControls({ page, pageSize, total, onPageChange }: { page: number; pageSize: number; total: number; onPageChange: (nextPage: number) => void; }) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const canPrevious = page > 1;
+  const canNext = page < pageCount;
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <p className="text-sm text-muted-foreground">Page {page} of {pageCount} · {total} total</p>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" disabled={!canPrevious} onClick={() => onPageChange(page - 1)}><ChevronLeft className="h-4 w-4" />Previous</Button>
+        <Button variant="outline" size="sm" disabled={!canNext} onClick={() => onPageChange(page + 1)}>Next<ChevronRight className="h-4 w-4" /></Button>
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/shared/components/app/stat-card.tsx
+----------------------------------------
+import type { LucideIcon } from 'lucide-react';
+import { Card, CardContent } from '@/shared/components/ui/card';
+
+export function StatCard({ title, value, subtitle, icon: Icon }: { title: string; value: string | number; subtitle?: string; icon: LucideIcon; }) {
+  return (
+    <Card>
+      <CardContent className="flex items-start justify-between p-6">
+        <div>
+          <p className="text-sm text-muted-foreground">{title}</p>
+          <div className="mt-2 text-3xl font-semibold tracking-tight">{value}</div>
+          {subtitle ? <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p> : null}
+        </div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <Icon className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+path: /src/shared/components/ui/alert-dialog.tsx
+----------------------------------------
+import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+import { buttonVariants } from '@/shared/components/ui/button';
+
+export const AlertDialog = AlertDialogPrimitive.Root;
+export const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
+export const AlertDialogPortal = AlertDialogPrimitive.Portal;
+export const AlertDialogOverlay = React.forwardRef<React.ElementRef<typeof AlertDialogPrimitive.Overlay>, React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay>>(({ className, ...props }, ref) => (
+  <AlertDialogPrimitive.Overlay ref={ref} className={cn('fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm', className)} {...props} />
+));
+AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
+
+export const AlertDialogContent = React.forwardRef<React.ElementRef<typeof AlertDialogPrimitive.Content>, React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>>(({ className, ...props }, ref) => (
+  <AlertDialogPortal>
+    <AlertDialogOverlay />
+    <AlertDialogPrimitive.Content ref={ref} className={cn('fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-card)]', className)} {...props} />
+  </AlertDialogPortal>
+));
+AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
+
+export const AlertDialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div className={cn('flex flex-col gap-1.5', className)} {...props} />;
+export const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div className={cn('mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />;
+export const AlertDialogTitle = React.forwardRef<React.ElementRef<typeof AlertDialogPrimitive.Title>, React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title>>(({ className, ...props }, ref) => <AlertDialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold tracking-tight', className)} {...props} />);
+AlertDialogTitle.displayName = AlertDialogPrimitive.Title.displayName;
+export const AlertDialogDescription = React.forwardRef<React.ElementRef<typeof AlertDialogPrimitive.Description>, React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Description>>(({ className, ...props }, ref) => <AlertDialogPrimitive.Description ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />);
+AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayName;
+export const AlertDialogAction = React.forwardRef<React.ElementRef<typeof AlertDialogPrimitive.Action>, React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>>(({ className, ...props }, ref) => <AlertDialogPrimitive.Action ref={ref} className={cn(buttonVariants({ variant: 'destructive' }), className)} {...props} />);
+AlertDialogAction.displayName = AlertDialogPrimitive.Action.displayName;
+export const AlertDialogCancel = React.forwardRef<React.ElementRef<typeof AlertDialogPrimitive.Cancel>, React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Cancel>>(({ className, ...props }, ref) => <AlertDialogPrimitive.Cancel ref={ref} className={cn(buttonVariants({ variant: 'outline' }), className)} {...props} />);
+AlertDialogCancel.displayName = AlertDialogPrimitive.Cancel.displayName;
+
+
+path: /src/shared/components/ui/badge.tsx
+----------------------------------------
+import { cva, type VariantProps } from 'class-variance-authority';
+import type { HTMLAttributes } from 'react';
+import { cn } from '@/shared/utils/cn';
+
+const badgeVariants = cva('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium capitalize', {
+  variants: {
+    variant: {
+      default: 'border-transparent bg-primary text-primary-foreground',
+      secondary: 'border-transparent bg-secondary text-secondary-foreground',
+      outline: 'border-border bg-card text-foreground',
+      destructive: 'border-transparent bg-destructive text-destructive-foreground',
+    },
+  },
+  defaultVariants: {
+    variant: 'outline',
+  },
+});
+
+export interface BadgeProps extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+
+export function Badge({ className, variant, ...props }: BadgeProps) {
+  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+}
+
+
+path: /src/shared/components/ui/button.tsx
+----------------------------------------
+import * as React from 'react';
+import { Slot } from '@radix-ui/react-slot';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/shared/utils/cn';
+
+export const buttonVariants = cva(
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:h-4 [&_svg]:w-4',
+  {
+    variants: {
+      variant: {
+        default: 'bg-primary text-primary-foreground shadow-[var(--shadow-soft)] hover:bg-primary/90',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/90',
+        outline: 'border border-border bg-card hover:bg-accent hover:text-accent-foreground',
+        ghost: 'hover:bg-accent hover:text-accent-foreground',
+        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+        link: 'text-primary underline-offset-4 hover:underline',
+      },
+      size: {
+        default: 'h-10 px-4 py-2',
+        sm: 'h-8 rounded-lg px-3 text-xs',
+        lg: 'h-11 px-6',
+        icon: 'h-10 w-10',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'default',
+    },
+  },
+);
+
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Component = asChild ? Slot : 'button';
+    return <Component className={cn(buttonVariants({ variant, size }), className)} ref={ref} {...props} />;
+  },
+);
+
+Button.displayName = 'Button';
+
+
+path: /src/shared/components/ui/card.tsx
+----------------------------------------
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('rounded-3xl border border-border bg-card text-card-foreground shadow-[var(--shadow-card)]', className)} {...props} />
+  ),
+);
+Card.displayName = 'Card';
+
+export const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => <div ref={ref} className={cn('flex flex-col gap-1.5 p-6', className)} {...props} />,
+);
+CardHeader.displayName = 'CardHeader';
+
+export const CardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
+  ({ className, ...props }, ref) => <h3 ref={ref} className={cn('text-lg font-semibold tracking-tight', className)} {...props} />,
+);
+CardTitle.displayName = 'CardTitle';
+
+export const CardDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
+  ({ className, ...props }, ref) => <p ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />,
+);
+CardDescription.displayName = 'CardDescription';
+
+export const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />,
+);
+CardContent.displayName = 'CardContent';
+
+export const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => <div ref={ref} className={cn('flex items-center p-6 pt-0', className)} {...props} />,
+);
+CardFooter.displayName = 'CardFooter';
+
+
+path: /src/shared/components/ui/checkbox.tsx
+----------------------------------------
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export function Checkbox({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input type="checkbox" className={cn('h-4 w-4 rounded border border-input accent-primary', className)} {...props} />;
+}
+
+
+path: /src/shared/components/ui/dialog.tsx
+----------------------------------------
+import * as React from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
+import { cn } from '@/shared/utils/cn';
+
+export const Dialog = DialogPrimitive.Root;
+export const DialogTrigger = DialogPrimitive.Trigger;
+export const DialogPortal = DialogPrimitive.Portal;
+export const DialogClose = DialogPrimitive.Close;
+
+export const DialogOverlay = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Overlay>, React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Overlay ref={ref} className={cn('fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm', className)} {...props} />
+));
+DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
+
+export const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>>(({ className, children, ...props }, ref) => (
+  <DialogPortal>
+    <DialogOverlay />
+    <DialogPrimitive.Content ref={ref} className={cn('fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-card)]', className)} {...props}>
+      {children}
+      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-full p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground">
+        <X className="h-4 w-4" />
+      </DialogPrimitive.Close>
+    </DialogPrimitive.Content>
+  </DialogPortal>
+));
+DialogContent.displayName = DialogPrimitive.Content.displayName;
+
+export const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div className={cn('flex flex-col gap-1.5 pr-8', className)} {...props} />;
+export const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div className={cn('mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />;
+export const DialogTitle = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Title>, React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>>(({ className, ...props }, ref) => <DialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold tracking-tight', className)} {...props} />);
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
+export const DialogDescription = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Description>, React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>>(({ className, ...props }, ref) => <DialogPrimitive.Description ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />);
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
+
+
+path: /src/shared/components/ui/dropdown-menu.tsx
+----------------------------------------
+import * as React from 'react';
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
+import { Check, ChevronRight, Circle } from 'lucide-react';
+import { cn } from '@/shared/utils/cn';
+
+export const DropdownMenu = DropdownMenuPrimitive.Root;
+export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
+export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
+export const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
+export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
+export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
+
+export const DropdownMenuSubTrigger = React.forwardRef<React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>, React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & { inset?: boolean }>(({ className, inset, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.SubTrigger ref={ref} className={cn('flex cursor-default select-none items-center rounded-lg px-2 py-1.5 text-sm outline-none focus:bg-accent', inset && 'pl-8', className)} {...props}>
+    {children}
+    <ChevronRight className="ml-auto h-4 w-4" />
+  </DropdownMenuPrimitive.SubTrigger>
+));
+DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
+
+export const DropdownMenuSubContent = React.forwardRef<React.ElementRef<typeof DropdownMenuPrimitive.SubContent>, React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.SubContent ref={ref} className={cn('z-50 min-w-32 rounded-2xl border border-border bg-popover p-1 shadow-[var(--shadow-soft)]', className)} {...props} />
+));
+DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
+
+export const DropdownMenuContent = React.forwardRef<React.ElementRef<typeof DropdownMenuPrimitive.Content>, React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>>(({ className, sideOffset = 6, ...props }, ref) => (
+  <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Content ref={ref} sideOffset={sideOffset} className={cn('z-50 min-w-40 rounded-2xl border border-border bg-popover p-1 shadow-[var(--shadow-soft)]', className)} {...props} />
+  </DropdownMenuPrimitive.Portal>
+));
+DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
+
+export const DropdownMenuItem = React.forwardRef<React.ElementRef<typeof DropdownMenuPrimitive.Item>, React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & { inset?: boolean }>(({ className, inset, ...props }, ref) => (
+  <DropdownMenuPrimitive.Item ref={ref} className={cn('relative flex cursor-default select-none items-center rounded-xl px-2 py-2 text-sm outline-none transition focus:bg-accent', inset && 'pl-8', className)} {...props} />
+));
+DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
+
+export const DropdownMenuCheckboxItem = React.forwardRef<React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>, React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>>(({ className, children, checked, ...props }, ref) => (
+  <DropdownMenuPrimitive.CheckboxItem ref={ref} className={cn('relative flex cursor-default select-none items-center rounded-xl py-2 pl-8 pr-2 text-sm outline-none transition focus:bg-accent', className)} checked={checked} {...props}>
+    <span className="absolute left-2 flex h-4 w-4 items-center justify-center">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <Check className="h-4 w-4" />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.CheckboxItem>
+));
+DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName;
+
+export const DropdownMenuRadioItem = React.forwardRef<React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>, React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem>>(({ className, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.RadioItem ref={ref} className={cn('relative flex cursor-default select-none items-center rounded-xl py-2 pl-8 pr-2 text-sm outline-none transition focus:bg-accent', className)} {...props}>
+    <span className="absolute left-2 flex h-4 w-4 items-center justify-center">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <Circle className="h-2 w-2 fill-current" />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.RadioItem>
+));
+DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
+
+
+path: /src/shared/components/ui/input.tsx
+----------------------------------------
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<'input'>>(({ className, ...props }, ref) => {
+  return <input ref={ref} className={cn('flex h-10 w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+});
+
+Input.displayName = 'Input';
+
+
+path: /src/shared/components/ui/label.tsx
+----------------------------------------
+import * as LabelPrimitive from '@radix-ui/react-label';
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export const Label = React.forwardRef<React.ElementRef<typeof LabelPrimitive.Root>, React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>>(({ className, ...props }, ref) => (
+  <LabelPrimitive.Root ref={ref} className={cn('text-sm font-medium leading-none', className)} {...props} />
+));
+
+Label.displayName = LabelPrimitive.Root.displayName;
+
+
+path: /src/shared/components/ui/select.tsx
+----------------------------------------
+import * as React from 'react';
+import * as SelectPrimitive from '@radix-ui/react-select';
+import { Check, ChevronDown } from 'lucide-react';
+import { cn } from '@/shared/utils/cn';
+
+export const Select = SelectPrimitive.Root;
+export const SelectValue = SelectPrimitive.Value;
+
+export const SelectTrigger = React.forwardRef<React.ElementRef<typeof SelectPrimitive.Trigger>, React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Trigger ref={ref} className={cn('flex h-10 w-full items-center justify-between rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none', className)} {...props}>
+    {children}
+    <SelectPrimitive.Icon asChild>
+      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+    </SelectPrimitive.Icon>
+  </SelectPrimitive.Trigger>
+));
+SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
+
+export const SelectContent = React.forwardRef<React.ElementRef<typeof SelectPrimitive.Content>, React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Portal>
+    <SelectPrimitive.Content ref={ref} className={cn('z-50 rounded-2xl border border-border bg-card p-1 shadow-[var(--shadow-soft)]', className)} position="popper" {...props} />
+  </SelectPrimitive.Portal>
+));
+SelectContent.displayName = SelectPrimitive.Content.displayName;
+
+export const SelectItem = React.forwardRef<React.ElementRef<typeof SelectPrimitive.Item>, React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Item ref={ref} className={cn('relative flex cursor-default select-none items-center rounded-xl py-2 pl-8 pr-3 text-sm outline-none transition focus:bg-accent', className)} {...props}>
+    <span className="absolute left-2 flex h-4 w-4 items-center justify-center">
+      <SelectPrimitive.ItemIndicator>
+        <Check className="h-4 w-4" />
+      </SelectPrimitive.ItemIndicator>
+    </span>
+    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+  </SelectPrimitive.Item>
+));
+SelectItem.displayName = SelectPrimitive.Item.displayName;
+
+
+path: /src/shared/components/ui/separator.tsx
+----------------------------------------
+import * as SeparatorPrimitive from '@radix-ui/react-separator';
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export const Separator = React.forwardRef<React.ElementRef<typeof SeparatorPrimitive.Root>, React.ComponentPropsWithoutRef<typeof SeparatorPrimitive.Root>>(({ className, orientation = 'horizontal', decorative = true, ...props }, ref) => (
+  <SeparatorPrimitive.Root ref={ref} decorative={decorative} orientation={orientation} className={cn('shrink-0 bg-border', orientation === 'horizontal' ? 'h-px w-full' : 'h-full w-px', className)} {...props} />
+));
+Separator.displayName = SeparatorPrimitive.Root.displayName;
+
+
+path: /src/shared/components/ui/skeleton.tsx
+----------------------------------------
+import { cn } from '@/shared/utils/cn';
+
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-2xl bg-muted', className)} />;
+}
+
+
+path: /src/shared/components/ui/table.tsx
+----------------------------------------
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(({ className, ...props }, ref) => (
+  <div className="w-full overflow-auto"><table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} /></div>
+));
+Table.displayName = 'Table';
+
+export const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(({ className, ...props }, ref) => <thead ref={ref} className={cn('[&_tr]:border-b', className)} {...props} />);
+TableHeader.displayName = 'TableHeader';
+
+export const TableBody = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(({ className, ...props }, ref) => <tbody ref={ref} className={cn('[&_tr:last-child]:border-0', className)} {...props} />);
+TableBody.displayName = 'TableBody';
+
+export const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTMLTableRowElement>>(({ className, ...props }, ref) => <tr ref={ref} className={cn('border-b border-border transition hover:bg-muted/60', className)} {...props} />);
+TableRow.displayName = 'TableRow';
+
+export const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<HTMLTableCellElement>>(({ className, ...props }, ref) => <th ref={ref} className={cn('px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground', className)} {...props} />);
+TableHead.displayName = 'TableHead';
+
+export const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(({ className, ...props }, ref) => <td ref={ref} className={cn('px-4 py-3 align-middle', className)} {...props} />);
+TableCell.displayName = 'TableCell';
+
+
+path: /src/shared/components/ui/tabs.tsx
+----------------------------------------
+import * as React from 'react';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
+import { cn } from '@/shared/utils/cn';
+
+export const Tabs = TabsPrimitive.Root;
+
+export const TabsList = React.forwardRef<React.ElementRef<typeof TabsPrimitive.List>, React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>>(({ className, ...props }, ref) => (
+  <TabsPrimitive.List ref={ref} className={cn('inline-flex h-11 items-center rounded-2xl bg-muted p-1', className)} {...props} />
+));
+TabsList.displayName = TabsPrimitive.List.displayName;
+
+export const TabsTrigger = React.forwardRef<React.ElementRef<typeof TabsPrimitive.Trigger>, React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>>(({ className, ...props }, ref) => (
+  <TabsPrimitive.Trigger ref={ref} className={cn('inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-[var(--shadow-soft)]', className)} {...props} />
+));
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
+
+export const TabsContent = React.forwardRef<React.ElementRef<typeof TabsPrimitive.Content>, React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>>(({ className, ...props }, ref) => (
+  <TabsPrimitive.Content ref={ref} className={cn('mt-4', className)} {...props} />
+));
+TabsContent.displayName = TabsPrimitive.Content.displayName;
+
+
+path: /src/shared/components/ui/textarea.tsx
+----------------------------------------
+import * as React from 'react';
+import { cn } from '@/shared/utils/cn';
+
+export const Textarea = React.forwardRef<HTMLTextAreaElement, React.ComponentProps<'textarea'>>(({ className, ...props }, ref) => {
+  return <textarea ref={ref} className={cn('min-h-[110px] w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+});
+
+Textarea.displayName = 'Textarea';
+
+
+path: /src/shared/lib/api-error.ts
+----------------------------------------
+import axios from 'axios';
+import { ApiClientError } from '@/api/client';
+
+function extractMessage(data: unknown) {
+  if (!data || typeof data !== 'object') return null;
+
+  const payload = data as {
+    error?: string;
+    message?: string;
+    errors?: string[];
+  };
+
+  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+    return payload.errors.join('\n');
+  }
+
+  if (typeof payload.error === 'string') {
+    return payload.error;
+  }
+
+  if (typeof payload.message === 'string') {
+    return payload.message;
+  }
+
+  return null;
+}
+
+export function getApiErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    const payload = error.payload as
+      | { errors?: string[]; error?: string; message?: string }
+      | undefined;
+
+    if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+      return payload.errors.join('\n');
+    }
+
+    if (typeof payload?.error === 'string' && payload.error.trim().length > 0) {
+      return payload.error;
+    }
+
+    if (typeof payload?.message === 'string' && payload.message.trim().length > 0) {
+      return payload.message;
+    }
+
+    return error.message || 'Request failed';
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Unknown error';
+}
+
+
+path: /src/shared/utils/cn.ts
+----------------------------------------
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+
+path: /src/shared/utils/format.ts
+----------------------------------------
+import { format, formatDistanceToNowStrict } from 'date-fns';
+
+export function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+  return format(new Date(value), 'MMM d, yyyy HH:mm');
+}
+
+export function formatRelative(value?: string | null) {
+  if (!value) return '—';
+  return formatDistanceToNowStrict(new Date(value), { addSuffix: true });
+}
+
+export function formatFileSize(value?: number | null) {
+  if (!value && value !== 0) return '—';
+  if (value < 1024) return `${value} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unit = units[0];
+  for (const next of units) {
+    unit = next;
+    size /= 1024;
+    if (size < 1024) break;
+  }
+  return `${size.toFixed(size < 10 ? 1 : 0)} ${unit}`;
+}
+
+
+path: /src/shared/utils/object.ts
+----------------------------------------
+export type KeyValuePair = { key: string; value: string };
+
+export function toKeyValuePairs(input?: Record<string, string> | null): KeyValuePair[] {
+  return Object.entries(input ?? {}).map(([key, value]) => ({ key, value }));
+}
+
+export function fromKeyValuePairs(input: KeyValuePair[]): Record<string, string> {
+  return input.reduce<Record<string, string>>((acc, item) => {
+    const key = item.key.trim();
+    if (!key) return acc;
+    acc[key] = item.value;
+    return acc;
+  }, {});
+}
+
+export function compactObject<T extends Record<string, unknown>>(input: T) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => {
+      if (value == null) return false;
+      if (typeof value === 'string') return value.trim().length > 0;
+      return true;
+    }),
+  ) as Partial<T>;
+}
+
+
+path: /tsconfig.app.json
+----------------------------------------
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}
+
+
+path: /tsconfig.json
+----------------------------------------
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
+
+
+path: /tsconfig.node.json
+----------------------------------------
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts", "eslint.config.js"]
+}
+
+
+path: /vite.config.d.ts
+----------------------------------------
+declare const _default: import("vite").UserConfig;
+export default _default;
+
+
+path: /vite.config.ts
+----------------------------------------
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import path from 'node:path';
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+});
+
+
+=== SUMMARY ===
+included: 70
+skipped(binary): 0
+skipped(size): 0
+skipped(ext): 0
+totalBytes(approx): 163527

@@ -1,60 +1,89 @@
 # Cloud Forge Web UI
 
-Modern React-based dashboard for Cloud Forge Orchestrator.
+Production-oriented frontend for Cloud Forge.
 
-## Tech Stack
+## Stack
 
-- **Framework**: React 19
-- **Bundler**: Vite
-- **Routing**: TanStack Router
-- **State Management**: TanStack Query (Server State)
-- **Styling**: Tailwind CSS v4
-- **UI Components**: shadcn/ui (Radix Primitives)
-- **Forms**: React Hook Form + Zod
-- **Icons**: Lucide React
-- **Charts**: Recharts
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS v4
+- shadcn/ui-style primitives
+- TanStack Router
+- TanStack Query
+- React Hook Form + Zod
+- Recharts
+- Sonner toasts
 
-## Getting Started
+## Environment
 
-### Prerequisites
-
-- Node.js 20+
-- Backend running (usually on port 3000)
-
-### Installation
+Create `.env` from `.env.example`:
 
 ```bash
-cd web
+cp .env.example .env
+```
+
+Example:
+
+```bash
+VITE_API_BASE_URL=http://localhost:3000
+```
+
+## Install
+
+```bash
 npm install
 ```
 
-### Development
+## Run in development
 
 ```bash
 npm run dev
 ```
 
-The UI will be available at `http://localhost:5173`.
-Make sure to configure `.env` if your backend is not at `http://localhost:3000`.
-
-### Production Build
+## Build
 
 ```bash
 npm run build
-npm run preview
 ```
 
-## Project Structure
+## Lint
 
-- `src/api`: Centralized API client and type definitions.
-- `src/app`: Application shell, layout, and router configuration.
-- `src/pages`: Individual page components (Dashboard, Jobs, Workers, etc.).
-- `src/shared`: Reusable UI components, utilities, and hooks.
-- `src/features`: Complex business logic modules (to be expanded).
+```bash
+npm run lint
+```
 
-## Environment Variables
+## Backend integration notes
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_BASE_URL` | `http://localhost:3000` | Backend API URL |
-| `VITE_WS_BASE_URL` | `ws://localhost:3000` | Backend WebSocket URL |
+The frontend is wired against these backend shapes:
+
+- `GET /dashboard/summary`
+- `GET /dashboard/active-runs`
+- `GET /dashboard/active-workers`
+- `GET /dashboard/recent-events`
+- `GET /jobs`
+- `GET /jobs/:id`
+- `POST /jobs`
+- `PATCH /jobs/:id`
+- `DELETE /jobs/:id`
+- `POST /jobs/:id/clone`
+- `GET /jobs/:id/runs`
+- `GET /jobs/:id/share-tokens`
+- `POST /jobs/:id/share-tokens`
+- `GET /share-tokens/:id`
+- `POST /share-tokens/:id/revoke`
+- `GET /workers`
+- `GET /workers/:id`
+- `GET /catalog/job-templates`
+- `GET /catalog/container-presets`
+- `POST /artifacts/upload-job?jobId=:jobId`
+- `GET /api/runs/:id`
+- `POST /api/runs/:id/cancel`
+- `WS /ws/runs/:run_id`
+
+## Notes
+
+- Run details consume logs and artifacts from `GET /api/runs/:id`.
+- Job file uploads are done after job create/update through the artifact upload endpoint.
+- Share token details dialog will render generated worker/docker commands if the backend returns them.
+- If you later add a direct “run now” HTTP endpoint, the UI structure is ready to attach a dedicated mutation.

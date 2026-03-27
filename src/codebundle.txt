@@ -1,335 +1,8 @@
 === CODE BUNDLE ===
-root: /Volumes/Extend/work/cloud-forge
+root: /Volumes/Extend/work/cloud-forge/src
 ignore: .codebundleignore
-generated: 2026-03-26T19:14:06.568Z
+generated: 2026-03-27T07:31:02.094Z
 
-
-
-path: /.dockerignore
-----------------------------------------
-node_modules
-dist
-db.sqlite
-.env
-
-
-path: /.env
-----------------------------------------
-PORT=3000
-DATABASE_URL=db.sqlite
-REDIS_URL=redis://localhost:6379
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_ACCESS_KEY=cloudforge
-MINIO_SECRET_KEY=cloudforge123
-MINIO_BUCKET=cloud-forge
-PUBLIC_BASE_URL=http://localhost:3000
-
-# Published worker image for remote execution
-PUBLISHED_WORKER_IMAGE=xproger/cloud-forge-worker
-PUBLISHED_WORKER_TAG=0.1.0
-
-
-path: /.env.example
-----------------------------------------
-PORT=3000
-DATABASE_URL=db.sqlite
-REDIS_URL=redis://localhost:6379
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_ACCESS_KEY=cloudforge
-MINIO_SECRET_KEY=cloudforge123
-MINIO_BUCKET=cloud-forge
-PUBLIC_BASE_URL=http://localhost:3000
-
-# Worker Image for remote execution
-# .env.example
-PUBLISHED_WORKER_IMAGE=xproger/cloud-forge-worker
-PUBLISHED_WORKER_TAG=0.1.0
-
-
-path: /.github/workflows/publish-worker.yml
-----------------------------------------
-name: Publish Worker Image
-
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Worker version tag, for example 0.1.0"
-        required: true
-  push:
-    tags:
-      - 'worker-v*'
-
-jobs:
-  publish-worker:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve version
-        id: version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            TAG="${GITHUB_REF_NAME}"
-            echo "value=${TAG#worker-v}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: cloudforge/worker
-          tags: |
-            type=raw,value=${{ steps.version.outputs.value }}
-            type=raw,value=latest
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.worker
-          push: true
-          platforms: linux/amd64
-          build-args: |
-            VERSION=${{ steps.version.outputs.value }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-
-path: /.gitignore
-----------------------------------------
-# Node
-node_modules/
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Build
-dist/
-build/
-*.tsbuildinfo
-
-# TypeScript
-*.js
-*.js.map
-
-# Logs
-logs/
-*.log
-
-# SQLite database
-*.sqlite
-*.sqlite3
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Docker
-docker-compose.override.yml
-
-# VSCode
-.vscode/
-*.code-workspace
-
-# Mac / Linux
-.DS_Store
-*.swp
-
-# Temp
-tmp/
-temp/
-
-
-path: /.husky/_/.gitignore
-----------------------------------------
-*
-
-
-path: /.husky/_/applypatch-msg
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/commit-msg
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/h
-----------------------------------------
-#!/usr/bin/env sh
-[ "$HUSKY" = "2" ] && set -x
-n=$(basename "$0")
-s=$(dirname "$(dirname "$0")")/$n
-
-[ ! -f "$s" ] && exit 0
-
-if [ -f "$HOME/.huskyrc" ]; then
-	echo "husky - '~/.huskyrc' is DEPRECATED, please move your code to ~/.config/husky/init.sh"
-fi
-i="${XDG_CONFIG_HOME:-$HOME/.config}/husky/init.sh"
-[ -f "$i" ] && . "$i"
-
-[ "${HUSKY-}" = "0" ] && exit 0
-
-export PATH="node_modules/.bin:$PATH"
-sh -e "$s" "$@"
-c=$?
-
-[ $c != 0 ] && echo "husky - $n script failed (code $c)"
-[ $c = 127 ] && echo "husky - command not found in PATH=$PATH"
-exit $c
-
-
-path: /.husky/_/husky.sh
-----------------------------------------
-echo "husky - DEPRECATED
-
-Please remove the following two lines from $0:
-
-#!/usr/bin/env sh
-. \"\$(dirname -- \"\$0\")/_/husky.sh\"
-
-They WILL FAIL in v10.0.0
-"
-
-
-path: /.husky/_/post-applypatch
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-checkout
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-commit
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-merge
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-rewrite
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-applypatch
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-auto-gc
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-commit
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-merge-commit
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-push
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-rebase
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/prepare-commit-msg
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.prettierrc
-----------------------------------------
-{
-  "semi": true,
-  "trailingComma": "all",
-  "singleQuote": true,
-  "printWidth": 100,
-  "tabWidth": 2
-}
-
-
-path: /.vscode/c_cpp_properties.json
-----------------------------------------
-{
-  "configurations": [
-    {
-      "name": "STM32",
-      "includePath": [
-        "${workspaceFolder}/Core/Inc",
-        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
-        "${workspaceFolder}/Drivers/CMSIS/Include",
-        "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
-        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"
-      ],
-      "defines": [
-        "USE_HAL_DRIVER",
-        "STM32F407xx"
-      ],
-      "compilerPath": "/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.macos64_1.0.100.202509120712/tools/bin/arm-none-eabi-gcc",
-      "cStandard": "c11",
-      "cppStandard": "c++17",
-      "intelliSenseMode": "gcc-arm",
-      "browse": {
-        "path": [
-          "${workspaceFolder}/Core/Inc",
-          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
-          "${workspaceFolder}/Drivers/CMSIS/Include",
-          "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
-          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"
-        ],
-        "limitSymbolsToIncludedHeaders": true
-      }
-    }
-  ],
-  "version": 4
-}
 
 
 path: /bundle-code.js
@@ -592,1727 +265,7 @@ bundle().catch(err => {
 });
 
 
-path: /docker-compose.yml
-----------------------------------------
-services:
-  orchestrator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - '3000:3000'
-    environment:
-      PORT: 3000
-      DATABASE_URL: /app/data/db.sqlite
-      REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: cloudforge
-      MINIO_SECRET_KEY: cloudforge123
-      MINIO_BUCKET: cloud-forge
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
-      PUBLISHED_WORKER_IMAGE: ${PUBLISHED_WORKER_IMAGE:-cloudforge/worker}
-      PUBLISHED_WORKER_TAG: ${PUBLISHED_WORKER_TAG:-0.1.0}
-    depends_on:
-      - redis
-      - minio
-    volumes:
-      - sqlite-data:/app/data
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - '6379:6379'
-    command: redis-server --appendonly yes
-
-  minio:
-    image: minio/minio:latest
-    ports:
-      - '9000:9000'
-      - '9001:9001'
-    environment:
-      MINIO_ROOT_USER: cloudforge
-      MINIO_ROOT_PASSWORD: cloudforge123
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio-data:/data
-
-volumes:
-  minio-data:
-  sqlite-data:
-
-
-path: /Dockerfile
-----------------------------------------
-FROM node:20-slim AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install
-
-COPY tsconfig.json ./
-COPY src ./src
-
-RUN npm run build
-
-FROM node:20-slim AS runtime
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV PORT=3000
-
-COPY package*.json ./
-RUN npm install --omit=dev
-
-COPY --from=builder /app/dist ./dist
-
-RUN mkdir -p /app/data
-
-EXPOSE 3000
-
-CMD ["node", "dist/server.js"]
-
-
-path: /Dockerfile.worker
-----------------------------------------
-FROM python:3.11-slim
-
-ARG VERSION=0.1.0
-
-LABEL org.opencontainers.image.title="Cloud Forge Worker" \
-      org.opencontainers.image.description="Standalone runner for Cloud Forge remote jobs" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.source="https://github.com/cloudforge/cloudforge" \
-      org.opencontainers.image.vendor="Cloud Forge" \
-      org.opencontainers.image.licenses="MIT"
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY sdk/ /app/sdk/
-COPY runner.py /app/runner.py
-
-RUN chmod +x /app/runner.py \
-    && pip install --no-cache-dir requests
-
-WORKDIR /workspace
-
-ENTRYPOINT ["python3", "/app/runner.py"]
-
-
-path: /docs/architecture.md
-----------------------------------------
-# Cloud Forge Architecture
-
-This document describes the architectural model of Cloud Forge, distinguishing between the Orchestrator Stack and the Worker Runtime.
-
-## 1. Orchestrator Stack
-
-The Orchestrator Stack is the central control plane of the system. It is deployed on a master server and manages job configurations, runs, tokens, and artifacts.
-
-### Components
-- **Orchestrator Backend (Fastify + TypeScript)**: Exposes the REST API and manages the database.
-- **SQLite**: Primary database for metadata (Jobs, Runs, Workers, Tokens). Uses persistent volumes.
-- **Redis**: Message queue for internal task distribution and watchdog coordination.
-- **MinIO**: S3-compatible object storage for attached files and run artifacts.
-
----
-
-## 2. Worker Runtime
-
-The Worker is a standalone, publishable Docker image designed to run on remote machines.
-
-### MVP Execution Model (Single-Container)
-**Status: Current Implementation**
-- The worker image is published to a registry (e.g., `cloudforge/worker:0.1.0`).
-- Users run jobs on remote machines using a single `docker run` command.
-- **The user code executes directly inside the worker container.**
-- The worker fetches the job configuration, sets up the environment, executes the code, and streams logs/artifacts back to the orchestrator.
-- Limitations: Multi-container job configurations are supported in the API but the worker only executes the code in its own container.
-
-### Future Execution Model (Multi-Container)
-**Status: Roadmap**
-- The worker will evolve into a **Local Executor**.
-- It will act as a mini-orchestrator on the remote host.
-- It will use the Docker Socket (`/var/run/docker.sock`) to pull and start additional containers defined in the Job configuration.
-- It will manage a local network and lifecycle for these child containers.
-
----
-
-## 3. Remote Execution Flow
-
-1. **Create Job**: Define code, language, and environment.
-2. **Share Job**: Generate a `ShareToken`. The orchestrator provides a `docker run` command.
-3. **Execute**: Run the command on a remote machine.
-   ```bash
-   docker run --rm -e JOB_CONFIG_URL="https://forge.example.com/api/run-config?token=cf_..." cloudforge/worker:0.1.0
-   ```
-4. **Claim**: Worker fetches the full Job Snapshot from the Orchestrator.
-5. **Run**: Worker executes the code, sends heartbeats, and uploads logs/artifacts.
-6. **Finish**: Worker notifies completion and shuts down.
-
-
-path: /examples/job.js
-----------------------------------------
-const fs = require('fs');
-const {
-  info,
-  uploadArtifact,
-  artifactsPath,
-  inputPath,
-  raiseIfCancelRequested,
-} = require('cloudforge');
-
-async function main() {
-  await info('job started');
-
-  const datasetPath = inputPath('train.jsonl');
-  await info(`dataset path: ${datasetPath}`);
-
-  raiseIfCancelRequested();
-
-  const modelPath = artifactsPath('model.bin');
-  fs.mkdirSync(require('path').dirname(modelPath), { recursive: true });
-  fs.writeFileSync(modelPath, Buffer.from('demo-model'));
-
-  const result = await uploadArtifact(modelPath);
-  await info(`artifact uploaded: ${result.relative_path}`);
-}
-
-main().catch(async (err) => {
-  try {
-    await info(`fatal error: ${err.message}`);
-  } finally {
-    process.exit(1);
-  }
-});
-
-
-path: /examples/job.py
-----------------------------------------
-from cloudforge import info, warn, upload_artifact, artifacts_path, input_path, raise_if_cancel_requested
-
-info("job started")
-
-dataset = input_path("train.jsonl")
-info(f"dataset path: {dataset}")
-
-raise_if_cancel_requested()
-
-model_file = artifacts_path("model.bin")
-model_file.parent.mkdir(parents=True, exist_ok=True)
-model_file.write_bytes(b"demo-model")
-
-result = upload_artifact(model_file)
-info(f"artifact uploaded: {result['relative_path']}")
-
-
-path: /index.html
-----------------------------------------
-<!DOCTYPE html>
-<html lang="en">
-  <body>
-    <h2>Run Logs</h2>
-    <pre id="logs"></pre>
-
-    <script>
-      const logsEl = document.getElementById('logs');
-      const runId = prompt('run id?');
-
-      const append = (line) => {
-        logsEl.textContent += line;
-      };
-
-      if (!runId) {
-        append('run id is required\n');
-      } else {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const host = window.location.host || 'localhost:3000';
-        const ws = new WebSocket(`${protocol}://${host}/ws/runs/${encodeURIComponent(runId)}`);
-
-        ws.onopen = () => append('[ws] connected\n');
-        ws.onclose = () => append('[ws] disconnected\n');
-        ws.onerror = () => append('[ws] error\n');
-
-        ws.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-
-            if (payload.type === 'run_log') {
-              append(`[${payload.level}] ${payload.message}\n`);
-              return;
-            }
-
-            if (payload.type === 'run_status') {
-              append(`[status] ${payload.status} (${payload.timestamp})\n`);
-              return;
-            }
-
-            append(`${event.data}\n`);
-          } catch {
-            append(`${event.data}\n`);
-          }
-        };
-      }
-    </script>
-  </body>
-</html>
-
-
-path: /package.json
-----------------------------------------
-{
-  "name": "cloud-forge",
-  "version": "0.1.0",
-  "type": "commonjs",
-  "scripts": {
-    "dev": "ts-node src/server.ts",
-    "dev:full": "docker compose up -d redis minio && npm run dev",
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "start:prod": "npm run build && node dist/server.js",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f orchestrator",
-    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f Dockerfile.worker .",
-    "worker:publish": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker push \"$WORKER_IMAGE:$WORKER_TAG\" && docker push \"$WORKER_IMAGE:latest\"",
-    "lint": "eslint 'src/**/*.ts'",
-    "test": "vitest",
-    "test:e2e": "vitest run tests/e2e",
-    "test:watch": "vitest"
-  },
-  "lint-staged": {
-    "src/**/*.ts": [
-      "eslint --fix",
-      "prettier --write"
-    ]
-  },
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.600.0",
-    "@aws-sdk/s3-request-presigner": "^3.600.0",
-    "@fastify/multipart": "^9.4.0",
-    "@fastify/swagger": "^9.7.0",
-    "@fastify/swagger-ui": "^5.2.5",
-    "@fastify/websocket": "^11.2.0",
-    "bullmq": "^5.71.1",
-    "dotenv": "^16.6.1",
-    "fastify": "^5.8.4",
-    "ioredis": "^5.10.1",
-    "pino": "^9.14.0",
-    "pino-pretty": "^13.1.3",
-    "sqlite3": "^5.1.7",
-    "uuid": "^11.1.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^20.19.37",
-    "@types/supertest": "^6.0.3",
-    "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "@vitest/coverage-v8": "^4.1.1",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^9.1.2",
-    "eslint-plugin-prettier": "^5.5.5",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.8.1",
-    "supertest": "^7.2.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.2",
-    "uuid": "^11.1.0",
-    "vitest": "^4.1.1"
-  }
-}
-
-
-path: /README.md
-----------------------------------------
-# Cloud Forge
-
-Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, SQLite, Redis, and MinIO.
-
-## Architecture
-
-Cloud Forge consists of two main components:
-
-1. **Orchestrator Stack**  
-   Central control plane: Fastify backend, SQLite, Redis, MinIO, REST API, WebSocket API.
-
-2. **Worker Image**  
-   A standalone publishable Docker image that executes jobs on remote machines.
-
-## Current execution model
-
-### MVP mode
-In the current MVP phase, user code executes **directly inside the published worker container**.
-
-That means:
-- the orchestrator stores job configuration and creates runs;
-- the worker downloads run config from the orchestrator;
-- the worker executes Python or JavaScript code inside itself;
-- logs, heartbeats, cancellation, and artifacts are sent back to the orchestrator.
-
-### Future mode
-Job definitions can already contain multiple containers, but **remote multi-container orchestration is not implemented yet**.  
-Those presets are marked in the catalog as `future`.
-
-## Features
-
-- UI-ready REST API
-- Job CRUD with validation
-- Share-token based remote execution
-- Live logs and run status via WebSocket
-- Run artifacts in S3-compatible storage
-- Dashboard endpoints
-- Health checks for deployment
-- Publishable worker Docker image
-
-## Getting started
-
-### Requirements
-- Node.js 20+
-- Docker & Docker Compose
-
-### Local development
-
-1. Install dependencies:
-   ```bash
-   npm install
-````
-
-2. Start infrastructure:
-
-   ```bash
-   docker compose up -d redis minio
-   ```
-
-3. Start orchestrator:
-
-   ```bash
-   npm run dev
-   ```
-
-4. Open API docs:
-
-   ```text
-   http://localhost:3000/docs
-   ```
-
-## API overview
-
-### Jobs
-
-* `POST /jobs` — create job template
-* `GET /jobs` — list jobs with pagination/filtering
-* `GET /jobs/:id` — get job details and stats
-* `PATCH /jobs/:id` — update job
-* `DELETE /jobs/:id` — delete job if it has no active runs
-* `POST /jobs/:id/clone` — clone job
-* `POST /jobs/validate` — validate job payload
-* `GET /jobs/:id/runs` — paginated runs list for job
-
-### Share tokens
-
-* `POST /jobs/:id/share-tokens` — create remote execution token
-* `GET /jobs/:id/share-tokens` — list share tokens for a job
-* `GET /share-tokens/:id` — get share token details
-* `POST /share-tokens/:id/revoke` — revoke token
-
-### Dashboard
-
-* `GET /dashboard/summary`
-* `GET /dashboard/active-runs`
-* `GET /dashboard/active-workers`
-* `GET /dashboard/recent-events`
-
-### Worker API
-
-* `GET /api/run-config?token=...`
-* `POST /api/runs/start`
-* `POST /api/runs/heartbeat`
-* `POST /api/runs/logs`
-* `POST /api/runs/finish`
-* `POST /api/runs/:id/cancel`
-* `GET /api/runs/:id`
-
-### WebSocket
-
-* `WS /ws/runs/:run_id`
-
-### Health
-
-* `GET /health/live`
-* `GET /health/ready`
-
-## Deployment
-
-### Orchestrator stack
-
-Run the orchestrator stack with Docker Compose:
-
-```bash
-docker compose up -d
-```
-
-### Worker image
-
-The worker image should be published with a **fixed version tag**.
-
-Example:
-
-```bash
-cloudforge/worker:0.1.0
-```
-
-Build locally:
-
-```bash
-npm run worker:build
-```
-
-Publish:
-
-```bash
-npm run worker:publish
-```
-
-## Example remote execution command
-
-The orchestrator should return a command like:
-
-```bash
-docker run --rm \
-  -e JOB_CONFIG_URL="https://your-domain/api/run-config?token=cf_xxx" \
-  cloudforge/worker:0.1.0
-```
-
-
-path: /runner.py
-----------------------------------------
-#!/usr/bin/env python3
-"""
-Cloud Forge Runner v6
-- получает run-config по share token
-- создаёт workspace
-- раскладывает Python/JS SDK
-- создаёт runtime/control файлы для SDK
-- скачивает attached files
-- запускает код
-- шлёт heartbeat
-- реагирует на should_stop от orchestrator
-- стримит логи
-- загружает артефакты из /workspace/artifacts
-- не дублирует артефакты, уже отправленные через SDK
-- завершает run через run_id
-"""
-
-import json
-import mimetypes
-import os
-import shutil
-import socket
-import subprocess
-import sys
-import threading
-import time
-from pathlib import Path
-from urllib.parse import urljoin, urlsplit
-
-print("🚀 Cloud-Forge Runner v6 starting...")
-
-try:
-    import requests
-except ImportError:
-    print("📦 Installing requests...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "requests"])
-    import requests
-
-
-JOB_CONFIG_URL = os.getenv("JOB_CONFIG_URL")
-RUN_TIMEOUT_SECONDS = int(os.getenv("RUN_TIMEOUT_SECONDS", "600"))
-HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("CLOUD_FORGE_HEARTBEAT_INTERVAL_SECONDS", "10"))
-STOP_GRACE_SECONDS = int(os.getenv("CLOUD_FORGE_STOP_GRACE_SECONDS", "10"))
-
-if not JOB_CONFIG_URL:
-    print("❌ JOB_CONFIG_URL environment variable is required")
-    sys.exit(1)
-
-parsed_job_url = urlsplit(JOB_CONFIG_URL)
-SERVER_URL = os.getenv("SERVER_URL") or f"{parsed_job_url.scheme}://{parsed_job_url.netloc}"
-
-HOSTNAME = socket.gethostname()
-WORKER_ID = os.getenv("CLOUD_FORGE_WORKER_ID") or f"worker-{HOSTNAME}"
-WORKER_NAME = os.getenv("CLOUD_FORGE_WORKER_NAME") or WORKER_ID
-WORKER_HOST = os.getenv("CLOUD_FORGE_WORKER_HOST") or HOSTNAME
-
-print(f"📡 Fetching run config from {JOB_CONFIG_URL}")
-
-
-def load_capabilities():
-    raw = os.getenv("CLOUD_FORGE_WORKER_CAPABILITIES")
-    if not raw:
-        return {
-            "hostname": HOSTNAME,
-            "platform": sys.platform,
-            "python_version": sys.version.split()[0],
-        }
-
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return parsed
-        return {"raw_capabilities": parsed}
-    except Exception:
-        return {"raw_capabilities": raw}
-
-
-WORKER_CAPABILITIES = load_capabilities()
-
-
-def post_json(path: str, payload: dict, timeout: int = 10, raise_errors: bool = False):
-    url = urljoin(SERVER_URL, path)
-    try:
-        response = requests.post(url, json=payload, timeout=timeout)
-        if raise_errors:
-            response.raise_for_status()
-        return response
-    except Exception as exc:
-        if raise_errors:
-            raise
-        print(f"⚠️ POST {url} failed: {exc}")
-        return None
-
-
-def safe_log(run_id: str, message: str, level: str = "info"):
-    print(message)
-    post_json(
-        "/api/runs/logs",
-        {
-            "run_id": run_id,
-            "message": message,
-            "level": level,
-        },
-        timeout=5,
-        raise_errors=False,
-    )
-
-
-def download_file(url: str, destination: Path):
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, timeout=60) as response:
-        response.raise_for_status()
-        with open(destination, "wb") as output:
-            for chunk in response.iter_content(chunk_size=1024 * 128):
-                if chunk:
-                    output.write(chunk)
-
-
-def upload_run_artifact(run_id: str, server_url: str, local_path: Path, relative_path: str):
-    content_type = mimetypes.guess_type(local_path.name)[0] or "application/octet-stream"
-    with open(local_path, "rb") as file_handle:
-        response = requests.post(
-            urljoin(server_url, f"/artifacts/upload-run?runId={run_id}&relativePath={relative_path}"),
-            files={"file": (local_path.name, file_handle, content_type)},
-            timeout=120,
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-def read_json(path: Path, fallback):
-    try:
-        if not path.exists():
-            return fallback
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return fallback
-
-
-def write_json(path: Path, payload):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def locate_sdk_source(relative_path: str) -> Path:
-    base_dir = Path(__file__).resolve().parent
-    candidates = [
-        base_dir / "sdk" / relative_path,
-        Path("/app/sdk") / relative_path,
-    ]
-
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-
-    raise FileNotFoundError(f"SDK source not found: {relative_path}")
-
-
-def install_sdk(workspace_root: Path):
-    sdk_dir = workspace_root / ".cloudforge-sdk"
-    sdk_dir.mkdir(parents=True, exist_ok=True)
-
-    python_source = locate_sdk_source("python/cloudforge.py")
-    javascript_source = locate_sdk_source("javascript/cloudforge.js")
-
-    shutil.copy2(python_source, sdk_dir / "cloudforge.py")
-    shutil.copy2(javascript_source, sdk_dir / "cloudforge.js")
-
-    return sdk_dir
-
-
-def update_control_file(
-    control_path: Path,
-    *,
-    cancel_requested: bool,
-    cancel_reason: str | None = None,
-):
-    write_json(
-        control_path,
-        {
-            "cancel_requested": cancel_requested,
-            "cancel_reason": cancel_reason,
-            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        },
-    )
-
-
-def load_uploaded_relative_paths(uploaded_artifacts_path: Path):
-    data = read_json(uploaded_artifacts_path, [])
-    if not isinstance(data, list):
-        return set()
-    return {str(item) for item in data}
-
-
-def upload_artifacts_directory(run_id: str, artifacts_dir: Path, uploaded_artifacts_path: Path):
-    if not artifacts_dir.exists() or not artifacts_dir.is_dir():
-        safe_log(run_id, f"📦 Artifacts directory does not exist: {artifacts_dir}")
-        return {
-            "uploaded_count": 0,
-            "skipped_count": 0,
-            "uploaded_files": [],
-        }
-
-    files_to_upload = [path for path in artifacts_dir.rglob("*") if path.is_file()]
-    already_uploaded = load_uploaded_relative_paths(uploaded_artifacts_path)
-
-    if not files_to_upload:
-        safe_log(run_id, "📦 No artifacts found to upload")
-        return {
-            "uploaded_count": 0,
-            "skipped_count": 0,
-            "uploaded_files": [],
-        }
-
-    uploaded_files = []
-    skipped_count = 0
-
-    for local_path in files_to_upload:
-        relative_path = local_path.relative_to(artifacts_dir).as_posix()
-
-        if relative_path in already_uploaded:
-            skipped_count += 1
-            continue
-
-        safe_log(run_id, f"⬆️ Uploading artifact: {relative_path}")
-
-        try:
-            result = upload_run_artifact(run_id, SERVER_URL, local_path, relative_path)
-            uploaded_files.append(result)
-        except Exception as exc:
-            safe_log(run_id, f"❌ Failed to upload artifact {relative_path}: {exc}", "error")
-
-    safe_log(
-        run_id,
-        f"📦 Uploaded artifacts: {len(uploaded_files)}, skipped already uploaded: {skipped_count}",
-    )
-
-    return {
-        "uploaded_count": len(uploaded_files),
-        "skipped_count": skipped_count,
-        "uploaded_files": uploaded_files,
-    }
-
-
-def terminate_process(proc: subprocess.Popen, run_id: str, reason: str):
-    if proc.poll() is not None:
-        return
-
-    safe_log(run_id, f"🛑 Stopping process: {reason}", "warn")
-
-    try:
-        proc.terminate()
-    except Exception as exc:
-        safe_log(run_id, f"⚠️ Failed to terminate process gracefully: {exc}", "warn")
-
-    deadline = time.time() + STOP_GRACE_SECONDS
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            return
-        time.sleep(0.2)
-
-    safe_log(run_id, "⚠️ Graceful stop timeout reached, killing process", "warn")
-
-    try:
-        proc.kill()
-    except Exception as exc:
-        safe_log(run_id, f"⚠️ Failed to kill process: {exc}", "error")
-
-
-try:
-    response = requests.get(JOB_CONFIG_URL, timeout=20)
-    response.raise_for_status()
-    payload = response.json()
-except Exception as exc:
-    print(f"❌ Failed to fetch run config: {exc}")
-    sys.exit(1)
-
-run_id = payload.get("run_id")
-job_id = payload.get("job_id")
-config = payload.get("config") or {}
-
-if not run_id or not job_id:
-    print("❌ Invalid run config: missing run_id or job_id")
-    sys.exit(1)
-
-workspace = config.get("workspace") or {}
-workspace_root = Path(workspace.get("root", "/workspace"))
-code_dir = Path(workspace.get("code_dir", str(workspace_root / "code")))
-input_dir = Path(workspace.get("input_dir", str(workspace_root / "input")))
-output_dir = Path(workspace.get("output_dir", str(workspace_root / "output")))
-artifacts_dir = Path(workspace.get("artifacts_dir", str(workspace_root / "artifacts")))
-tmp_dir = Path(workspace.get("tmp_dir", str(workspace_root / "tmp")))
-state_dir = workspace_root / ".cloudforge"
-runtime_path = state_dir / "runtime.json"
-control_path = state_dir / "control.json"
-uploaded_artifacts_path = state_dir / "uploaded-artifacts.json"
-
-for directory in [workspace_root, code_dir, input_dir, output_dir, artifacts_dir, tmp_dir, state_dir]:
-    directory.mkdir(parents=True, exist_ok=True)
-
-sdk_dir = install_sdk(workspace_root)
-update_control_file(control_path, cancel_requested=False, cancel_reason=None)
-write_json(uploaded_artifacts_path, [])
-
-safe_log(run_id, f"✅ Run claimed: {run_id}")
-safe_log(run_id, f"📁 Workspace root: {workspace_root}")
-safe_log(run_id, f"📚 SDK installed to: {sdk_dir}")
-
-environments = config.get("environments") or {}
-for key, value in environments.items():
-    os.environ[str(key)] = str(value)
-
-runtime_payload = {
-    "run_id": run_id,
-    "job_id": job_id,
-    "server_url": SERVER_URL,
-    "worker_id": WORKER_ID,
-    "worker_name": WORKER_NAME,
-    "worker_host": WORKER_HOST,
-    "workspace": {
-        "root": str(workspace_root),
-        "code_dir": str(code_dir),
-        "input_dir": str(input_dir),
-        "output_dir": str(output_dir),
-        "artifacts_dir": str(artifacts_dir),
-        "tmp_dir": str(tmp_dir),
-        "sdk_dir": str(sdk_dir),
-    },
-}
-write_json(runtime_path, runtime_payload)
-
-os.environ["CLOUD_FORGE_RUN_ID"] = run_id
-os.environ["CLOUD_FORGE_JOB_ID"] = job_id
-os.environ["CLOUD_FORGE_WORKER_ID"] = WORKER_ID
-os.environ["CLOUD_FORGE_WORKER_NAME"] = WORKER_NAME
-os.environ["CLOUD_FORGE_WORKER_HOST"] = WORKER_HOST
-os.environ["CLOUD_FORGE_WORKSPACE_ROOT"] = str(workspace_root)
-os.environ["CLOUD_FORGE_CODE_DIR"] = str(code_dir)
-os.environ["CLOUD_FORGE_INPUT_DIR"] = str(input_dir)
-os.environ["CLOUD_FORGE_OUTPUT_DIR"] = str(output_dir)
-os.environ["CLOUD_FORGE_ARTIFACTS_DIR"] = str(artifacts_dir)
-os.environ["CLOUD_FORGE_TMP_DIR"] = str(tmp_dir)
-os.environ["CLOUD_FORGE_SERVER_URL"] = SERVER_URL
-os.environ["CLOUD_FORGE_RUNTIME_PATH"] = str(runtime_path)
-os.environ["CLOUD_FORGE_CONTROL_PATH"] = str(control_path)
-os.environ["CLOUD_FORGE_UPLOADED_ARTIFACTS_PATH"] = str(uploaded_artifacts_path)
-
-existing_pythonpath = os.environ.get("PYTHONPATH", "")
-existing_node_path = os.environ.get("NODE_PATH", "")
-
-python_paths = [str(sdk_dir)]
-node_paths = [str(sdk_dir)]
-
-if existing_pythonpath:
-    python_paths.append(existing_pythonpath)
-
-if existing_node_path:
-    node_paths.append(existing_node_path)
-
-os.environ["PYTHONPATH"] = os.pathsep.join(python_paths)
-os.environ["NODE_PATH"] = os.pathsep.join(node_paths)
-
-attached_files = config.get("attached_files") or []
-for file_info in attached_files:
-    filename = file_info.get("filename")
-    mount_path = file_info.get("mount_path")
-    download_path = file_info.get("download_path")
-
-    if not filename or not mount_path or not download_path:
-        continue
-
-    absolute_url = urljoin(SERVER_URL, download_path)
-    destination = Path(mount_path)
-
-    safe_log(run_id, f"⬇️ Downloading attached file: {filename}")
-    try:
-        download_file(absolute_url, destination)
-    except Exception as exc:
-        safe_log(run_id, f"❌ Failed to download {filename}: {exc}", "error")
-        post_json(
-            "/api/runs/finish",
-            {
-                "run_id": run_id,
-                "status": "failed",
-                "result": f"Failed to download attached file: {filename}",
-            },
-            timeout=10,
-            raise_errors=False,
-        )
-        sys.exit(1)
-
-execution_language = config.get("execution_language", "python")
-execution_code = config.get("execution_code", "")
-entrypoint = config.get("entrypoint")
-
-if not execution_code and not entrypoint:
-    safe_log(run_id, "❌ No execution_code or entrypoint provided", "error")
-    post_json(
-        "/api/runs/finish",
-        {
-            "run_id": run_id,
-            "status": "failed",
-            "result": "No execution_code or entrypoint provided",
-        },
-        timeout=10,
-        raise_errors=False,
-    )
-    sys.exit(1)
-
-if execution_language == "javascript":
-    code_file = code_dir / "main.js"
-else:
-    code_file = code_dir / "main.py"
-
-if execution_code:
-    code_file.write_text(execution_code, encoding="utf-8")
-    safe_log(run_id, f"📄 Execution code saved to {code_file}")
-
-post_json(
-    "/api/runs/start",
-    {
-        "run_id": run_id,
-        "worker_id": WORKER_ID,
-        "worker_name": WORKER_NAME,
-        "worker_host": WORKER_HOST,
-        "capabilities": WORKER_CAPABILITIES,
-    },
-    timeout=10,
-    raise_errors=False,
-)
-
-heartbeat_stop_event = threading.Event()
-cancel_requested_event = threading.Event()
-cancel_reason_holder = {"reason": None}
-
-
-def heartbeat_loop():
-    while not heartbeat_stop_event.is_set():
-        response = post_json(
-            "/api/runs/heartbeat",
-            {
-                "run_id": run_id,
-                "worker_id": WORKER_ID,
-                "worker_name": WORKER_NAME,
-                "worker_host": WORKER_HOST,
-                "capabilities": WORKER_CAPABILITIES,
-            },
-            timeout=5,
-            raise_errors=False,
-        )
-
-        if response is not None:
-            try:
-                heartbeat_payload = response.json()
-                if heartbeat_payload.get("should_stop"):
-                    cancel_requested_event.set()
-                    cancel_reason_holder["reason"] = (
-                        heartbeat_payload.get("stop_reason") or "Stop requested by orchestrator"
-                    )
-                    update_control_file(
-                        control_path,
-                        cancel_requested=True,
-                        cancel_reason=cancel_reason_holder["reason"],
-                    )
-            except Exception:
-                pass
-
-        heartbeat_stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
-
-
-heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
-heartbeat_thread.start()
-
-if entrypoint:
-    command = ["/bin/sh", "-lc", entrypoint]
-elif execution_language == "javascript":
-    command = ["node", str(code_file)]
-else:
-    command = [sys.executable, str(code_file)]
-
-safe_log(run_id, f"⚙️ Starting process: {' '.join(command)}")
-
-process = None
-stdout_thread = None
-stderr_thread = None
-timed_out = False
-cancelled = False
-
-
-def pump_stream(stream, level: str):
-    try:
-        for raw_line in iter(stream.readline, ""):
-            line = raw_line.rstrip("\n")
-            if line:
-                safe_log(run_id, line, level)
-    finally:
-        try:
-            stream.close()
-        except Exception:
-            pass
-
-
-try:
-    process = subprocess.Popen(
-        command,
-        cwd=str(workspace_root),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        env=os.environ.copy(),
-    )
-
-    stdout_thread = threading.Thread(target=pump_stream, args=(process.stdout, "info"), daemon=True)
-    stderr_thread = threading.Thread(target=pump_stream, args=(process.stderr, "error"), daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
-
-    deadline = time.time() + RUN_TIMEOUT_SECONDS
-
-    while True:
-        return_code = process.poll()
-        if return_code is not None:
-            break
-
-        if cancel_requested_event.is_set():
-            cancelled = True
-            terminate_process(process, run_id, cancel_reason_holder["reason"] or "Cancellation requested")
-            break
-
-        if time.time() >= deadline:
-            timed_out = True
-            safe_log(run_id, "⏰ Execution timed out", "error")
-            terminate_process(process, run_id, "Execution timeout")
-            break
-
-        time.sleep(1)
-
-    if process.poll() is None:
-        terminate_process(process, run_id, "Process still running after control loop")
-
-except Exception as exc:
-    safe_log(run_id, f"❌ Error during execution: {exc}", "error")
-    if process:
-        terminate_process(process, run_id, "Unhandled runner exception")
-
-if stdout_thread:
-    stdout_thread.join(timeout=5)
-if stderr_thread:
-    stderr_thread.join(timeout=5)
-
-heartbeat_stop_event.set()
-heartbeat_thread.join(timeout=2)
-
-artifact_upload_summary = upload_artifacts_directory(run_id, artifacts_dir, uploaded_artifacts_path)
-
-exit_code = process.returncode if process is not None else None
-
-if cancelled:
-    final_status = "cancelled"
-    final_result = cancel_reason_holder["reason"] or "Run cancelled by orchestrator"
-elif timed_out:
-    final_status = "failed"
-    final_result = f"Execution timed out after {RUN_TIMEOUT_SECONDS} seconds"
-elif process is None:
-    final_status = "failed"
-    final_result = "Process did not start"
-else:
-    final_status = "finished" if exit_code == 0 else "failed"
-    final_result = f"Process exited with code {exit_code}"
-
-metrics = {
-    "execution_language": execution_language,
-    "timeout_seconds": RUN_TIMEOUT_SECONDS,
-    "exit_code": exit_code,
-    "workspace_root": str(workspace_root),
-    "worker_id": WORKER_ID,
-    "worker_name": WORKER_NAME,
-    "artifact_upload": artifact_upload_summary,
-    "cancelled": cancelled,
-    "sdk_dir": str(sdk_dir),
-}
-
-post_json(
-    "/api/runs/finish",
-    {
-        "run_id": run_id,
-        "status": final_status,
-        "result": final_result,
-        "metrics": metrics,
-    },
-    timeout=15,
-    raise_errors=False,
-)
-
-print(f"🏁 Run {run_id} finished with status: {final_status}")
-
-
-path: /sdk/javascript/cloudforge.js
-----------------------------------------
-const fs = require('fs');
-const fsp = require('fs/promises');
-const path = require('path');
-
-class CloudForgeError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'CloudForgeError';
-  }
-}
-
-class RunCancelledError extends CloudForgeError {
-  constructor(message) {
-    super(message);
-    this.name = 'RunCancelledError';
-  }
-}
-
-function env(name, defaultValue = undefined) {
-  const value = process.env[name];
-  if (value == null) {
-    if (defaultValue !== undefined) return defaultValue;
-    throw new CloudForgeError(`Missing environment variable: ${name}`);
-  }
-  return value;
-}
-
-function runtimePath() {
-  return env('CLOUD_FORGE_RUNTIME_PATH');
-}
-
-function controlPath() {
-  return env('CLOUD_FORGE_CONTROL_PATH');
-}
-
-function uploadedArtifactsPath() {
-  return env('CLOUD_FORGE_UPLOADED_ARTIFACTS_PATH');
-}
-
-function readJsonFile(filePath, fallback) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJsonFile(filePath, payload) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-}
-
-function runtime() {
-  return readJsonFile(runtimePath(), {});
-}
-
-function control() {
-  return readJsonFile(controlPath(), {
-    cancel_requested: false,
-    cancel_reason: null,
-  });
-}
-
-function runId() {
-  return env('CLOUD_FORGE_RUN_ID');
-}
-
-function jobId() {
-  return env('CLOUD_FORGE_JOB_ID');
-}
-
-function serverUrl() {
-  return env('CLOUD_FORGE_SERVER_URL');
-}
-
-function workspaceRoot() {
-  return env('CLOUD_FORGE_WORKSPACE_ROOT');
-}
-
-function codeDir() {
-  return env('CLOUD_FORGE_CODE_DIR');
-}
-
-function inputDir() {
-  return env('CLOUD_FORGE_INPUT_DIR');
-}
-
-function outputDir() {
-  return env('CLOUD_FORGE_OUTPUT_DIR');
-}
-
-function artifactsDir() {
-  return env('CLOUD_FORGE_ARTIFACTS_DIR');
-}
-
-function tmpDir() {
-  return env('CLOUD_FORGE_TMP_DIR');
-}
-
-function inputPath(...parts) {
-  return path.join(inputDir(), ...parts);
-}
-
-function outputPath(...parts) {
-  return path.join(outputDir(), ...parts);
-}
-
-function artifactsPath(...parts) {
-  return path.join(artifactsDir(), ...parts);
-}
-
-function tmpPath(...parts) {
-  return path.join(tmpDir(), ...parts);
-}
-
-function getEnv(name, defaultValue = undefined) {
-  return process.env[name] ?? defaultValue;
-}
-
-async function listInputFiles() {
-  const files = [];
-  const root = inputDir();
-
-  async function walk(currentDir) {
-    let entries = [];
-    try {
-      entries = await fsp.readdir(currentDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const abs = path.join(currentDir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(abs);
-      } else if (entry.isFile()) {
-        files.push(abs);
-      }
-    }
-  }
-
-  await walk(root);
-  return files;
-}
-
-async function log(message, level = 'info') {
-  const response = await fetch(`${serverUrl()}/api/runs/logs`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      run_id: runId(),
-      message: String(message),
-      level,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new CloudForgeError(`Failed to send log: ${response.status}`);
-  }
-}
-
-async function info(message) {
-  return log(message, 'info');
-}
-
-async function warn(message) {
-  return log(message, 'warn');
-}
-
-async function error(message) {
-  return log(message, 'error');
-}
-
-function isCancelRequested() {
-  return Boolean(control().cancel_requested);
-}
-
-function cancelReason() {
-  return control().cancel_reason || null;
-}
-
-function raiseIfCancelRequested() {
-  if (isCancelRequested()) {
-    throw new RunCancelledError(cancelReason() || 'Run cancellation requested');
-  }
-}
-
-function guessMimeType(filename) {
-  const ext = path.extname(filename).toLowerCase();
-
-  switch (ext) {
-    case '.json':
-      return 'application/json';
-    case '.jsonl':
-      return 'application/x-ndjson';
-    case '.txt':
-    case '.md':
-    case '.log':
-    case '.csv':
-      return 'text/plain';
-    case '.html':
-      return 'text/html';
-    case '.js':
-      return 'application/javascript';
-    case '.png':
-      return 'image/png';
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.webp':
-      return 'image/webp';
-    case '.gif':
-      return 'image/gif';
-    case '.pdf':
-      return 'application/pdf';
-    case '.zip':
-      return 'application/zip';
-    case '.tar':
-      return 'application/x-tar';
-    case '.gz':
-      return 'application/gzip';
-    default:
-      return 'application/octet-stream';
-  }
-}
-
-function loadUploadedArtifacts() {
-  const data = readJsonFile(uploadedArtifactsPath(), []);
-  if (!Array.isArray(data)) return [];
-  return data.map(String);
-}
-
-function saveUploadedArtifact(relativePath) {
-  const uploaded = loadUploadedArtifacts();
-  if (!uploaded.includes(relativePath)) {
-    uploaded.push(relativePath);
-    writeJsonFile(uploadedArtifactsPath(), uploaded);
-  }
-}
-
-async function uploadArtifact(filePath, options = {}) {
-  const absolutePath = path.resolve(filePath);
-  const stat = await fsp.stat(absolutePath).catch(() => null);
-
-  if (!stat || !stat.isFile()) {
-    throw new CloudForgeError(`Artifact not found: ${absolutePath}`);
-  }
-
-  let relativePath = options.relativePath;
-  const artifactsRoot = path.resolve(artifactsDir());
-
-  if (!relativePath) {
-    const rel = path.relative(artifactsRoot, absolutePath);
-    if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
-      relativePath = rel.split(path.sep).join('/');
-    } else {
-      relativePath = path.basename(absolutePath);
-    }
-  }
-
-  const mimeType = options.mimeType || guessMimeType(absolutePath);
-  const fileBuffer = await fsp.readFile(absolutePath);
-
-  const form = new FormData();
-  form.append(
-    'file',
-    new Blob([fileBuffer], { type: mimeType }),
-    path.basename(absolutePath),
-  );
-
-  const url = new URL(`${serverUrl()}/artifacts/upload-run`);
-  url.searchParams.set('runId', runId());
-  url.searchParams.set('relativePath', relativePath);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    body: form,
-  });
-
-  if (!response.ok) {
-    throw new CloudForgeError(`Failed to upload artifact: ${response.status}`);
-  }
-
-  const payload = await response.json();
-
-  const rel = path.relative(artifactsRoot, absolutePath);
-  if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
-    saveUploadedArtifact(relativePath);
-  }
-
-  return payload;
-}
-
-async function uploadArtifactsDirectory(directory) {
-  const base = path.resolve(directory);
-  const uploaded = [];
-
-  async function walk(currentDir) {
-    let entries = [];
-    try {
-      entries = await fsp.readdir(currentDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const abs = path.join(currentDir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(abs);
-      } else if (entry.isFile()) {
-        const relativePath = path.relative(base, abs).split(path.sep).join('/');
-        uploaded.push(await uploadArtifact(abs, { relativePath }));
-      }
-    }
-  }
-
-  await walk(base);
-  return uploaded;
-}
-
-module.exports = {
-  CloudForgeError,
-  RunCancelledError,
-  runtime,
-  control,
-  runId,
-  jobId,
-  serverUrl,
-  workspaceRoot,
-  codeDir,
-  inputDir,
-  outputDir,
-  artifactsDir,
-  tmpDir,
-  inputPath,
-  outputPath,
-  artifactsPath,
-  tmpPath,
-  getEnv,
-  listInputFiles,
-  log,
-  info,
-  warn,
-  error,
-  isCancelRequested,
-  cancelReason,
-  raiseIfCancelRequested,
-  uploadArtifact,
-  uploadArtifactsDirectory,
-};
-
-
-path: /sdk/python/cloudforge.py
-----------------------------------------
-import json
-import mimetypes
-import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import requests
-
-
-class CloudForgeError(Exception):
-    pass
-
-
-class RunCancelledError(CloudForgeError):
-    pass
-
-
-def _env(name: str, default: Optional[str] = None) -> str:
-    value = os.getenv(name, default)
-    if value is None:
-        raise CloudForgeError(f"Missing environment variable: {name}")
-    return value
-
-
-def _server_url() -> str:
-    return _env("CLOUD_FORGE_SERVER_URL")
-
-
-def _run_id() -> str:
-    return _env("CLOUD_FORGE_RUN_ID")
-
-
-def _job_id() -> str:
-    return _env("CLOUD_FORGE_JOB_ID")
-
-
-def _control_path() -> Path:
-    return Path(_env("CLOUD_FORGE_CONTROL_PATH"))
-
-
-def _runtime_path() -> Path:
-    return Path(_env("CLOUD_FORGE_RUNTIME_PATH"))
-
-
-def _uploaded_artifacts_path() -> Path:
-    return Path(_env("CLOUD_FORGE_UPLOADED_ARTIFACTS_PATH"))
-
-
-def _workspace_path(name: str) -> Path:
-    return Path(_env(name))
-
-
-def _read_json_file(path: Path, fallback: Any) -> Any:
-    try:
-        if not path.exists():
-            return fallback
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return fallback
-
-
-def _write_json_file(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def runtime() -> Dict[str, Any]:
-    return _read_json_file(_runtime_path(), {})
-
-
-def control() -> Dict[str, Any]:
-    return _read_json_file(
-        _control_path(),
-        {
-            "cancel_requested": False,
-            "cancel_reason": None,
-        },
-    )
-
-
-def run_id() -> str:
-    return _run_id()
-
-
-def job_id() -> str:
-    return _job_id()
-
-
-def server_url() -> str:
-    return _server_url()
-
-
-def workspace_root() -> Path:
-    return _workspace_path("CLOUD_FORGE_WORKSPACE_ROOT")
-
-
-def code_dir() -> Path:
-    return _workspace_path("CLOUD_FORGE_CODE_DIR")
-
-
-def input_dir() -> Path:
-    return _workspace_path("CLOUD_FORGE_INPUT_DIR")
-
-
-def output_dir() -> Path:
-    return _workspace_path("CLOUD_FORGE_OUTPUT_DIR")
-
-
-def artifacts_dir() -> Path:
-    return _workspace_path("CLOUD_FORGE_ARTIFACTS_DIR")
-
-
-def tmp_dir() -> Path:
-    return _workspace_path("CLOUD_FORGE_TMP_DIR")
-
-
-def input_path(*parts: str) -> Path:
-    return input_dir().joinpath(*parts)
-
-
-def output_path(*parts: str) -> Path:
-    return output_dir().joinpath(*parts)
-
-
-def artifacts_path(*parts: str) -> Path:
-    return artifacts_dir().joinpath(*parts)
-
-
-def tmp_path(*parts: str) -> Path:
-    return tmp_dir().joinpath(*parts)
-
-
-def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
-    return os.getenv(name, default)
-
-
-def list_input_files() -> List[Path]:
-    base = input_dir()
-    if not base.exists():
-      return []
-    return [path for path in base.rglob("*") if path.is_file()]
-
-
-def log(message: Any, level: str = "info") -> None:
-    text = str(message)
-    requests.post(
-        f"{server_url()}/api/runs/logs",
-        json={
-            "run_id": run_id(),
-            "message": text,
-            "level": level,
-        },
-        timeout=5,
-    )
-
-
-def info(message: Any) -> None:
-    log(message, "info")
-
-
-def warn(message: Any) -> None:
-    log(message, "warn")
-
-
-def error(message: Any) -> None:
-    log(message, "error")
-
-
-def is_cancel_requested() -> bool:
-    return bool(control().get("cancel_requested"))
-
-
-def cancel_reason() -> Optional[str]:
-    value = control().get("cancel_reason")
-    return str(value) if value is not None else None
-
-
-def raise_if_cancel_requested() -> None:
-    if is_cancel_requested():
-        raise RunCancelledError(cancel_reason() or "Run cancellation requested")
-
-
-def _load_uploaded_artifacts() -> List[str]:
-    data = _read_json_file(_uploaded_artifacts_path(), [])
-    if not isinstance(data, list):
-        return []
-    return [str(item) for item in data]
-
-
-def _save_uploaded_artifact(relative_path: str) -> None:
-    uploaded = _load_uploaded_artifacts()
-    if relative_path not in uploaded:
-        uploaded.append(relative_path)
-        _write_json_file(_uploaded_artifacts_path(), uploaded)
-
-
-def upload_artifact(
-    path: str | Path,
-    relative_path: Optional[str] = None,
-    mime_type: Optional[str] = None,
-) -> Dict[str, Any]:
-    file_path = Path(path)
-    if not file_path.exists() or not file_path.is_file():
-        raise CloudForgeError(f"Artifact not found: {file_path}")
-
-    resolved_relative_path = relative_path
-    artifacts_root = artifacts_dir().resolve()
-
-    if resolved_relative_path is None:
-        try:
-            resolved_relative_path = file_path.resolve().relative_to(artifacts_root).as_posix()
-        except Exception:
-            resolved_relative_path = file_path.name
-
-    resolved_mime_type = mime_type or mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-
-    with open(file_path, "rb") as handle:
-        response = requests.post(
-            f"{server_url()}/artifacts/upload-run",
-            params={
-                "runId": run_id(),
-                "relativePath": resolved_relative_path,
-            },
-            files={
-                "file": (file_path.name, handle, resolved_mime_type),
-            },
-            timeout=120,
-        )
-        response.raise_for_status()
-        payload = response.json()
-
-    try:
-        file_path.resolve().relative_to(artifacts_root)
-        _save_uploaded_artifact(resolved_relative_path)
-    except Exception:
-        pass
-
-    return payload
-
-
-def upload_artifacts_directory(directory: str | Path) -> List[Dict[str, Any]]:
-    base = Path(directory)
-    if not base.exists() or not base.is_dir():
-        return []
-
-    uploaded: List[Dict[str, Any]] = []
-
-    for file_path in sorted(base.rglob("*")):
-        if not file_path.is_file():
-            continue
-
-        relative_path = file_path.relative_to(base).as_posix()
-        uploaded.append(upload_artifact(file_path, relative_path=relative_path))
-
-    return uploaded
-
-
-path: /src/catalog/presets.ts
+path: /catalog/presets.ts
 ----------------------------------------
 import { AttachedFile, Container, ExecutionLanguage } from '../models/job';
 
@@ -2604,7 +557,7 @@ info("connect to vLLM runtime and execute prompts here")
 ];
 
 
-path: /src/db/index.ts
+path: /db/index.ts
 ----------------------------------------
 import sqlite3 from 'sqlite3';
 import { config } from '../utils/config';
@@ -2729,7 +682,7 @@ export const initDb = async (): Promise<void> => {
 export default db;
 
 
-path: /src/models/index.ts
+path: /models/index.ts
 ----------------------------------------
 import db from '../db/index';
 import {
@@ -3356,7 +1309,7 @@ export class RunArtifactModel {
 }
 
 
-path: /src/models/job.ts
+path: /models/job.ts
 ----------------------------------------
 export type ExecutionLanguage = 'python' | 'javascript';
 
@@ -3497,7 +1450,7 @@ export interface RunArtifact {
 }
 
 
-path: /src/routes/artifacts.ts
+path: /routes/artifacts.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ArtifactService } from '../services/artifact.service';
@@ -3636,10 +1589,34 @@ export default async function artifactsRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/routes/catalog.ts
+path: /routes/catalog.ts
 ----------------------------------------
 import { FastifyInstance } from 'fastify';
 import { containerPresets, jobTemplates } from '../catalog/presets';
+
+const mapContainerPreset = (preset: (typeof containerPresets)[number]) => ({
+  id: preset.id,
+  name: preset.name,
+  description: preset.description,
+  image: preset.container.image,
+  tags: [preset.category, ...preset.recommended_for],
+  resources: preset.container.resources ?? {},
+  env: preset.container.env ?? {},
+});
+
+const mapJobTemplate = (template: (typeof jobTemplates)[number]) => ({
+  id: template.id,
+  name: template.name,
+  description: template.description,
+  tags: template.tags,
+  preset: {
+    containers: template.draft.containers,
+    environments: template.draft.environments,
+    execution_code: template.draft.execution_code,
+    execution_language: template.draft.execution_language,
+    entrypoint: template.draft.entrypoint ?? null,
+  },
+});
 
 export default async function catalogRoutes(app: FastifyInstance) {
   app.get(
@@ -3650,9 +1627,10 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async () => {
+      const items = containerPresets.map(mapContainerPreset);
       return {
-        items: containerPresets,
-        total: containerPresets.length,
+        items,
+        total: items.length,
       };
     },
   );
@@ -3665,9 +1643,10 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async () => {
+      const items = jobTemplates.map(mapJobTemplate);
       return {
-        items: jobTemplates,
-        total: jobTemplates.length,
+        items,
+        total: items.length,
       };
     },
   );
@@ -3687,19 +1666,21 @@ export default async function catalogRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const template = jobTemplates.find((item) => item.id === (req.params as { id: string }).id);
+      const template = jobTemplates.find(
+        (item) => item.id === (req.params as { id: string }).id,
+      );
 
       if (!template) {
         return reply.code(404).send({ error: 'Job template not found' });
       }
 
-      return template;
+      return mapJobTemplate(template);
     },
   );
 }
 
 
-path: /src/routes/dashboard.ts
+path: /routes/dashboard.ts
 ----------------------------------------
 import { FastifyInstance } from 'fastify';
 import { DashboardService } from '../services/dashboard.service';
@@ -3755,7 +1736,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/routes/health.ts
+path: /routes/health.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import db from '../db/index';
@@ -3814,7 +1795,7 @@ export default async function healthRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/routes/jobs.ts
+path: /routes/jobs.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
@@ -3822,13 +1803,13 @@ import { Container, RunStatus } from '../models/job';
 import { config } from '../utils/config';
 import {
   JobValidationError,
-  validateCreateJobPayload,
+  assertValidCreateJobPayload,
 } from '../utils/job-validation';
 
 interface CreateJobBody {
   title: string;
-  description?: string;
-  owner_id?: string;
+  description?: string | null;
+  owner_id?: string | null;
   containers: Container[];
   environments?: Record<string, string>;
   attached_files?: Array<{
@@ -3840,7 +1821,15 @@ interface CreateJobBody {
   }>;
   execution_code: string;
   execution_language?: 'python' | 'javascript';
-  entrypoint?: string;
+  entrypoint?: string | null;
+}
+
+type UpdateJobBody = Partial<CreateJobBody>;
+
+interface CreateShareTokenBody {
+  expires_in_seconds?: number;
+  expires_at?: string | null;
+  max_claims?: number;
 }
 
 interface ListJobsQuerystring {
@@ -3850,15 +1839,24 @@ interface ListJobsQuerystring {
   offset?: number;
 }
 
-interface CreateShareTokenBody {
-  expires_in_seconds?: number;
-  max_claims?: number;
-}
-
 const getBaseUrl = (req: FastifyRequest): string => {
   if (config.publicBaseUrl) return config.publicBaseUrl;
   const host = req.headers.host || `localhost:${config.port}`;
   return `${req.protocol}://${host}`;
+};
+
+const sendRouteError = (
+  req: FastifyRequest,
+  reply: FastifyReply,
+  err: unknown,
+  route: string,
+  fallbackMessage: string,
+) => {
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const statusCode = /not found/i.test(message) ? 404 : 400;
+
+  req.log.error({ err }, `[${route}] failed`);
+  return reply.code(statusCode).send({ error: message });
 };
 
 export default async function jobsRoutes(app: FastifyInstance) {
@@ -3874,13 +1872,32 @@ export default async function jobsRoutes(app: FastifyInstance) {
       },
     },
     async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
-      const result = validateCreateJobPayload(req.body);
+      try {
+        const normalized = assertValidCreateJobPayload(req.body);
 
-      if (!result.valid) {
-        return reply.code(422).send(result);
+        return reply.code(200).send({
+          valid: true,
+          errors: [],
+          warnings: [],
+          normalized,
+        });
+      } catch (err) {
+        if (err instanceof JobValidationError) {
+          return reply.code(422).send({
+            valid: false,
+            errors: err.details,
+            warnings: [],
+          });
+        }
+
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/validate',
+          'Failed to validate job payload',
+        );
       }
-
-      return reply.send(result);
     },
   );
 
@@ -3894,8 +1911,8 @@ export default async function jobsRoutes(app: FastifyInstance) {
           required: ['title', 'containers', 'execution_code'],
           properties: {
             title: { type: 'string' },
-            description: { type: 'string' },
-            owner_id: { type: 'string' },
+            description: { type: 'string', nullable: true },
+            owner_id: { type: 'string', nullable: true },
             containers: {
               type: 'array',
               items: { type: 'object' },
@@ -3906,23 +1923,35 @@ export default async function jobsRoutes(app: FastifyInstance) {
             },
             attached_files: {
               type: 'array',
-              items: { type: 'object' },
+              items: {
+                type: 'object',
+                required: ['id', 'filename', 'size_bytes', 'storage_key', 'mime_type'],
+                properties: {
+                  id: { type: 'string' },
+                  filename: { type: 'string' },
+                  size_bytes: { type: 'integer' },
+                  storage_key: { type: 'string' },
+                  mime_type: { type: 'string' },
+                },
+              },
             },
             execution_code: { type: 'string' },
             execution_language: {
               type: 'string',
               enum: ['python', 'javascript'],
             },
-            entrypoint: { type: 'string' },
+            entrypoint: { type: 'string', nullable: true },
           },
         },
       },
     },
     async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
       try {
-        const { id, normalized } = await JobService.createJob(req.body);
+        const normalized = assertValidCreateJobPayload(req.body);
+        const created = await JobService.createJob(normalized);
+
         return reply.code(201).send({
-          job_id: id,
+          job_id: created.id,
           normalized,
         });
       } catch (err) {
@@ -3934,9 +1963,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
           });
         }
 
-        const message = err instanceof Error ? err.message : 'Failed to create job';
-        req.log.error({ err }, '[POST /jobs] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(req, reply, err, 'POST /jobs', 'Failed to create job');
       }
     },
   );
@@ -3961,12 +1988,13 @@ export default async function jobsRoutes(app: FastifyInstance) {
       },
     },
     async (req: FastifyRequest<{ Querystring: ListJobsQuerystring }>) => {
-      const limit = req.query.limit ? Number(req.query.limit) : 20;
-      const offset = req.query.offset ? Number(req.query.offset) : 0;
+      const limit = req.query.limit ?? 20;
+      const offset = req.query.offset ?? 0;
+
       return JobService.listJobs({
         ...req.query,
-        limit,
-        offset,
+        limit: Number(limit),
+        offset: Number(offset),
       });
     },
   );
@@ -3992,7 +2020,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: 'Job not found' });
       }
 
-      return result;
+      return reply.send(result);
     },
   );
 
@@ -4024,7 +2052,17 @@ export default async function jobsRoutes(app: FastifyInstance) {
             },
             attached_files: {
               type: 'array',
-              items: { type: 'object' },
+              items: {
+                type: 'object',
+                required: ['id', 'filename', 'size_bytes', 'storage_key', 'mime_type'],
+                properties: {
+                  id: { type: 'string' },
+                  filename: { type: 'string' },
+                  size_bytes: { type: 'integer' },
+                  storage_key: { type: 'string' },
+                  mime_type: { type: 'string' },
+                },
+              },
             },
             execution_code: { type: 'string' },
             execution_language: {
@@ -4037,7 +2075,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
       },
     },
     async (
-      req: FastifyRequest<{ Params: { id: string }; Body: CreateJobBody }>,
+      req: FastifyRequest<{ Params: { id: string }; Body: UpdateJobBody }>,
       reply: FastifyReply,
     ) => {
       try {
@@ -4052,9 +2090,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
           });
         }
 
-        const message = err instanceof Error ? err.message : 'Failed to update job';
-        req.log.error({ err }, '[PATCH /jobs/:id] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(req, reply, err, 'PATCH /jobs/:id', 'Failed to update job');
       }
     },
   );
@@ -4078,9 +2114,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
         await JobService.deleteJob(req.params.id);
         return reply.code(204).send();
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to delete job';
-        req.log.error({ err }, '[DELETE /jobs/:id] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(req, reply, err, 'DELETE /jobs/:id', 'Failed to delete job');
       }
     },
   );
@@ -4104,9 +2138,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
         const result = await JobService.cloneJob(req.params.id);
         return reply.code(201).send(result);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to clone job';
-        req.log.error({ err }, '[POST /jobs/:id/clone] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(req, reply, err, 'POST /jobs/:id/clone', 'Failed to clone job');
       }
     },
   );
@@ -4140,14 +2172,18 @@ export default async function jobsRoutes(app: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const limit = req.query.limit ? Number(req.query.limit) : 20;
-        const offset = req.query.offset ? Number(req.query.offset) : 0;
-        const result = await JobService.listJobRuns(req.params.id, limit, offset);
-        return result;
+        const limit = req.query.limit ?? 20;
+        const offset = req.query.offset ?? 0;
+
+        const result = await JobService.listJobRuns(
+          req.params.id,
+          Number(limit),
+          Number(offset),
+        );
+
+        return reply.send(result);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to list job runs';
-        req.log.error({ err }, '[GET /jobs/:id/runs] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(req, reply, err, 'GET /jobs/:id/runs', 'Failed to list job runs');
       }
     },
   );
@@ -4168,6 +2204,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
           type: 'object',
           properties: {
             expires_in_seconds: { type: 'integer', minimum: 1 },
+            expires_at: { type: 'string', format: 'date-time', nullable: true },
             max_claims: { type: 'integer', minimum: 1 },
           },
         },
@@ -4185,6 +2222,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
           req.params.id,
           {
             expiresInSeconds: req.body?.expires_in_seconds,
+            expiresAt: req.body?.expires_at ?? null,
             maxClaims: req.body?.max_claims,
           },
           getBaseUrl(req),
@@ -4192,9 +2230,13 @@ export default async function jobsRoutes(app: FastifyInstance) {
 
         return reply.code(201).send(result);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to create share token';
-        req.log.error({ err }, '[POST /jobs/:id/share-tokens] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/share-tokens',
+          'Failed to create share token',
+        );
       }
     },
   );
@@ -4216,18 +2258,22 @@ export default async function jobsRoutes(app: FastifyInstance) {
     async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
         const result = await JobService.listJobShareTokens(req.params.id);
-        return result;
+        return reply.send(result);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to list share tokens';
-        req.log.error({ err }, '[GET /jobs/:id/share-tokens] failed');
-        return reply.code(400).send({ error: message });
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/share-tokens',
+          'Failed to list share tokens',
+        );
       }
     },
   );
 }
 
 
-path: /src/routes/tokens.ts
+path: /routes/tokens.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
@@ -4293,7 +2339,7 @@ export default async function tokensRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/routes/worker.ts
+path: /routes/worker.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
@@ -4593,7 +2639,7 @@ export default async function workerRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/routes/workers.ts
+path: /routes/workers.ts
 ----------------------------------------
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
@@ -4638,7 +2684,7 @@ export default async function workersRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/routes/ws.ts
+path: /routes/ws.ts
 ----------------------------------------
 import { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
@@ -4704,9 +2750,10 @@ export default async function wsRoutes(app: FastifyInstance) {
 }
 
 
-path: /src/server.ts
+path: /server.ts
 ----------------------------------------
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
@@ -4784,6 +2831,12 @@ const start = async () => {
       );
     }
 
+    await app.register(cors, {
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    });
+
     await app.register(fastifyMultipart, {
       limits: {
         fileSize: 500 * 1024 * 1024,
@@ -4837,7 +2890,7 @@ const start = async () => {
 start();
 
 
-path: /src/services/artifact.service.ts
+path: /services/artifact.service.ts
 ----------------------------------------
 import {
   CreateBucketCommand,
@@ -4989,11 +3042,10 @@ export class ArtifactService {
 }
 
 
-path: /src/services/dashboard.service.ts
+path: /services/dashboard.service.ts
 ----------------------------------------
 import db from '../db/index';
-import { JobModel, RunModel, WorkerModel } from '../models';
-import { JobListItem, Run, Worker } from '../models/job';
+import { Run, RunConfigSnapshot } from '../models/job';
 import { JobService } from './job.service';
 
 const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
@@ -5012,6 +3064,34 @@ const getAsync = <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
     });
   });
 
+const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
+  if (!value) return fallback;
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const defaultSnapshot = (jobId: string): RunConfigSnapshot => ({
+  job_id: jobId,
+  containers: [],
+  environments: {},
+  attached_files: [],
+  execution_code: '',
+  execution_language: 'python',
+  entrypoint: null,
+  workspace: {
+    root: '/workspace',
+    code_dir: '/workspace/code',
+    input_dir: '/workspace/input',
+    output_dir: '/workspace/output',
+    artifacts_dir: '/workspace/artifacts',
+    tmp_dir: '/workspace/tmp',
+  },
+});
+
 export class DashboardService {
   static async getSummary() {
     const stats = await getAsync<any>(`
@@ -5027,23 +3107,24 @@ export class DashboardService {
     `);
 
     const workers = await JobService.listWorkers();
-    const active_workers = workers.filter((w) => w.status !== 'offline').length;
-    const offline_workers = workers.filter((w) => w.status === 'offline').length;
 
     return {
-      total_jobs: stats.total_jobs,
-      total_runs: stats.total_runs,
-      active_runs: stats.created_runs + stats.running_runs,
-      finished_runs: stats.finished_runs,
-      failed_runs: stats.failed_runs,
-      cancelled_runs: stats.cancelled_runs,
-      lost_runs: stats.lost_runs,
-      active_workers,
-      offline_workers,
+      jobs_total: stats?.total_jobs ?? 0,
+      runs_total: stats?.total_runs ?? 0,
+      runs_by_status: {
+        created: stats?.created_runs ?? 0,
+        running: stats?.running_runs ?? 0,
+        finished: stats?.finished_runs ?? 0,
+        failed: stats?.failed_runs ?? 0,
+        cancelled: stats?.cancelled_runs ?? 0,
+        lost: stats?.lost_runs ?? 0,
+      },
+      workers_online: workers.filter((worker) => worker.status !== 'offline').length,
+      workers_total: workers.length,
     };
   }
 
-  static async getActiveRuns() {
+  static async getActiveRuns(): Promise<Run[]> {
     const rows = await allAsync<any>(`
       SELECT
         r.*,
@@ -5054,23 +3135,40 @@ export class DashboardService {
       ORDER BY datetime(r.created_at) DESC
     `);
 
-    return rows;
+    return rows.map((row) => ({
+      id: row.id,
+      job_id: row.job_id,
+      share_token_id: row.share_token_id,
+      worker_id: row.worker_id ?? null,
+      worker_name: row.worker_name ?? null,
+      status: row.status,
+      result: row.result ?? null,
+      metrics: parseJson(row.metrics, null),
+      config_snapshot: parseJson(row.config_snapshot, defaultSnapshot(row.job_id)),
+      started_at: row.started_at ?? null,
+      finished_at: row.finished_at ?? null,
+      last_heartbeat_at: row.last_heartbeat_at ?? null,
+      cancel_requested_at: row.cancel_requested_at ?? null,
+      cancel_reason: row.cancel_reason ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      job_title: row.job_title,
+    }));
   }
 
   static async getActiveWorkers() {
     const workers = await JobService.listWorkers();
-    return workers.filter((w) => w.status !== 'offline');
+    return workers.filter((worker) => worker.status !== 'offline');
   }
 
   static async getRecentEvents() {
-    // Recent finished/failed/cancelled runs as events
     const rows = await allAsync<any>(`
       SELECT
         r.id as run_id,
         r.job_id,
         j.title as job_title,
         r.status,
-        r.updated_at as timestamp
+        r.updated_at as created_at
       FROM runs r
       JOIN jobs j ON r.job_id = j.id
       WHERE r.status NOT IN ('created', 'running')
@@ -5078,12 +3176,19 @@ export class DashboardService {
       LIMIT 20
     `);
 
-    return rows;
+    return rows.map((row) => ({
+      id: row.run_id,
+      type: 'run_status',
+      status: row.status,
+      message: `${row.job_title} · ${row.status}`,
+      details: `Run ${row.run_id}`,
+      created_at: row.created_at,
+    }));
   }
 }
 
 
-path: /src/services/job.service.ts
+path: /services/job.service.ts
 ----------------------------------------
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -5207,7 +3312,12 @@ export class JobService {
 
     await JobModel.create(this.toCreateJobData(normalized, id));
 
-    return { id, normalized };
+    const created = await JobModel.findById(id);
+    if (!created) {
+      throw new Error('Failed to load created job');
+    }
+
+    return created;
   }
 
   static async listJobs(filters: {
@@ -5239,20 +3349,26 @@ export class JobService {
     };
   }
 
-  static async updateJob(jobId: string, payload: any) {
-    const job = await JobModel.findById(jobId);
-    if (!job) throw new Error('Job not found');
+  static async updateJob(jobId: string, payload: Partial<Job>) {
+    const existing = await JobModel.findById(jobId);
+    if (!existing) throw new Error('Job not found');
 
-    // For PATCH, we merge with existing job data to validate
     const merged = {
-      ...this.toCreateJobData(assertValidCreateJobPayload(job), jobId),
+      ...existing,
       ...payload,
+      id: jobId,
     };
 
     const normalized = assertValidCreateJobPayload(merged);
+
     await JobModel.update(jobId, normalized);
 
-    return { id: jobId, normalized };
+    const updated = await JobModel.findById(jobId);
+    if (!updated) {
+      throw new Error('Failed to load updated job');
+    }
+
+    return updated;
   }
 
   static async deleteJob(jobId: string) {
@@ -5281,19 +3397,19 @@ export class JobService {
 
     await JobModel.create(clonedData);
 
-    return { id: newId, title: clonedData.title };
+    const cloned = await JobModel.findById(newId);
+    if (!cloned) {
+      throw new Error('Failed to load cloned job');
+    }
+
+    return cloned;
   }
 
   static async listJobRuns(jobId: string, limit = 10, offset = 0) {
     const job = await JobModel.findById(jobId);
     if (!job) throw new Error('Job not found');
 
-    const [runs, total] = await Promise.all([
-      RunModel.listByJobIdPaginated(jobId, limit, offset),
-      RunModel.countByJobId(jobId),
-    ]);
-
-    return { runs, total, limit, offset };
+    return RunModel.listByJobIdPaginated(jobId, limit, offset);
   }
 
   static async listJobShareTokens(jobId: string) {
@@ -5301,7 +3417,7 @@ export class JobService {
     if (!job) throw new Error('Job not found');
 
     const tokens = await ShareTokenModel.listByJobId(jobId);
-    return tokens.map((t) => this.normalizeShareToken(t));
+    return tokens.map((token) => this.normalizeShareToken(token));
   }
 
   static async getShareToken(tokenId: string, baseUrl: string) {
@@ -5311,26 +3427,24 @@ export class JobService {
     const job = await JobModel.findById(token.job_id);
     if (!job) return null;
 
+    const claimUrl = `${baseUrl}/api/run-config?token=${token.token}`;
+    const dockerCommand = buildDockerCommand(job, token.token, baseUrl);
+
     return {
       ...this.normalizeShareToken(token),
-      job_config_url: `${baseUrl}/api/run-config?token=${token.token}`,
-      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
-      docker_command: buildDockerCommand(job, token.token, baseUrl),
+      base_url: baseUrl,
+      claim_url: claimUrl,
+      share_url: claimUrl,
+      docker_command: dockerCommand,
+      worker_command: dockerCommand,
     };
   }
 
   private static normalizeShareToken(token: ShareToken) {
     return {
-      id: token.id,
-      token: token.token,
-      revoked: token.revoked,
-      expires_at: token.expires_at,
-      max_claims: token.max_claims,
-      claim_count: token.claim_count,
+      ...token,
       remaining_claims:
         token.max_claims != null ? Math.max(0, token.max_claims - token.claim_count) : null,
-      last_claimed_at: token.last_claimed_at,
-      created_at: token.created_at,
     };
   }
 
@@ -5343,8 +3457,12 @@ export class JobService {
 
   static async createShareToken(
     jobId: string,
-    options: { expiresInSeconds?: number; maxClaims?: number },
-    baseUrl: string,
+    options: {
+      expiresInSeconds?: number;
+      expiresAt?: string | null;
+      maxClaims?: number;
+    },
+    _baseUrl: string,
   ) {
     const job = await JobModel.findById(jobId);
     if (!job) {
@@ -5353,10 +3471,17 @@ export class JobService {
 
     const shareTokenId = makeId('st');
     const token = `cf_${uuidv4().replace(/-/g, '')}`;
-    const expiresAt =
-      options.expiresInSeconds && options.expiresInSeconds > 0
-        ? new Date(Date.now() + options.expiresInSeconds * 1000).toISOString()
-        : null;
+
+    let expiresAt: string | null = null;
+
+    if (options.expiresAt) {
+      const parsed = new Date(options.expiresAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiresAt = parsed.toISOString();
+      }
+    } else if (options.expiresInSeconds && options.expiresInSeconds > 0) {
+      expiresAt = new Date(Date.now() + options.expiresInSeconds * 1000).toISOString();
+    }
 
     await ShareTokenModel.create({
       id: shareTokenId,
@@ -5371,12 +3496,7 @@ export class JobService {
       throw new Error('Failed to create share token');
     }
 
-    return {
-      share_token: this.normalizeShareToken(created),
-      job_config_url: `${baseUrl}/api/run-config?token=${token}`,
-      docker_image: `${config.publishedWorkerImage}:${config.publishedWorkerTag}`,
-      docker_command: buildDockerCommand(job, token, baseUrl),
-    };
+    return this.normalizeShareToken(created);
   }
 
   static async claimRunByToken(token: string) {
@@ -5665,9 +3785,10 @@ export class JobService {
     ]);
 
     return {
-      run,
+      ...run,
+      worker_id: run.worker_id ?? worker?.id ?? null,
+      worker_name: run.worker_name ?? worker?.name ?? null,
       logs,
-      worker: worker ? normalizeWorkerStatus(worker) : null,
       artifacts: artifacts.map((artifact) => ({
         ...artifact,
         download_path: `/artifacts/download?key=${encodeURIComponent(artifact.storage_key)}`,
@@ -5685,10 +3806,14 @@ export class JobService {
     if (!worker) return null;
     return normalizeWorkerStatus(worker);
   }
+
+  static async getJob(jobId: string) {
+    return JobModel.findById(jobId);
+  }
 }
 
 
-path: /src/services/queue.service.ts
+path: /services/queue.service.ts
 ----------------------------------------
 import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
@@ -5744,7 +3869,7 @@ export class QueueService {
 }
 
 
-path: /src/services/run-watchdog.service.ts
+path: /services/run-watchdog.service.ts
 ----------------------------------------
 import { JobService } from './job.service';
 
@@ -5755,7 +3880,7 @@ export class RunWatchdogService {
 }
 
 
-path: /src/utils/config.ts
+path: /utils/config.ts
 ----------------------------------------
 import dotenv from 'dotenv';
 
@@ -5787,12 +3912,13 @@ export const config = {
     process.env.RUN_WATCHDOG_INTERVAL_SECONDS || '10',
     10,
   ),
-  publishedWorkerImage: process.env.PUBLISHED_WORKER_IMAGE || 'cloudforge/worker',
+  publishedWorkerImage:
+    process.env.PUBLISHED_WORKER_IMAGE || 'xproger/cloud-forge-worker',
   publishedWorkerTag: process.env.PUBLISHED_WORKER_TAG || '0.1.0',
 };
 
 
-path: /src/utils/job-validation.ts
+path: /utils/job-validation.ts
 ----------------------------------------
 import { AttachedFile, Container, ExecutionLanguage } from '../models/job';
 
@@ -5837,6 +3963,16 @@ const asString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length ? trimmed : null;
+};
+
+const isKnownJavascriptBootstrapImage = (image: string): boolean => {
+  const normalized = image.toLowerCase();
+
+  return (
+    normalized.includes('node') ||
+    normalized.includes('cloud-forge-worker') ||
+    normalized.includes('cloudforge/worker')
+  );
 };
 
 const normalizeContainer = (
@@ -5963,7 +4099,14 @@ const normalizeAttachedFile = (
     errors.push(`attached_files[${index}].size_bytes must be a non-negative number`);
   }
 
-  if (!id || !filename || !storageKey || !mimeType || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
+  if (
+    !id ||
+    !filename ||
+    !storageKey ||
+    !mimeType ||
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes < 0
+  ) {
     return null;
   }
 
@@ -5993,7 +4136,8 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
   const ownerId = payload.owner_id == null ? null : asString(payload.owner_id);
   const executionCode = asString(payload.execution_code);
   const entrypoint = payload.entrypoint == null ? null : asString(payload.entrypoint);
-  const executionLanguageRaw = payload.execution_language == null ? 'python' : String(payload.execution_language).trim();
+  const executionLanguageRaw =
+    payload.execution_language == null ? 'python' : String(payload.execution_language).trim();
   const executionLanguage = executionLanguageRaw as ExecutionLanguage;
 
   if (!title) {
@@ -6102,7 +4246,11 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
     attachedFileNames.add(file.filename);
   }
 
-  if (containers.length > 0 && bootstrapContainers.length === 1 && containers[0].name !== 'bootstrap') {
+  if (
+    containers.length > 0 &&
+    bootstrapContainers.length === 1 &&
+    containers[0].name !== 'bootstrap'
+  ) {
     warnings.push('bootstrap container was moved to the first position');
   }
 
@@ -6112,8 +4260,10 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
 
   if (executionLanguage === 'javascript' && containers.length > 0) {
     const bootstrap = containers.find((container) => container.name === 'bootstrap');
-    if (bootstrap && !bootstrap.image.toLowerCase().includes('node')) {
-      warnings.push('javascript job usually requires a Node.js-ready bootstrap image');
+    if (bootstrap && !isKnownJavascriptBootstrapImage(bootstrap.image)) {
+      warnings.push(
+        'javascript job usually requires a Node.js-ready bootstrap image or the published Cloud Forge worker image',
+      );
     }
   }
 
@@ -6163,7 +4313,7 @@ export const assertValidCreateJobPayload = (payload: unknown): CreateJobPayload 
 };
 
 
-path: /src/utils/logger.ts
+path: /utils/logger.ts
 ----------------------------------------
 import pino from 'pino';
 
@@ -6177,296 +4327,9 @@ export const logger = pino({
 });
 
 
-path: /tests/e2e/smoke-flow.test.ts
-----------------------------------------
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Fastify, { FastifyInstance } from 'fastify';
-import fastifyMultipart from '@fastify/multipart';
-import { initDb } from '../../src/db/index';
-import db from '../../src/db/index';
-import jobsRoutes from '../../src/routes/jobs';
-import workerRoutes from '../../src/routes/worker';
-import artifactsRoutes from '../../src/routes/artifacts';
-
-// Mock ArtifactService to avoid real MinIO calls in this e2e test
-vi.mock('../../src/services/artifact.service', () => ({
-  ArtifactService: {
-    ensureBucket: vi.fn().mockResolvedValue(undefined),
-    uploadRunArtifact: vi.fn().mockResolvedValue({
-      id: 'mock_artifact_id',
-      filename: 'output.txt',
-      relative_path: 'output.txt',
-      size_bytes: 14,
-      storage_key: 'runs/run_id/artifacts/mock_artifact_id/output.txt',
-    }),
-    getDownloadUrl: vi.fn().mockResolvedValue('http://mock-minio/download'),
-    uploadJobFile: vi.fn(),
-  },
-}));
-
-describe('Smoke E2E: Full Job & Run Lifecycle', () => {
-  let app: FastifyInstance;
-
-  beforeEach(async () => {
-    app = Fastify({ logger: false });
-    await initDb();
-
-    await app.register(fastifyMultipart);
-    await app.register(jobsRoutes);
-    await app.register(workerRoutes);
-    await app.register(artifactsRoutes);
-  });
-
-  afterEach(async () => {
-    await new Promise<void>((resolve) => {
-      db.serialize(() => {
-        db.run('DELETE FROM jobs', () => {});
-        db.run('DELETE FROM share_tokens', () => {});
-        db.run('DELETE FROM runs', () => {});
-        db.run('DELETE FROM logs', () => {});
-        db.run('DELETE FROM run_artifacts', () => {});
-        db.run('DELETE FROM workers', () => resolve());
-      });
-    });
-  });
-
-  it('should complete the full happy path flow', async () => {
-    const validateRes = await app.inject({
-      method: 'POST',
-      url: '/jobs/validate',
-      payload: {
-        title: 'Smoke Test Job',
-        containers: [
-          {
-            name: 'bootstrap',
-            image: 'node:20-slim',
-            is_parent: true,
-          },
-        ],
-        execution_code: 'console.log("hello world")',
-        execution_language: 'javascript',
-      },
-    });
-
-    expect(validateRes.statusCode).toBe(200);
-    expect(validateRes.json().valid).toBe(true);
-
-    const createJobRes = await app.inject({
-      method: 'POST',
-      url: '/jobs',
-      payload: {
-        title: 'Smoke Test Job',
-        containers: [
-          {
-            name: 'bootstrap',
-            image: 'node:20-slim',
-            is_parent: true,
-          },
-        ],
-        execution_code: 'console.log("hello world")',
-        execution_language: 'javascript',
-      },
-    });
-
-    expect(createJobRes.statusCode).toBe(201);
-    const { job_id } = createJobRes.json() as { job_id: string };
-
-    const patchRes = await app.inject({
-      method: 'PATCH',
-      url: `/jobs/${job_id}`,
-      payload: {
-        description: 'Updated description',
-      },
-    });
-
-    expect(patchRes.statusCode).toBe(200);
-
-    const cloneRes = await app.inject({
-      method: 'POST',
-      url: `/jobs/${job_id}/clone`,
-    });
-
-    expect(cloneRes.statusCode).toBe(201);
-    const { id: cloned_job_id } = cloneRes.json() as { id: string };
-    expect(cloned_job_id).not.toBe(job_id);
-
-    const createTokenRes = await app.inject({
-      method: 'POST',
-      url: `/jobs/${job_id}/share-tokens`,
-      payload: {
-        expires_in_seconds: 3600,
-        max_claims: 1,
-      },
-    });
-
-    expect(createTokenRes.statusCode).toBe(201);
-
-    const {
-      share_token,
-      docker_image,
-      docker_command,
-    } = createTokenRes.json() as {
-      share_token: { token: string };
-      docker_image: string;
-      docker_command: string;
-    };
-
-    const token = share_token.token;
-
-    expect(docker_image).toBe('cloudforge/worker:0.1.0');
-    expect(docker_command).toContain('cloudforge/worker:0.1.0');
-    expect(docker_command).toContain(token);
-
-    const claimRes = await app.inject({
-      method: 'GET',
-      url: '/api/run-config',
-      query: { token },
-    });
-
-    expect(claimRes.statusCode).toBe(200);
-    const { run_id } = claimRes.json() as { run_id: string };
-
-    const startRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/start',
-      payload: {
-        run_id,
-        worker_id: 'smoke_worker_1',
-        worker_name: 'Smoke Worker',
-      },
-    });
-
-    expect(startRes.statusCode).toBe(200);
-
-    const logRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/logs',
-      payload: {
-        run_id,
-        message: 'Job started',
-        level: 'info',
-      },
-    });
-
-    expect(logRes.statusCode).toBe(200);
-
-    const hbRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/heartbeat',
-      payload: {
-        run_id,
-        worker_id: 'smoke_worker_1',
-        worker_name: 'Smoke Worker',
-      },
-    });
-
-    expect(hbRes.statusCode).toBe(200);
-    expect(hbRes.json().should_stop).toBe(false);
-
-    const artifactRes = await app.inject({
-      method: 'POST',
-      url: '/artifacts/upload-run',
-      query: { runId: run_id, relativePath: 'output.txt' },
-      headers: { 'content-type': 'multipart/form-data; boundary=bound' },
-      payload:
-        '--bound\r\n' +
-        'Content-Disposition: form-data; name="file"; filename="output.txt"\r\n' +
-        'Content-Type: text/plain\r\n\r\n' +
-        'hello artifact\r\n' +
-        '--bound--\r\n',
-    });
-
-    expect(artifactRes.statusCode).toBe(200);
-
-    const finishRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/finish',
-      payload: {
-        run_id,
-        status: 'finished',
-        result: 'Success',
-        metrics: { duration_ms: 500 },
-      },
-    });
-
-    expect(finishRes.statusCode).toBe(200);
-
-    const runDetailsRes = await app.inject({
-      method: 'GET',
-      url: `/api/runs/${run_id}`,
-    });
-
-    expect(runDetailsRes.statusCode).toBe(200);
-    const runDetails = runDetailsRes.json() as {
-      run: { status: string };
-      logs: Array<{ message: string }>;
-      artifacts: Array<{ filename: string }>;
-    };
-
-    expect(runDetails.run.status).toBe('finished');
-    expect(runDetails.logs.length).toBeGreaterThan(0);
-    expect(runDetails.logs[0].message).toBe('Job started');
-    expect(runDetails.artifacts.length).toBeGreaterThan(0);
-    expect(runDetails.artifacts[0].filename).toBe('output.txt');
-
-    const activeTokenRes = await app.inject({
-      method: 'POST',
-      url: `/jobs/${job_id}/share-tokens`,
-      payload: { max_claims: 1 },
-    });
-
-    const activeToken = (activeTokenRes.json() as { share_token: { token: string } }).share_token
-      .token;
-
-    await app.inject({
-      method: 'GET',
-      url: '/api/run-config',
-      query: { token: activeToken },
-    });
-
-    const deleteRes = await app.inject({
-      method: 'DELETE',
-      url: `/jobs/${job_id}`,
-    });
-
-    expect(deleteRes.statusCode).toBe(400);
-    expect(deleteRes.json().error).toContain('active runs');
-  });
-});
-
-
-path: /tsconfig.json
-----------------------------------------
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "rootDir": "src",
-    "outDir": "dist",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "exclude": ["node_modules", "dist", "tests", "vitest.config.ts"]
-}
-
-
-path: /vitest.config.ts
-----------------------------------------
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    globals: true,
-    environment: 'node',
-  },
-});
-
-
 === SUMMARY ===
-included: 62
-skipped(binary): 1
+included: 23
+skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 167961
+totalBytes(approx): 114747

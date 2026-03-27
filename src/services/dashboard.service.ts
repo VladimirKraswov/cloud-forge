@@ -1,6 +1,5 @@
 import db from '../db/index';
-import { JobModel, RunModel, WorkerModel } from '../models';
-import { JobListItem, Run, Worker } from '../models/job';
+import { Run, RunConfigSnapshot } from '../models/job';
 import { JobService } from './job.service';
 
 const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
@@ -19,6 +18,34 @@ const getAsync = <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
     });
   });
 
+const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
+  if (!value) return fallback;
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const defaultSnapshot = (jobId: string): RunConfigSnapshot => ({
+  job_id: jobId,
+  containers: [],
+  environments: {},
+  attached_files: [],
+  execution_code: '',
+  execution_language: 'python',
+  entrypoint: null,
+  workspace: {
+    root: '/workspace',
+    code_dir: '/workspace/code',
+    input_dir: '/workspace/input',
+    output_dir: '/workspace/output',
+    artifacts_dir: '/workspace/artifacts',
+    tmp_dir: '/workspace/tmp',
+  },
+});
+
 export class DashboardService {
   static async getSummary() {
     const stats = await getAsync<any>(`
@@ -34,23 +61,24 @@ export class DashboardService {
     `);
 
     const workers = await JobService.listWorkers();
-    const active_workers = workers.filter((w) => w.status !== 'offline').length;
-    const offline_workers = workers.filter((w) => w.status === 'offline').length;
 
     return {
-      total_jobs: stats.total_jobs,
-      total_runs: stats.total_runs,
-      active_runs: stats.created_runs + stats.running_runs,
-      finished_runs: stats.finished_runs,
-      failed_runs: stats.failed_runs,
-      cancelled_runs: stats.cancelled_runs,
-      lost_runs: stats.lost_runs,
-      active_workers,
-      offline_workers,
+      jobs_total: stats?.total_jobs ?? 0,
+      runs_total: stats?.total_runs ?? 0,
+      runs_by_status: {
+        created: stats?.created_runs ?? 0,
+        running: stats?.running_runs ?? 0,
+        finished: stats?.finished_runs ?? 0,
+        failed: stats?.failed_runs ?? 0,
+        cancelled: stats?.cancelled_runs ?? 0,
+        lost: stats?.lost_runs ?? 0,
+      },
+      workers_online: workers.filter((worker) => worker.status !== 'offline').length,
+      workers_total: workers.length,
     };
   }
 
-  static async getActiveRuns() {
+  static async getActiveRuns(): Promise<Run[]> {
     const rows = await allAsync<any>(`
       SELECT
         r.*,
@@ -61,23 +89,40 @@ export class DashboardService {
       ORDER BY datetime(r.created_at) DESC
     `);
 
-    return rows;
+    return rows.map((row) => ({
+      id: row.id,
+      job_id: row.job_id,
+      share_token_id: row.share_token_id,
+      worker_id: row.worker_id ?? null,
+      worker_name: row.worker_name ?? null,
+      status: row.status,
+      result: row.result ?? null,
+      metrics: parseJson(row.metrics, null),
+      config_snapshot: parseJson(row.config_snapshot, defaultSnapshot(row.job_id)),
+      started_at: row.started_at ?? null,
+      finished_at: row.finished_at ?? null,
+      last_heartbeat_at: row.last_heartbeat_at ?? null,
+      cancel_requested_at: row.cancel_requested_at ?? null,
+      cancel_reason: row.cancel_reason ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      job_title: row.job_title,
+    }));
   }
 
   static async getActiveWorkers() {
     const workers = await JobService.listWorkers();
-    return workers.filter((w) => w.status !== 'offline');
+    return workers.filter((worker) => worker.status !== 'offline');
   }
 
   static async getRecentEvents() {
-    // Recent finished/failed/cancelled runs as events
     const rows = await allAsync<any>(`
       SELECT
         r.id as run_id,
         r.job_id,
         j.title as job_title,
         r.status,
-        r.updated_at as timestamp
+        r.updated_at as created_at
       FROM runs r
       JOIN jobs j ON r.job_id = j.id
       WHERE r.status NOT IN ('created', 'running')
@@ -85,6 +130,13 @@ export class DashboardService {
       LIMIT 20
     `);
 
-    return rows;
+    return rows.map((row) => ({
+      id: row.run_id,
+      type: 'run_status',
+      status: row.status,
+      message: `${row.job_title} · ${row.status}`,
+      details: `Run ${row.run_id}`,
+      created_at: row.created_at,
+    }));
   }
 }

@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --color-background: #f6f8fb;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
+  --color-primary: #2563eb;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #eef2ff;
+  --color-secondary-foreground: #1e3a8a;
+  --color-muted: #eef2f7;
+  --color-muted-foreground: #5b6474;
+  --color-accent: #eef4ff;
+  --color-accent-foreground: #1346b4;
+  --color-border: #e2e8f0;
+  --color-input: #d9e1ec;
+  --color-ring: #2563eb;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --shadow-card: 0 16px 40px -24px rgba(15, 23, 42, 0.28);
+  --shadow-soft: 0 10px 30px -22px rgba(15, 23, 42, 0.24);
+}
+
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 32%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.06), transparent 28%),
+    var(--color-background);
+  color: var(--color-foreground);
+}
+button, input, textarea, select { font: inherit; }
+code, pre {
+  font-family: 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+.custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.custom-scrollbar::-webkit-scrollbar { width: 9px; height: 9px; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

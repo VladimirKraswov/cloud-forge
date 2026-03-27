@@ -1,4 +1,5 @@
 import { AttachedFile, Container, ExecutionLanguage } from '../models/job';
+import { config } from '../utils/config';
 
 export interface JobDraftTemplate {
   title: string;
@@ -30,12 +31,44 @@ export interface JobTemplate {
   support_level: 'supported' | 'future';
 }
 
-const PYTHON_SAMPLE = `from cloudforge import info, input_path, artifacts_path, raise_if_cancel_requested
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const HELLO_WORLD_PYTHON = `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("hello world job started")
+info("Cloud Forge SDK is available inside the bootstrap container")
+
+raise_if_cancel_requested()
+
+hello_file = artifacts_path("hello.txt")
+hello_file.parent.mkdir(parents=True, exist_ok=True)
+hello_file.write_text("hello from cloud forge\\n", encoding="utf-8")
+
+summary_file = artifacts_path("summary.json")
+summary_file.write_text(
+    json.dumps(
+        {
+            "message": "hello from cloud forge",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "artifacts": ["hello.txt", "summary.json"],
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
+info(f"artifact written: {hello_file}")
+info(f"artifact written: {summary_file}")
+info("hello world job finished successfully")
+`;
+
+const PYTHON_SAMPLE = `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
 
 info("python job started")
-
-dataset = input_path("train.jsonl")
-info(f"dataset path: {dataset}")
 
 raise_if_cancel_requested()
 
@@ -43,23 +76,34 @@ result_file = artifacts_path("result.txt")
 result_file.parent.mkdir(parents=True, exist_ok=True)
 result_file.write_text("hello from cloud forge", encoding="utf-8")
 
+metadata_file = artifacts_path("metadata.json")
+metadata_file.write_text(
+    json.dumps(
+        {
+            "language": "python",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "message": "hello from cloud forge",
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
 info(f"result written to {result_file}")
+info(f"metadata written to {metadata_file}")
 `;
 
 const JAVASCRIPT_SAMPLE = `const fs = require('fs');
 const path = require('path');
 const {
   info,
-  inputPath,
   artifactsPath,
   raiseIfCancelRequested,
 } = require('cloudforge');
 
 async function main() {
   await info('javascript job started');
-
-  const datasetPath = inputPath('input.jsonl');
-  await info(\`dataset path: \${datasetPath}\`);
+  await info('Cloud Forge SDK is available inside the bootstrap container');
 
   raiseIfCancelRequested();
 
@@ -67,7 +111,22 @@ async function main() {
   fs.mkdirSync(path.dirname(resultPath), { recursive: true });
   fs.writeFileSync(resultPath, 'hello from cloud forge');
 
+  const summaryPath = artifactsPath('summary.json');
+  fs.writeFileSync(
+    summaryPath,
+    JSON.stringify(
+      {
+        language: 'javascript',
+        message: 'hello from cloud forge',
+        generated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+
   await info(\`result written to \${resultPath}\`);
+  await info(\`summary written to \${summaryPath}\`);
 }
 
 main().catch(async (err) => {
@@ -82,33 +141,39 @@ main().catch(async (err) => {
 export const containerPresets: ContainerPreset[] = [
   {
     id: 'bootstrap-python',
-    name: 'Bootstrap Python',
+    name: 'Cloud Forge Bootstrap (Python)',
     category: 'bootstrap',
-    description: 'Базовый bootstrap-контейнер для Python job с SDK Cloud Forge.',
-    recommended_for: ['python', 'training', 'etl', 'data-processing'],
+    description:
+      'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK и worker runtime.',
+    recommended_for: ['python', 'remote-run', 'sdk', 'hello-world', 'etl', 'data-processing'],
     support_level: 'supported',
     container: {
       name: 'bootstrap',
-      image: 'xproger/cloud-forge-worker:0.1.0',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
       is_parent: true,
       resources: {
         shm_size: '2g',
+        cpu_limit: 2,
+        memory_limit: '4g',
       },
     },
   },
   {
     id: 'bootstrap-node',
-    name: 'Bootstrap Node.js',
+    name: 'Cloud Forge Bootstrap (Node.js)',
     category: 'bootstrap',
-    description: 'Базовый bootstrap-контейнер для JavaScript/Node.js job.',
-    recommended_for: ['javascript', 'node', 'etl', 'automation'],
+    description:
+      'Официальный bootstrap-контейнер Cloud Forge для JavaScript/Node.js job с предустановленным SDK и worker runtime.',
+    recommended_for: ['javascript', 'node', 'remote-run', 'sdk', 'automation'],
     support_level: 'supported',
     container: {
       name: 'bootstrap',
-      image: 'xproger/cloud-forge-worker:0.1.0',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
       is_parent: true,
       resources: {
         shm_size: '1g',
+        cpu_limit: 2,
+        memory_limit: '4g',
       },
     },
   },
@@ -182,6 +247,27 @@ export const containerPresets: ContainerPreset[] = [
 
 export const jobTemplates: JobTemplate[] = [
   {
+    id: 'hello-world-python',
+    name: 'Hello World (Remote Python)',
+    description:
+      'Минимальный job для проверки удаленного запуска через Docker: пишет hello.txt и summary.json через Cloud Forge SDK.',
+    tags: ['python', 'hello-world', 'remote-run', 'sdk', 'supported'],
+    support_level: 'supported',
+    draft: {
+      title: 'Hello World',
+      description:
+        'Проверочный remote job для публикации bootstrap-образа и запуска на любой машине с Docker.',
+      containers: [containerPresets.find((preset) => preset.id === 'bootstrap-python')!.container],
+      environments: {
+        APP_ENV: 'production',
+      },
+      attached_files: [],
+      execution_code: HELLO_WORLD_PYTHON,
+      execution_language: 'python',
+      entrypoint: 'python3 /workspace/code/main.py',
+    },
+  },
+  {
     id: 'python-basic',
     name: 'Python Basic',
     description: 'Простой Python job с одним bootstrap-контейнером.',
@@ -197,7 +283,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: PYTHON_SAMPLE,
       execution_language: 'python',
-      entrypoint: null,
+      entrypoint: 'python3 /workspace/code/main.py',
     },
   },
   {
@@ -216,7 +302,7 @@ export const jobTemplates: JobTemplate[] = [
       attached_files: [],
       execution_code: JAVASCRIPT_SAMPLE,
       execution_language: 'javascript',
-      entrypoint: null,
+      entrypoint: 'node /workspace/code/index.js',
     },
   },
   {
@@ -238,12 +324,9 @@ export const jobTemplates: JobTemplate[] = [
         EPOCHS: '3',
       },
       attached_files: [],
-      execution_code: `from cloudforge import info, input_path, artifacts_path, raise_if_cancel_requested
+      execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
 
 info("training started")
-dataset = input_path("train.jsonl")
-info(f"dataset: {dataset}")
-
 raise_if_cancel_requested()
 
 checkpoint = artifacts_path("checkpoints/epoch-1.txt")
@@ -253,7 +336,7 @@ checkpoint.write_text("demo checkpoint", encoding="utf-8")
 info("training finished")
 `,
       execution_language: 'python',
-      entrypoint: null,
+      entrypoint: 'python3 /workspace/code/train.py',
     },
   },
   {
@@ -282,7 +365,7 @@ raise_if_cancel_requested()
 info("connect to vLLM runtime and execute prompts here")
 `,
       execution_language: 'python',
-      entrypoint: null,
+      entrypoint: 'python3 /workspace/code/main.py',
     },
   },
 ];

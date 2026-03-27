@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
@@ -75,6 +76,12 @@ const start = async () => {
         'Artifacts bucket is not ready yet, it will be retried on first upload/download',
       );
     }
+
+    await app.register(cors, {
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    });
 
     await app.register(fastifyMultipart, {
       limits: {

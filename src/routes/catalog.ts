@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { containerPresets, jobTemplates } from '../catalog/presets';
 
 export default async function catalogRoutes(app: FastifyInstance) {
@@ -46,14 +46,17 @@ export default async function catalogRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (req, reply) => {
-      const template = jobTemplates.find((item) => item.id === (req.params as { id: string }).id);
+    async (
+      req: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const template = jobTemplates.find((item) => item.id === req.params.id);
 
       if (!template) {
         return reply.code(404).send({ error: 'Job template not found' });
       }
 
-      return template;
+      return reply.send(template);
     },
   );
 }
