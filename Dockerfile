@@ -27,8 +27,8 @@ RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 
 # Нужны BootstrapBuilderService
-COPY runner.py ./runner.py
-COPY sdk ./sdk
+COPY worker/runner.py ./worker/runner.py
+COPY worker/sdk ./worker/sdk
 
 RUN mkdir -p /app/data
 

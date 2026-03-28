@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 IMAGE_DEFAULT="xproger/cloud-forge-worker"
-DOCKERFILE_DEFAULT="Dockerfile.worker"
-CONTEXT_DEFAULT="."
+DOCKERFILE_DEFAULT="${WORKER_ROOT}/Dockerfile"
+CONTEXT_DEFAULT="${WORKER_ROOT}"
 PLATFORMS_DEFAULT="linux/amd64,linux/arm64"
 BUILDER_NAME_DEFAULT="cloudforge-worker-builder"
 

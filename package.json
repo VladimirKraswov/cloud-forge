@@ -11,7 +11,7 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f orchestrator",
-    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f Dockerfile.worker .",
+    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f worker/Dockerfile worker",
     "worker:publish": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker push \"$WORKER_IMAGE:$WORKER_TAG\" && docker push \"$WORKER_IMAGE:latest\"",
     "lint": "eslint 'src/**/*.ts'",
     "test": "vitest",

@@ -181,10 +181,9 @@ ENTRYPOINT ["python3", "/opt/cloudforge/runner.py"]
 
   private static resolveRuntimeAssetsRoot(): string {
     const candidates = [
-      path.resolve(process.cwd()),
-      path.resolve(__dirname, '../../'),
-      path.resolve(__dirname, '../../../'),
-      '/app',
+      path.resolve(process.cwd(), 'worker'),
+      path.resolve(__dirname, '../../worker'),
+      '/app/worker',
     ];
 
     for (const candidate of candidates) {
@@ -197,7 +196,7 @@ ENTRYPOINT ["python3", "/opt/cloudforge/runner.py"]
     }
 
     throw new Error(
-      'Runtime assets not found: expected runner.py and sdk/ to exist in the orchestrator image.',
+      'Worker runtime assets not found: expected worker/runner.py and worker/sdk/ to exist.',
     );
   }
 
