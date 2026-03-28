@@ -10,7 +10,7 @@ LABEL org.opencontainers.image.title="Cloud Forge Worker" \
       org.opencontainers.image.licenses="MIT"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates bash \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -21,7 +21,7 @@ COPY sdk/ /app/sdk/
 COPY runner.py /app/runner.py
 
 RUN chmod +x /app/runner.py \
-    && pip install --no-cache-dir requests
+    && pip install --no-cache-dir requests websocket-client
 
 WORKDIR /workspace
 

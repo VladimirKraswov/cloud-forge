@@ -1,10 +1,9 @@
 import type { PropsWithChildren } from 'react';
 import { useState } from 'react';
-import { Bell, Cpu, Menu, Search, Sparkles, X } from 'lucide-react';
+import { Cpu, Menu, Sparkles, X } from 'lucide-react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { LanguageSwitcher } from '@/shared/components/app/language-switcher';
 import { Button } from '@/shared/components/ui/button';
-import { Input } from '@/shared/components/ui/input';
 import { cn } from '@/shared/utils/cn';
 import { useI18n } from '@/shared/lib/i18n';
 
@@ -111,26 +110,14 @@ export function AppShell({ children }: PropsWithChildren) {
                 <Menu className="h-5 w-5" />
               </Button>
 
-              <div className="relative hidden max-w-md flex-1 md:block">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  readOnly
-                  value=""
-                  placeholder={t.navigation.searchPlaceholder}
-                  className="h-11 rounded-2xl border-border bg-card pl-10"
-                />
-              </div>
-
               <div className="ml-auto flex items-center gap-3">
                 <LanguageSwitcher className="hidden sm:inline-flex" compact />
 
-                <div className="hidden rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:block">
-                  {import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}
-                </div>
-
-                <Button variant="outline" size="icon" className="rounded-full">
-                  <Bell className="h-4 w-4" />
-                </Button>
+                {import.meta.env.DEV ? (
+                  <div className="hidden rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:block">
+                    {import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}
+                  </div>
+                ) : null}
 
                 <div className="flex items-center gap-3 rounded-full border border-border bg-card px-2.5 py-1.5 shadow-[var(--shadow-soft)]">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">

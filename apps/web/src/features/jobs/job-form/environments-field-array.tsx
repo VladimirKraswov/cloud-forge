@@ -71,7 +71,7 @@ export function EnvironmentsFieldArray({
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
-            </CardContent>
+            </CardContent>[]
           </Card>
         ))}
       </div>

@@ -1,6 +1,7 @@
 import db from '../db/index';
 import {
   BootstrapImage,
+  ExecutionLanguage,
   Job,
   JobFile,
   JobListItem,
@@ -57,6 +58,7 @@ const mapBootstrapImageRow = (row: any): BootstrapImage => ({
   full_image_name: row.full_image_name,
   dockerfile_text: row.dockerfile_text,
   environments: parseJson(row.environments_json, []),
+  execution_language: (row.execution_language ?? 'python') as ExecutionLanguage,
   runtime_resources: parseJson(row.runtime_resources_json, null),
   sdk_version: row.sdk_version ?? null,
   status: row.status,
@@ -73,6 +75,7 @@ const mapJobRow = (row: any): Job => ({
   description: row.description ?? null,
   owner_id: row.owner_id ?? null,
   bootstrap_image_id: row.bootstrap_image_id,
+  execution_language: (row.execution_language ?? 'python') as ExecutionLanguage,
   environment_variables: parseJson(row.environment_variables, {}),
   resources: parseJson(row.resources_json, null),
   entrypoint: row.entrypoint,
@@ -113,6 +116,7 @@ const mapRunRow = (row: any): Run => ({
   run_manifest: parseJson<RunManifest>(row.run_manifest, {
     run_id: row.id,
     job_id: row.job_id,
+    execution_language: 'python',
     bootstrap_image: {
       id: row.bootstrap_image_id,
       full_image_name: '',
@@ -206,6 +210,7 @@ export class BootstrapImageModel {
     full_image_name: string;
     dockerfile_text: string;
     environments: BootstrapImage['environments'];
+    execution_language: ExecutionLanguage;
     runtime_resources?: BootstrapImage['runtime_resources'];
     sdk_version?: string | null;
     status: BootstrapImage['status'];
@@ -215,8 +220,8 @@ export class BootstrapImageModel {
       `
       INSERT INTO bootstrap_images (
         id, name, base_image, tag, full_image_name, dockerfile_text,
-        environments_json, runtime_resources_json, sdk_version, status, error, build_started_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        environments_json, execution_language, runtime_resources_json, sdk_version, status, error, build_started_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `,
       [
         data.id,
@@ -226,6 +231,7 @@ export class BootstrapImageModel {
         data.full_image_name,
         data.dockerfile_text,
         JSON.stringify(data.environments || []),
+        data.execution_language,
         JSON.stringify(data.runtime_resources || {}),
         data.sdk_version ?? null,
         data.status,
@@ -240,6 +246,7 @@ export class BootstrapImageModel {
       full_image_name: string;
       dockerfile_text: string;
       environments: BootstrapImage['environments'];
+      execution_language: ExecutionLanguage;
       runtime_resources: BootstrapImage['runtime_resources'];
       status: BootstrapImage['status'];
       error: string | null;
@@ -260,6 +267,10 @@ export class BootstrapImageModel {
     if (patch.environments !== undefined) {
       sets.push('environments_json = ?');
       params.push(JSON.stringify(patch.environments));
+    }
+    if (patch.execution_language !== undefined) {
+      sets.push('execution_language = ?');
+      params.push(patch.execution_language);
     }
     if (patch.runtime_resources !== undefined) {
       sets.push('runtime_resources_json = ?');
@@ -348,6 +359,7 @@ export class JobModel {
     description?: string | null;
     owner_id?: string | null;
     bootstrap_image_id: string;
+    execution_language: ExecutionLanguage;
     environment_variables?: Record<string, string>;
     resources?: Job['resources'];
     entrypoint: string;
@@ -357,9 +369,9 @@ export class JobModel {
     await runAsync(
       `
       INSERT INTO jobs (
-        id, title, description, owner_id, bootstrap_image_id,
+        id, title, description, owner_id, bootstrap_image_id, execution_language,
         environment_variables, resources_json, entrypoint, entrypoint_args, working_dir
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         data.id,
@@ -367,6 +379,7 @@ export class JobModel {
         data.description ?? null,
         data.owner_id ?? null,
         data.bootstrap_image_id,
+        data.execution_language,
         JSON.stringify(data.environment_variables || {}),
         JSON.stringify(data.resources || {}),
         data.entrypoint,
@@ -472,6 +485,7 @@ export class JobModel {
       ['description', 'description'],
       ['owner_id', 'owner_id'],
       ['bootstrap_image_id', 'bootstrap_image_id'],
+      ['execution_language', 'execution_language'],
       ['entrypoint', 'entrypoint'],
       ['working_dir', 'working_dir'],
     ];

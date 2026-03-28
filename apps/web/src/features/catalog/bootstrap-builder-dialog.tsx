@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { catalogApi } from '@/api/catalog';
+import type { ExecutionLanguage } from '@/api/types';
 import { LanguageSwitcher } from '@/shared/components/app/language-switcher';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
 import { Badge } from '@/shared/components/ui/badge';
@@ -29,11 +30,19 @@ import {
 } from '@/shared/components/ui/dialog';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select';
 import { Textarea } from '@/shared/components/ui/textarea';
 import { useI18n } from '@/shared/lib/i18n';
 import { cn } from '@/shared/utils/cn';
 import {
   OPEN_BUILD_DIALOG_EVENT,
+  type BuildDialogIntent,
   useBootstrapBuildTracker,
 } from './model/use-bootstrap-build-tracker';
 
@@ -64,6 +73,16 @@ type BuildInsights = {
   stageId: BuildStageId;
   largeLayers: LayerInsight[];
   lastMeaningfulLine: string | null;
+};
+
+type BuilderFormState = {
+  name: string;
+  baseImage: string;
+  tag: string;
+  executionLanguage: ExecutionLanguage;
+  extraDependencies: string;
+  dockerUser: string;
+  dockerPass: string;
 };
 
 const STAGE_META: Array<{
@@ -137,7 +156,8 @@ const baseInfoSchema = z.object({
       'Invalid tag. Use lowercase, numbers, dots, underscores, or dashes.',
     ),
   baseImage: z.string().min(1, 'Base image is required'),
-  extraPackages: z.string(),
+  executionLanguage: z.enum(['python', 'javascript']),
+  extraDependencies: z.string(),
 });
 
 const credentialsSchema = z.object({
@@ -146,6 +166,22 @@ const credentialsSchema = z.object({
 });
 
 const buildFormSchema = baseInfoSchema.merge(credentialsSchema);
+
+function getDefaultBaseImage(language: ExecutionLanguage) {
+  return language === 'javascript' ? 'node:20-slim' : 'python:3.11-slim';
+}
+
+function getDefaultFormData(language: ExecutionLanguage = 'python'): BuilderFormState {
+  return {
+    name: '',
+    baseImage: getDefaultBaseImage(language),
+    tag: '0.1.0',
+    executionLanguage: language,
+    extraDependencies: '',
+    dockerUser: '',
+    dockerPass: '',
+  };
+}
 
 function rankStage(current: BuildStageId, next: BuildStageId): BuildStageId {
   return stageRank[next] > stageRank[current] ? next : current;
@@ -247,7 +283,7 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
     }
 
     if (
-      /building docker image|copy runner\.py|copy sdk|run pip|run apt-get|run chmod|run python|run python3|run mkdir|exporting to image|load build definition from dockerfile|transferring dockerfile|step\s*\d+\/\d+/.test(
+      /building docker image|copy runner\.py|copy sdk|run pip|run npm|run apt-get|run chmod|run python|run python3|run node|run mkdir|exporting to image|load build definition from dockerfile|transferring dockerfile|step\s*\d+\/\d+/.test(
         lower,
       )
     ) {
@@ -312,11 +348,17 @@ function StageRow({
   description,
   icon: Icon,
   state,
+  activeLabel,
+  doneLabel,
+  failedLabel,
 }: {
   title: string;
   description: string;
   icon: typeof Package;
   state: 'done' | 'active' | 'pending' | 'failed';
+  activeLabel: string;
+  doneLabel: string;
+  failedLabel: string;
 }) {
   return (
     <div
@@ -351,14 +393,14 @@ function StageRow({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <p className="font-medium">{title}</p>
-          {state === 'active' ? <Badge>active</Badge> : null}
+          {state === 'active' ? <Badge>{activeLabel}</Badge> : null}
           {state === 'done' ? (
             <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
-              done
+              {doneLabel}
             </Badge>
           ) : null}
           {state === 'failed' ? (
-            <Badge className="border-red-200 bg-red-50 text-red-700">failed</Badge>
+            <Badge className="border-red-200 bg-red-50 text-red-700">{failedLabel}</Badge>
           ) : null}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -373,33 +415,92 @@ function isTerminalStatus(status?: string | null) {
 
 export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
+  const [dialogIntent, setDialogIntent] = useState<BuildDialogIntent>('new');
   const [step, setStep] = useState<BuilderStep>('form');
   const [loading, setLoading] = useState(false);
-  const { build, startTracking, clearTracking } = useBootstrapBuildTracker();
-  const { t } = useI18n();
+  const { build, startTracking, clearTracking, isActive } = useBootstrapBuildTracker();
+  const { t, lang } = useI18n();
 
-  const [formData, setFormData] = useState({
-    name: '',
-    baseImage: 'python:3.11-slim',
-    tag: '0.1.0',
-    extraPackages: '',
-    dockerUser: '',
-    dockerPass: '',
-  });
-
+  const [formData, setFormData] = useState<BuilderFormState>(() => getDefaultFormData('python'));
   const [dockerfile, setDockerfile] = useState('');
-  const [buildId, setBuildId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<BuildProgress | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const previousTrackedStatusRef = useRef<string | null>(build?.status ?? null);
+
+  const progress: BuildProgress | null = build
+    ? {
+        status: build.status,
+        logs: build.logs,
+      }
+    : null;
+
+  const labels =
+    lang === 'ru'
+      ? {
+          executionLanguage: 'Язык выполнения',
+          executionLanguageHelp:
+            'Определяет SDK и тип минимального рантайма внутри bootstrap-образа.',
+          python: 'Python',
+          javascript: 'JavaScript',
+          extraDependencies: 'Доп. зависимости',
+          extraDependenciesHelp:
+            'Для Python — pip пакеты по одному на строку. Для JavaScript — npm пакеты по одному на строку.',
+          dependenciesPlaceholderPython: `requests
+pandas
+numpy`,
+          dependenciesPlaceholderJavascript: `axios
+zod
+dotenv`,
+          dependencyNotePython:
+            'Будут установлены Python-зависимости для окружения по умолчанию.',
+          dependencyNoteJavascript:
+            'Будут установлены JS/npm-зависимости. Бэкенд должен интерпретировать это как javascript stack.',
+          buildCancelled: 'Сборка отменена',
+          newBuild: 'Новая сборка',
+          closeAndReset: 'Закрыть и начать заново',
+        }
+      : {
+          executionLanguage: 'Execution language',
+          executionLanguageHelp:
+            'Determines which SDK and default runtime stack will be installed into the bootstrap image.',
+          python: 'Python',
+          javascript: 'JavaScript',
+          extraDependencies: 'Extra dependencies',
+          extraDependenciesHelp:
+            'For Python: pip packages, one per line. For JavaScript: npm packages, one per line.',
+          dependenciesPlaceholderPython: `requests
+pandas
+numpy`,
+          dependenciesPlaceholderJavascript: `axios
+zod
+dotenv`,
+          dependencyNotePython:
+            'These lines will be installed as Python dependencies for the default environment.',
+          dependencyNoteJavascript:
+            'These lines will be installed as JS/npm dependencies. Backend should interpret them as javascript stack dependencies.',
+          buildCancelled: 'Build cancelled',
+          newBuild: 'New build',
+          closeAndReset: 'Close and start over',
+        };
 
   useEffect(() => {
     if (autoScroll) {
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [autoScroll, progress?.logs]);
+
+  useEffect(() => {
+    const previousStatus = previousTrackedStatusRef.current;
+    const currentStatus = build?.status ?? null;
+
+    if (previousStatus !== currentStatus && currentStatus === 'completed') {
+      onSuccess?.();
+    }
+
+    previousTrackedStatusRef.current = currentStatus;
+  }, [build?.status, onSuccess]);
 
   const handleLogScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
@@ -411,12 +512,31 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     }
   };
 
+  const openNewBuildForm = () => {
+    setDialogIntent('new');
+    setStep('form');
+    setFormErrors({});
+    setDockerfile('');
+    setAutoScroll(true);
+    setFormData(getDefaultFormData('python'));
+    setOpen(true);
+  };
+
+  const syncDialogView = (intent: BuildDialogIntent) => {
+    if (build && (!isTerminalStatus(build.status) || intent === 'resume')) {
+      setStep('building');
+      return;
+    }
+
+    setStep('form');
+  };
+
   const handleCancel = async () => {
-    if (!buildId) return;
+    if (!build?.id) return;
 
     setCancelling(true);
     try {
-      await catalogApi.cancelBuild(buildId);
+      await catalogApi.cancelBuild(build.id);
       toast.success('Build cancellation requested');
     } catch (error) {
       console.error(error);
@@ -427,61 +547,25 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   };
 
   useEffect(() => {
-    let interval: number | undefined;
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ intent?: BuildDialogIntent }>;
+      const intent = customEvent.detail?.intent ?? 'resume';
+      setDialogIntent(intent);
+      setOpen(true);
 
-    if (step === 'building' && buildId) {
-      interval = window.setInterval(async () => {
-        try {
-          const result = await catalogApi.getBuildProgress(buildId);
-          setProgress(result);
-
-          if (isTerminalStatus(result.status)) {
-            if (interval !== undefined) {
-              window.clearInterval(interval);
-            }
-
-            if (result.status === 'completed') {
-              toast.success('Image published successfully');
-              onSuccess?.();
-            } else if (result.status === 'cancelled') {
-              toast('Build cancelled');
-            } else {
-              toast.error('Build failed. Check logs for details.');
-            }
-          }
-        } catch (error) {
-          console.error('Failed to fetch build progress', error);
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (interval !== undefined) {
-        window.clearInterval(interval);
+      if (build && (!isTerminalStatus(build.status) || intent === 'resume')) {
+        setStep('building');
+      } else {
+        setStep('form');
       }
     };
-  }, [buildId, onSuccess, step]);
-
-  useEffect(() => {
-    if (!build) return;
-
-    setBuildId(build.id);
-    setProgress({
-      status: build.status,
-      logs: build.logs,
-    });
-    setStep('building');
-  }, [build]);
-
-  useEffect(() => {
-    const handler = () => setOpen(true);
 
     window.addEventListener(OPEN_BUILD_DIALOG_EVENT, handler);
 
     return () => {
       window.removeEventListener(OPEN_BUILD_DIALOG_EVENT, handler);
     };
-  }, []);
+  }, [build]);
 
   const insights = useMemo(() => parseBuildInsights(progress), [progress]);
 
@@ -525,7 +609,13 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     try {
       const response = await catalogApi.previewDockerfile({
         baseImage: formData.baseImage,
-        environments: [{ name: 'default', requirements_text: formData.extraPackages }],
+        executionLanguage: formData.executionLanguage,
+        environments: [
+          {
+            name: 'default',
+            requirements_text: formData.extraDependencies,
+          },
+        ],
       });
 
       setDockerfile(response.dockerfile);
@@ -558,23 +648,29 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
 
     try {
       const response = await catalogApi.buildBootstrapImage({
-        ...formData,
+        name: formData.name,
+        baseImage: formData.baseImage,
+        tag: formData.tag,
+        executionLanguage: formData.executionLanguage,
+        dockerUser: formData.dockerUser,
+        dockerPass: formData.dockerPass,
         dockerfileText: dockerfile,
-        environments: [{ name: 'default', requirements_text: formData.extraPackages }],
+        environments: [
+          {
+            name: 'default',
+            requirements_text: formData.extraDependencies,
+          },
+        ],
       });
 
       startTracking({
         id: response.id,
-        status: 'building',
+        status: response.status ?? 'building',
         logs: ['Starting build...'],
         imageRef: `${formData.dockerUser}/${formData.name}:${formData.tag}`,
       });
 
-      setBuildId(response.id);
-      setProgress({
-        status: 'building',
-        logs: ['Starting build...'],
-      });
+      setDialogIntent('resume');
       setStep('building');
     } catch (error) {
       console.error(error);
@@ -604,7 +700,7 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
 
   const currentStageLabel =
     progress?.status === 'cancelled'
-      ? 'cancelled'
+      ? labels.buildCancelled
       : progress?.status === 'failed'
         ? 'failed'
         : progress?.status === 'completed'
@@ -612,6 +708,16 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
           : t.catalog.stages[
               insights.stageId as Exclude<BuildStageId, 'completed' | 'failed'>
             ]?.title ?? 'Queued';
+
+  const dependencyPlaceholder =
+    formData.executionLanguage === 'javascript'
+      ? labels.dependenciesPlaceholderJavascript
+      : labels.dependenciesPlaceholderPython;
+
+  const dependencyNote =
+    formData.executionLanguage === 'javascript'
+      ? labels.dependencyNoteJavascript
+      : labels.dependencyNotePython;
 
   return (
     <Dialog
@@ -623,18 +729,21 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
           return;
         }
 
-        if (build) {
-          setBuildId(build.id);
-          setProgress({
-            status: build.status,
-            logs: build.logs,
-          });
-          setStep('building');
-        }
+        syncDialogView(dialogIntent);
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button
+          variant="outline"
+          onClick={() => {
+            setDialogIntent('new');
+            if (!isActive) {
+              setFormData(getDefaultFormData('python'));
+              setDockerfile('');
+              setFormErrors({});
+            }
+          }}
+        >
           <Hammer className="mr-2 h-4 w-4" />
           {t.catalog.createBootstrap}
         </Button>
@@ -652,6 +761,78 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
 
         {step === 'form' && (
           <div className="space-y-5 py-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <LabelWithHelp
+                  label={labels.executionLanguage}
+                  help={labels.executionLanguageHelp}
+                  htmlFor="executionLanguage"
+                />
+                <Select
+                  value={formData.executionLanguage}
+                  onValueChange={(value) => {
+                    const nextLanguage = value as ExecutionLanguage;
+
+                    setFormData((prev) => {
+                      const previousDefaultBaseImage = getDefaultBaseImage(
+                        prev.executionLanguage,
+                      );
+                      const nextDefaultBaseImage = getDefaultBaseImage(nextLanguage);
+                      const shouldReplaceBaseImage =
+                        !prev.baseImage.trim() || prev.baseImage === previousDefaultBaseImage;
+
+                      return {
+                        ...prev,
+                        executionLanguage: nextLanguage,
+                        baseImage: shouldReplaceBaseImage
+                          ? nextDefaultBaseImage
+                          : prev.baseImage,
+                      };
+                    });
+                  }}
+                >
+                  <SelectTrigger id="executionLanguage">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="python">{labels.python}</SelectItem>
+                    <SelectItem value="javascript">{labels.javascript}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <LabelWithHelp
+                  label={t.catalog.baseImage}
+                  help={t.catalog.baseImageHelp}
+                  htmlFor="baseImage"
+                  className={cn(formErrors.baseImage && 'text-destructive')}
+                />
+                <Input
+                  id="baseImage"
+                  placeholder={
+                    formData.executionLanguage === 'javascript'
+                      ? 'node:20-slim'
+                      : 'python:3.11-slim'
+                  }
+                  className={cn(formErrors.baseImage && 'border-destructive')}
+                  value={formData.baseImage}
+                  onChange={(event) =>
+                    setFormData((prev) => ({ ...prev, baseImage: event.target.value }))
+                  }
+                />
+                {formErrors.baseImage ? (
+                  <p className="text-xs font-medium text-destructive">
+                    {formErrors.baseImage}
+                  </p>
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  If this base image already contains model weights, the first build can
+                  take a long time and download tens of GB.
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <LabelWithHelp
@@ -698,59 +879,29 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
 
             <div className="space-y-2">
               <LabelWithHelp
-                label={t.catalog.baseImage}
-                help={t.catalog.baseImageHelp}
-                htmlFor="baseImage"
-                className={cn(formErrors.baseImage && 'text-destructive')}
-              />
-              <Input
-                id="baseImage"
-                placeholder="igortet/model-qwen-7b"
-                className={cn(formErrors.baseImage && 'border-destructive')}
-                value={formData.baseImage}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, baseImage: event.target.value }))
-                }
-              />
-              {formErrors.baseImage ? (
-                <p className="text-xs font-medium text-destructive">
-                  {formErrors.baseImage}
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                If this base image already contains model weights, the first build can
-                take a long time and download tens of GB.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <LabelWithHelp
-                label={t.catalog.extraPackages}
-                help={t.catalog.extraPackagesHelp}
+                label={labels.extraDependencies}
+                help={labels.extraDependenciesHelp}
                 htmlFor="packages"
               />
               <Textarea
                 id="packages"
                 rows={8}
-                placeholder={`unsloth
-unsloth-zoo
-bitsandbytes>=0.45.0
-xformers==0.0.35
-transformers>=4.48.0
-datasets>=3.6.0`}
-                value={formData.extraPackages}
+                placeholder={dependencyPlaceholder}
+                value={formData.extraDependencies}
                 onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, extraPackages: event.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    extraDependencies: event.target.value,
+                  }))
                 }
               />
+              <p className="text-xs text-muted-foreground">{dependencyNote}</p>
             </div>
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>{t.catalog.headsUpTitle}</AlertTitle>
-              <AlertDescription>
-                {t.catalog.headsUpDesc}
-              </AlertDescription>
+              <AlertDescription>{t.catalog.headsUpDesc}</AlertDescription>
             </Alert>
 
             <div className="flex justify-end pt-2">
@@ -778,9 +929,7 @@ datasets>=3.6.0`}
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>{t.help.dockerHubCredsTitle}</AlertTitle>
-              <AlertDescription>
-                {t.help.dockerHubCredsDesc}
-              </AlertDescription>
+              <AlertDescription>{t.help.dockerHubCredsDesc}</AlertDescription>
             </Alert>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -863,7 +1012,7 @@ datasets>=3.6.0`}
                     : progress?.status === 'failed'
                       ? t.catalog.failed
                       : progress?.status === 'cancelled'
-                        ? 'Build cancelled'
+                        ? labels.buildCancelled
                         : t.catalog.building}
                 </p>
                 <p className="text-sm text-muted-foreground">
@@ -883,10 +1032,21 @@ datasets>=3.6.0`}
                     {STAGE_META.map((stage, index) => (
                       <StageRow
                         key={stage.id}
-                        title={t.catalog.stages[stage.id as Exclude<BuildStageId, 'completed' | 'failed'>].title}
-                        description={t.catalog.stages[stage.id as Exclude<BuildStageId, 'completed' | 'failed'>].description}
+                        title={
+                          t.catalog.stages[
+                            stage.id as Exclude<BuildStageId, 'completed' | 'failed'>
+                          ].title
+                        }
+                        description={
+                          t.catalog.stages[
+                            stage.id as Exclude<BuildStageId, 'completed' | 'failed'>
+                          ].description
+                        }
                         icon={stage.icon}
                         state={renderStageState(index)}
+                        activeLabel={t.common.active}
+                        doneLabel={t.common.done}
+                        failedLabel={t.common.failed}
                       />
                     ))}
                   </CardContent>
@@ -935,7 +1095,16 @@ datasets>=3.6.0`}
                     <div>
                       <span className="text-muted-foreground">{t.catalog.targetImage}:</span>{' '}
                       <span className="font-medium">
-                        {formData.dockerUser}/{formData.name}:{formData.tag}
+                        {build?.imageRef ||
+                          `${formData.dockerUser}/${formData.name}:${formData.tag}`}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">{labels.executionLanguage}:</span>{' '}
+                      <span className="font-medium">
+                        {formData.executionLanguage === 'javascript'
+                          ? labels.javascript
+                          : labels.python}
                       </span>
                     </div>
                     <div>
@@ -997,9 +1166,14 @@ datasets>=3.6.0`}
             <div className="flex items-center justify-between pt-1">
               <div>
                 {isTerminalStatus(progress?.status) ? (
-                  <Button variant="ghost" size="sm" onClick={clearTracking}>
-                    {t.catalog.clearStatus}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="ghost" size="sm" onClick={clearTracking}>
+                      {t.catalog.clearStatus}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={openNewBuildForm}>
+                      {labels.newBuild}
+                    </Button>
+                  </div>
                 ) : (
                   <Button
                     variant="outline"
@@ -1022,7 +1196,13 @@ datasets>=3.6.0`}
 
               <Button
                 variant={isTerminalStatus(progress?.status) ? 'default' : 'outline'}
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  if (isTerminalStatus(progress?.status) && dialogIntent === 'new') {
+                    openNewBuildForm();
+                    return;
+                  }
+                  setOpen(false);
+                }}
               >
                 {isTerminalStatus(progress?.status) ? t.catalog.close : t.catalog.hide}
               </Button>

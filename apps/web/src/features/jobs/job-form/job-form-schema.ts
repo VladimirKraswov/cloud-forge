@@ -16,6 +16,7 @@ export const jobFormSchema = z.object({
   title: z.string().min(3, 'Title must contain at least 3 characters'),
   description: z.string().optional(),
   bootstrap_image_id: z.string().min(1, 'Choose a bootstrap image'),
+  execution_language: z.enum(['python', 'javascript']).default('python'),
   entrypoint: z.string().min(1, 'Entrypoint is required'),
   entrypoint_args_text: z.string(),
   working_dir: z.string(),

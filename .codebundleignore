@@ -7,10 +7,10 @@ build/
 coverage/
 public/
 libs/
-web/
+apps/backend/src
+apps/web/src
 datasets/
 smoke-test/
-web/
 
 package-lock.json
 yarn.lock

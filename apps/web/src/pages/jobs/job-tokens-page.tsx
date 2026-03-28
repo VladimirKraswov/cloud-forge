@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, KeyRound, PlayCircle, Terminal } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, KeyRound, PlayCircle, Terminal } from 'lucide-react';
 import { jobsApi } from '@/api/jobs';
 import { tokensApi } from '@/api/tokens';
 import { CreateShareTokenDialog } from '@/features/tokens/create-share-token-dialog';
@@ -9,6 +9,7 @@ import { RevokeTokenButton } from '@/features/tokens/revoke-token-button';
 import { CopyButton } from '@/shared/components/app/copy-button';
 import { EmptyState } from '@/shared/components/app/empty-state';
 import { PageHeader } from '@/shared/components/app/page-header';
+import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
@@ -16,8 +17,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useI18n } from '@/shared/lib/i18n';
 import { formatDateTime, formatRelative } from '@/shared/utils/format';
 
+function containsLocalUrl(value?: string | null) {
+  if (!value) return false;
+  return /:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(value);
+}
+
 export function JobTokensPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { jobId } = useParams({ from: '/jobs/$jobId/tokens' });
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
@@ -34,6 +40,27 @@ export function JobTokensPage() {
 
   const dockerCommand =
     tokenDetailsQuery.data?.docker_command || tokenDetailsQuery.data?.worker_command || '';
+
+  const hasLocalUrls = useMemo(() => {
+    return (
+      containsLocalUrl(tokenDetailsQuery.data?.claim_url) ||
+      containsLocalUrl(tokenDetailsQuery.data?.share_url) ||
+      containsLocalUrl(dockerCommand)
+    );
+  }, [dockerCommand, tokenDetailsQuery.data?.claim_url, tokenDetailsQuery.data?.share_url]);
+
+  const localWarning =
+    lang === 'ru'
+      ? {
+          title: 'Обнаружен localhost в ссылках или docker-команде',
+          description:
+            'localhost работает только если воркер запускается на той же машине, где доступен backend. Для Docker на macOS/Windows обычно нужен host.docker.internal. Для удалённого воркера нужен LAN или публичный hostname backend.',
+        }
+      : {
+          title: 'localhost detected in links or docker command',
+          description:
+            'localhost only works when the worker runs on the same machine as the backend. For Docker on macOS/Windows you usually need host.docker.internal. For a remote worker use the backend LAN/public hostname.',
+        };
 
   return (
     <div className="space-y-6">
@@ -148,6 +175,14 @@ export function JobTokensPage() {
 
           {tokenDetailsQuery.data ? (
             <div className="space-y-5">
+              {hasLocalUrls ? (
+                <Alert variant="warning">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>{localWarning.title}</AlertTitle>
+                  <AlertDescription>{localWarning.description}</AlertDescription>
+                </Alert>
+              ) : null}
+
               <div className="rounded-2xl border border-border bg-muted/50 p-4">
                 <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
                   {t.jobs.tokens.details.tokenValue}

@@ -1,5 +1,5 @@
 import db from '../db/index';
-import { Run } from '../models/job';
+import { Run, RunManifest } from '../models/job';
 import { JobService } from './job.service';
 
 const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
@@ -25,6 +25,73 @@ const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+const buildDefaultRunManifest = (row: any): RunManifest => ({
+  run_id: row.id,
+  job_id: row.job_id,
+  execution_language: 'python',
+  bootstrap_image: {
+    id: row.bootstrap_image_id,
+    full_image_name: '',
+    name: '',
+  },
+  workspace: {
+    root: '/workspace',
+    artifacts_dir: '/workspace/artifacts',
+    tmp_dir: '/workspace/tmp',
+  },
+  environment_variables: {},
+  entrypoint: '',
+  entrypoint_args: [],
+  working_dir: '/workspace',
+  files: [],
+  control: {
+    start_url: '',
+    heartbeat_url: '',
+    logs_url: '',
+    progress_url: '',
+    finish_url: '',
+    cancel_url: '',
+  },
+  artifacts: {
+    upload_url: '',
+  },
+});
+
+const normalizeRunManifest = (row: any): RunManifest => {
+  const fallback = buildDefaultRunManifest(row);
+  const parsed = parseJson<Partial<RunManifest>>(row.run_manifest, {});
+
+  return {
+    ...fallback,
+    ...parsed,
+    execution_language:
+      parsed.execution_language === 'javascript' ? 'javascript' : fallback.execution_language,
+    bootstrap_image: {
+      ...fallback.bootstrap_image,
+      ...(parsed.bootstrap_image || {}),
+    },
+    workspace: {
+      ...fallback.workspace,
+      ...(parsed.workspace || {}),
+    },
+    environment_variables: parsed.environment_variables || fallback.environment_variables,
+    entrypoint: parsed.entrypoint ?? fallback.entrypoint,
+    entrypoint_args: Array.isArray(parsed.entrypoint_args)
+      ? parsed.entrypoint_args
+      : fallback.entrypoint_args,
+    working_dir: parsed.working_dir ?? fallback.working_dir,
+    files: Array.isArray(parsed.files) ? parsed.files : fallback.files,
+    control: {
+      ...fallback.control,
+      ...(parsed.control || {}),
+    },
+    artifacts: {
+      ...fallback.artifacts,
+      ...(parsed.artifacts || {}),
+    },
+  };
 };
 
 export class DashboardService {
@@ -85,36 +152,7 @@ export class DashboardService {
       status_message: row.status_message ?? null,
       result: row.result ?? null,
       metrics: parseJson(row.metrics, null),
-      run_manifest: parseJson(row.run_manifest, {
-        run_id: row.id,
-        job_id: row.job_id,
-        bootstrap_image: {
-          id: row.bootstrap_image_id,
-          full_image_name: '',
-          name: '',
-        },
-        workspace: {
-          root: '/workspace',
-          artifacts_dir: '/workspace/artifacts',
-          tmp_dir: '/workspace/tmp',
-        },
-        environment_variables: {},
-        entrypoint: '',
-        entrypoint_args: [],
-        working_dir: '/workspace',
-        files: [],
-        control: {
-          start_url: '',
-          heartbeat_url: '',
-          logs_url: '',
-          progress_url: '',
-          finish_url: '',
-          cancel_url: '',
-        },
-        artifacts: {
-          upload_url: '',
-        },
-      }),
+      run_manifest: normalizeRunManifest(row),
       started_at: row.started_at ?? null,
       finished_at: row.finished_at ?? null,
       last_heartbeat_at: row.last_heartbeat_at ?? null,

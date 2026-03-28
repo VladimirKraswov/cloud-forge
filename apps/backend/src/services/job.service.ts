@@ -13,6 +13,7 @@ import {
   WorkerModel,
 } from '../models';
 import {
+  ExecutionLanguage,
   Job,
   JobFile,
   LogLevel,
@@ -132,6 +133,7 @@ export class JobService {
     description: payload.description ?? null,
     owner_id: payload.owner_id ?? null,
     bootstrap_image_id: payload.bootstrap_image_id,
+    execution_language: payload.execution_language,
     environment_variables: payload.environment_variables ?? {},
     resources: payload.resources ?? null,
     entrypoint: payload.entrypoint,
@@ -553,9 +555,15 @@ export class JobService {
       };
     });
 
+    const executionLanguage =
+      (job.execution_language ||
+        bootstrapImage.execution_language ||
+        'python') as ExecutionLanguage;
+
     const runManifest: RunManifest = {
       run_id: runId,
       job_id: job.id,
+      execution_language: executionLanguage,
       bootstrap_image: {
         id: bootstrapImage.id,
         full_image_name: bootstrapImage.full_image_name,
@@ -937,7 +945,7 @@ export class JobService {
   }
 
   static async listBootstrapImages(options?: {
-    status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed';
+    status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
   }) {
     return BootstrapImageModel.list(options);
   }

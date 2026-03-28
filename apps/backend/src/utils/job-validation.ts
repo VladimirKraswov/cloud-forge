@@ -1,11 +1,12 @@
 import path from 'path';
-import { RuntimeResources } from '../models/job';
+import { ExecutionLanguage, RuntimeResources } from '../models/job';
 
 export interface CreateJobPayload {
   title: string;
   description?: string | null;
   owner_id?: string | null;
   bootstrap_image_id: string;
+  execution_language: ExecutionLanguage;
   environment_variables: Record<string, string>;
   resources?: RuntimeResources | null;
   entrypoint: string;
@@ -113,6 +114,23 @@ const normalizeResources = (
   };
 };
 
+const inferExecutionLanguage = (rawValue: string | null, entrypointRaw: string | null): ExecutionLanguage => {
+  if (rawValue === 'python' || rawValue === 'javascript') {
+    return rawValue;
+  }
+
+  const lowerEntrypoint = (entrypointRaw || '').toLowerCase();
+  if (
+    lowerEntrypoint.endsWith('.js') ||
+    lowerEntrypoint.endsWith('.mjs') ||
+    lowerEntrypoint.endsWith('.cjs')
+  ) {
+    return 'javascript';
+  }
+
+  return 'python';
+};
+
 export const validateCreateJobPayload = (payload: unknown): JobValidationResult => {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -131,6 +149,7 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
   const bootstrapImageId = asString(payload.bootstrap_image_id);
   const entrypointRaw = asString(payload.entrypoint);
   const workingDirRaw = payload.working_dir == null ? null : asString(payload.working_dir);
+  const executionLanguageRaw = asString(payload.execution_language);
   const resources = normalizeResources(payload.resources, errors);
 
   if (!title) {
@@ -141,6 +160,14 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
 
   if (!bootstrapImageId) {
     errors.push('bootstrap_image_id is required');
+  }
+
+  if (
+    executionLanguageRaw != null &&
+    executionLanguageRaw !== 'python' &&
+    executionLanguageRaw !== 'javascript'
+  ) {
+    errors.push('execution_language must be "python" or "javascript"');
   }
 
   let entrypoint: string | null = null;
@@ -218,6 +245,7 @@ export const validateCreateJobPayload = (payload: unknown): JobValidationResult 
       description,
       owner_id: ownerId,
       bootstrap_image_id: bootstrapImageId!,
+      execution_language: inferExecutionLanguage(executionLanguageRaw, entrypointRaw),
       environment_variables: environmentVariables,
       resources: resources ?? null,
       entrypoint: entrypoint!,

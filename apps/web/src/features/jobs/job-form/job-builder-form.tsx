@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from '@tanstack/react-router';
@@ -7,7 +7,12 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { catalogApi } from '@/api/catalog';
 import { jobsApi } from '@/api/jobs';
-import type { Job, JobDetailsResponse, JobFile } from '@/api/types';
+import type {
+  ExecutionLanguage,
+  Job,
+  JobDetailsResponse,
+  JobFile,
+} from '@/api/types';
 import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
 import { EnvironmentsFieldArray } from '@/features/jobs/job-form/environments-field-array';
 import {
@@ -42,6 +47,105 @@ function makeLocalId() {
   return `local_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function getMainFilePath(language: ExecutionLanguage) {
+  return language === 'javascript' ? 'src/main.js' : 'src/main.py';
+}
+
+function getMainFileMimeType(language: ExecutionLanguage) {
+  return language === 'javascript' ? 'text/javascript' : 'text/x-python';
+}
+
+function getMainFileContent(language: ExecutionLanguage) {
+  if (language === 'javascript') {
+    return `console.log('Cloud Forge JavaScript job started');\n`;
+  }
+
+  return `print("Cloud Forge Python job started")\n`;
+}
+
+function getRunScriptContent(language: ExecutionLanguage) {
+  if (language === 'javascript') {
+    return `#!/usr/bin/env bash
+set -euo pipefail
+
+node src/main.js
+`;
+  }
+
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+python src/main.py
+`;
+}
+
+function makeMainDraft(language: ExecutionLanguage): EditableJobFile {
+  const relativePath = getMainFilePath(language);
+
+  return {
+    local_id: makeLocalId(),
+    relative_path: relativePath,
+    filename: relativePath.split('/').pop() || relativePath,
+    source_type: 'inline',
+    mime_type: getMainFileMimeType(language),
+    is_executable: false,
+    inline_content: getMainFileContent(language),
+    status: 'new',
+    content_loaded: true,
+    file: null,
+  };
+}
+
+function makeRunScriptDraft(language: ExecutionLanguage): EditableJobFile {
+  return {
+    local_id: makeLocalId(),
+    relative_path: 'scripts/run.sh',
+    filename: 'run.sh',
+    source_type: 'inline',
+    mime_type: 'text/x-shellscript',
+    is_executable: true,
+    inline_content: getRunScriptContent(language),
+    status: 'new',
+    content_loaded: true,
+    file: null,
+  };
+}
+
+function makeDefaultScaffold(language: ExecutionLanguage): EditableJobFile[] {
+  return [makeRunScriptDraft(language), makeMainDraft(language)];
+}
+
+function isDefaultScaffold(files: EditableJobFile[], language: ExecutionLanguage) {
+  const visibleFiles = files
+    .filter((file) => file.status !== 'deleted')
+    .sort((left, right) => left.relative_path.localeCompare(right.relative_path));
+
+  if (visibleFiles.length !== 2) return false;
+
+  const [mainFile, runFile] = [...visibleFiles].sort((left, right) =>
+    left.relative_path.localeCompare(right.relative_path),
+  );
+
+  const expectedMainPath = getMainFilePath(language);
+  const expectedMainContent = getMainFileContent(language);
+  const expectedRunContent = getRunScriptContent(language);
+
+  const actualMain = visibleFiles.find((file) => file.relative_path === expectedMainPath);
+  const actualRun = visibleFiles.find((file) => file.relative_path === 'scripts/run.sh');
+
+  return Boolean(
+    mainFile &&
+      runFile &&
+      actualMain &&
+      actualRun &&
+      actualMain.source_type === 'inline' &&
+      actualMain.inline_content === expectedMainContent &&
+      actualRun.source_type === 'inline' &&
+      actualRun.inline_content === expectedRunContent &&
+      actualRun.is_executable,
+  );
+}
+
 function mapJobFileToEditable(file: JobFile): EditableJobFile {
   return {
     local_id: makeLocalId(),
@@ -59,26 +163,12 @@ function mapJobFileToEditable(file: JobFile): EditableJobFile {
   };
 }
 
-function makeInlineDraft(): EditableJobFile {
-  return {
-    local_id: makeLocalId(),
-    relative_path: 'src/main.py',
-    filename: 'main.py',
-    source_type: 'inline',
-    mime_type: 'text/x-python',
-    is_executable: false,
-    inline_content: '',
-    status: 'new',
-    content_loaded: true,
-    file: null,
-  };
-}
-
 function guessMimeType(name: string) {
   const lower = name.toLowerCase();
   if (lower.endsWith('.py')) return 'text/x-python';
   if (lower.endsWith('.sh')) return 'text/x-shellscript';
   if (lower.endsWith('.js')) return 'text/javascript';
+  if (lower.endsWith('.jsx')) return 'text/jsx';
   if (lower.endsWith('.ts')) return 'text/typescript';
   if (lower.endsWith('.tsx')) return 'text/tsx';
   if (lower.endsWith('.json')) return 'application/json';
@@ -116,13 +206,14 @@ export function JobBuilderForm({
   initialBootstrapImageId?: string | null;
   onSaved: (job: Job) => Promise<void> | void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const isEditMode = Boolean(jobId);
   const [tab, setTab] = useState<'general' | 'files'>('general');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [files, setFiles] = useState<EditableJobFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [loadingContentFileId, setLoadingContentFileId] = useState<string | null>(null);
+  const previousLanguageRef = useRef<ExecutionLanguage>('python');
 
   const bootstrapImagesQuery = useQuery({
     queryKey: ['bootstrap-images'],
@@ -139,6 +230,21 @@ export function JobBuilderForm({
     defaultValues: initialValues,
   });
 
+  const selectedExecutionLanguage = form.watch('execution_language');
+
+  const languageLabels =
+    lang === 'ru'
+      ? {
+          executionLanguage: 'Язык выполнения',
+          python: 'Python',
+          javascript: 'JavaScript',
+        }
+      : {
+          executionLanguage: 'Execution language',
+          python: 'Python',
+          javascript: 'JavaScript',
+        };
+
   useEffect(() => {
     form.reset(initialValues);
     const mappedFiles = (initialJobDetails?.files ?? []).map(mapJobFileToEditable);
@@ -146,6 +252,7 @@ export function JobBuilderForm({
     setSelectedFileId(mappedFiles[0]?.local_id || null);
     setSubmitError(null);
     setTab('general');
+    previousLanguageRef.current = initialValues.execution_language;
   }, [form, initialJobDetails?.files, initialValues]);
 
   useEffect(() => {
@@ -155,6 +262,56 @@ export function JobBuilderForm({
     }
   }, [files, selectedFileId]);
 
+  useEffect(() => {
+    if (isEditMode) return;
+    if (files.length > 0) return;
+
+    const scaffold = makeDefaultScaffold(selectedExecutionLanguage);
+    setFiles(scaffold);
+    setSelectedFileId(scaffold[0]?.local_id || null);
+  }, [files.length, isEditMode, selectedExecutionLanguage]);
+
+  useEffect(() => {
+    if (isEditMode) {
+      previousLanguageRef.current = selectedExecutionLanguage;
+      return;
+    }
+
+    const previousLanguage = previousLanguageRef.current;
+    if (previousLanguage === selectedExecutionLanguage) return;
+
+    setFiles((current) =>
+      isDefaultScaffold(current, previousLanguage)
+        ? makeDefaultScaffold(selectedExecutionLanguage)
+        : current,
+    );
+
+    const selectedBootstrapImageId = form.getValues('bootstrap_image_id');
+    if (selectedBootstrapImageId) {
+      const images = bootstrapImagesQuery.data?.items ?? [];
+      const stillValid = images.some(
+        (image) =>
+          image.id === selectedBootstrapImageId &&
+          (image.execution_language ?? 'python') === selectedExecutionLanguage &&
+          image.status === 'completed',
+      );
+
+      if (!stillValid) {
+        form.setValue('bootstrap_image_id', '', {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }
+    }
+
+    previousLanguageRef.current = selectedExecutionLanguage;
+  }, [
+    bootstrapImagesQuery.data?.items,
+    form,
+    isEditMode,
+    selectedExecutionLanguage,
+  ]);
+
   const filesByLocalId = useMemo(() => {
     return new Map(files.map((file) => [file.local_id, file]));
   }, [files]);
@@ -162,7 +319,11 @@ export function JobBuilderForm({
   const selectedFile = selectedFileId ? filesByLocalId.get(selectedFileId) || null : null;
 
   const activeBootstrapImages =
-    bootstrapImagesQuery.data?.items.filter((image) => image.status === 'completed') || [];
+    bootstrapImagesQuery.data?.items.filter(
+      (image) =>
+        image.status === 'completed' &&
+        (image.execution_language ?? 'python') === selectedExecutionLanguage,
+    ) || [];
 
   const updateFile = (localId: string, patch: Partial<EditableJobFile>) => {
     setFiles((current) =>
@@ -171,7 +332,7 @@ export function JobBuilderForm({
   };
 
   const addInlineFile = () => {
-    const next = makeInlineDraft();
+    const next = makeMainDraft(selectedExecutionLanguage);
     setFiles((current) => [...current, next]);
     setSelectedFileId(next.local_id);
     setTab('files');
@@ -393,6 +554,35 @@ export function JobBuilderForm({
                   </div>
 
                   <div className="space-y-2">
+                    <Label>{languageLabels.executionLanguage}</Label>
+                    <Select
+                      value={selectedExecutionLanguage}
+                      onValueChange={(value) =>
+                        form.setValue('execution_language', value as ExecutionLanguage, {
+                          shouldDirty: true,
+                          shouldTouch: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="python">{languageLabels.python}</SelectItem>
+                        <SelectItem value="javascript">{languageLabels.javascript}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.execution_language ? (
+                      <p className="text-xs text-destructive">
+                        {form.formState.errors.execution_language.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
                     <Label>{t.forms.job.fields.bootstrapImage}</Label>
                     <Select
                       value={form.watch('bootstrap_image_id')}
@@ -421,20 +611,13 @@ export function JobBuilderForm({
                       </p>
                     ) : null}
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="job-description">{t.forms.job.fields.description}</Label>
-                  <Textarea id="job-description" {...form.register('description')} />
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="job-entrypoint">{t.forms.job.fields.entrypoint}</Label>
                     <Input
                       id="job-entrypoint"
                       {...form.register('entrypoint')}
-                      placeholder="scripts/train.sh"
+                      placeholder="scripts/run.sh"
                     />
                     {form.formState.errors.entrypoint ? (
                       <p className="text-xs text-destructive">
@@ -442,9 +625,18 @@ export function JobBuilderForm({
                       </p>
                     ) : null}
                   </div>
+                </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="job-description">{t.forms.job.fields.description}</Label>
+                  <Textarea id="job-description" {...form.register('description')} />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="job-entrypoint-args">{t.forms.job.fields.entrypointArgs}</Label>
+                    <Label htmlFor="job-entrypoint-args">
+                      {t.forms.job.fields.entrypointArgs}
+                    </Label>
                     <Input
                       id="job-entrypoint-args"
                       {...form.register('entrypoint_args_text')}
@@ -481,7 +673,7 @@ export function JobBuilderForm({
                         <div className="grid gap-2 md:grid-cols-2">
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              {t.jobs.tokens.details.dockerImage}
+                              Docker image
                             </div>
                             <div className="mt-1 font-medium">{selected.full_image_name}</div>
                           </div>
@@ -495,10 +687,10 @@ export function JobBuilderForm({
 
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              {t.navigation.catalog}
+                              {languageLabels.executionLanguage}
                             </div>
-                            <div className="mt-1 font-medium">
-                              {selected.environments.length}
+                            <div className="mt-1 font-medium capitalize">
+                              {selected.execution_language ?? 'python'}
                             </div>
                           </div>
 

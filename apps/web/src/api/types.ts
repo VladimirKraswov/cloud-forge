@@ -42,6 +42,7 @@ export interface BootstrapImage {
   full_image_name: string;
   dockerfile_text: string;
   environments: BootstrapEnvironmentSpec[];
+  execution_language?: ExecutionLanguage;
   runtime_resources?: RuntimeResources | null;
   sdk_version?: string | null;
   status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
@@ -70,6 +71,7 @@ export interface JobPayload {
   description?: string | null;
   owner_id?: string | null;
   bootstrap_image_id: string;
+  execution_language?: ExecutionLanguage;
   environment_variables: Record<string, string>;
   resources?: RuntimeResources | null;
   entrypoint: string;

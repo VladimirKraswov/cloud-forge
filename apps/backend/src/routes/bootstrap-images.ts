@@ -4,10 +4,12 @@ import {
   BootstrapBuilderService,
   BootstrapEnvironmentInput,
 } from '../services/bootstrap-builder.service';
+import { ExecutionLanguage } from '../models/job';
 import { JobService } from '../services/job.service';
 
 type PreviewBootstrapImageBody = {
   baseImage: string;
+  executionLanguage: ExecutionLanguage;
   environments: BootstrapEnvironmentInput[];
   dockerfileOverride?: string | null;
 };
@@ -16,8 +18,9 @@ type BuildBootstrapImageBody = {
   name: string;
   baseImage: string;
   tag: string;
+  executionLanguage: ExecutionLanguage;
   environments: BootstrapEnvironmentInput[];
-  dockerfileText: string;
+  dockerfileText?: string | null;
   runtimeResources?: Record<string, unknown> | null;
   dockerUser: string;
   dockerPass: string;
@@ -29,12 +32,16 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
     {
       schema: {
         description:
-          'Generate Dockerfile preview for a bootstrap image with isolated Python environments',
+          'Generate Dockerfile preview for a bootstrap image for Python or JavaScript jobs',
         body: {
           type: 'object',
-          required: ['baseImage', 'environments'],
+          required: ['baseImage', 'executionLanguage', 'environments'],
           properties: {
             baseImage: { type: 'string', minLength: 1 },
+            executionLanguage: {
+              type: 'string',
+              enum: ['python', 'javascript'],
+            },
             dockerfileOverride: { type: 'string', nullable: true },
             environments: {
               type: 'array',
@@ -58,10 +65,17 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         const dockerfile = BootstrapBuilderService.generateDockerfile(
           req.body.baseImage,
           req.body.environments,
+          req.body.executionLanguage,
           req.body.dockerfileOverride || undefined,
         );
 
-        return reply.send({ dockerfile });
+        return reply.send({
+          dockerfile,
+          environments: req.body.environments.map((env) => ({
+            name: env.name,
+            python_binary: env.python_binary || 'python3',
+          })),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to generate Dockerfile';
         req.log.error({ err }, '[POST /api/bootstrap-images/preview] failed');
@@ -81,8 +95,8 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
             'name',
             'baseImage',
             'tag',
+            'executionLanguage',
             'environments',
-            'dockerfileText',
             'dockerUser',
             'dockerPass',
           ],
@@ -90,7 +104,11 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
             name: { type: 'string', minLength: 1 },
             baseImage: { type: 'string', minLength: 1 },
             tag: { type: 'string', minLength: 1 },
-            dockerfileText: { type: 'string', minLength: 1 },
+            executionLanguage: {
+              type: 'string',
+              enum: ['python', 'javascript'],
+            },
+            dockerfileText: { type: 'string', nullable: true },
             runtimeResources: { type: 'object', additionalProperties: true, nullable: true },
             dockerUser: { type: 'string', minLength: 1 },
             dockerPass: { type: 'string', minLength: 1 },
@@ -114,13 +132,21 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
     async (req: FastifyRequest<{ Body: BuildBootstrapImageBody }>, reply: FastifyReply) => {
       try {
         const id = `img_${uuidv4().replace(/-/g, '')}`;
+        const dockerfileText =
+          req.body.dockerfileText?.trim() ||
+          BootstrapBuilderService.generateDockerfile(
+            req.body.baseImage,
+            req.body.environments,
+            req.body.executionLanguage,
+          );
 
         void BootstrapBuilderService.buildAndPush({
           id,
           name: req.body.name,
           baseImage: req.body.baseImage,
           tag: req.body.tag,
-          dockerfileText: req.body.dockerfileText,
+          executionLanguage: req.body.executionLanguage,
+          dockerfileText,
           environments: req.body.environments,
           runtimeResources: req.body.runtimeResources,
           dockerUser: req.body.dockerUser,
@@ -130,6 +156,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         return reply.code(201).send({
           id,
           status: 'building',
+          dockerfile_text: dockerfileText,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to start build';
@@ -200,7 +227,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
           properties: {
             status: {
               type: 'string',
-              enum: ['draft', 'building', 'pushing', 'completed', 'failed'],
+              enum: ['draft', 'building', 'pushing', 'completed', 'failed', 'cancelled'],
             },
           },
         },
@@ -209,7 +236,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
     async (
       req: FastifyRequest<{
         Querystring: {
-          status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed';
+          status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
         };
       }>,
     ) => {

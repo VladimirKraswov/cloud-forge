@@ -1,125 +1,11 @@
 === CODE BUNDLE ===
-root: /Volumes/Extend/work/cloud-forge/apps/web
+root: /Volumes/Extend/work/cloud-forge/apps/web/src
 ignore: .codebundleignore
-generated: 2026-03-28T19:14:00.310Z
+generated: 2026-03-28T16:08:24.547Z
 
 
 
-path: /.env.example
-----------------------------------------
-VITE_API_BASE_URL=https://api.cloud-forge.ru
-
-
-path: /.gitignore
-----------------------------------------
-node_modules
-dist
-.vercel
-.next
-.DS_Store
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-
-path: /Dockerfile
-----------------------------------------
-# Build stage
-FROM node:20-slim AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-RUN npm run build
-
-# Production stage
-FROM nginx:stable-alpine
-
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Default nginx config for SPA
-RUN printf "server { \n\
-    listen 80; \n\
-    location / { \n\
-        root /usr/share/nginx/html; \n\
-        index index.html index.htm; \n\
-        try_files \$uri \$uri/ /index.html; \n\
-    } \n\
-}" > /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
-
-
-path: /package.json
-----------------------------------------
-{
-  "name": "cloud-forge-web",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "@radix-ui/react-alert-dialog": "^1.1.14",
-    "@radix-ui/react-dialog": "^1.1.14",
-    "@radix-ui/react-dropdown-menu": "^2.1.16",
-    "@radix-ui/react-label": "^2.1.7",
-    "@radix-ui/react-select": "^2.2.5",
-    "@radix-ui/react-separator": "^1.1.7",
-    "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@tailwindcss/vite": "^4.2.2",
-    "@tanstack/react-query": "^5.95.2",
-    "@tanstack/react-query-devtools": "^5.95.2",
-    "@tanstack/react-router": "^1.168.7",
-    "@tanstack/react-router-devtools": "^1.166.11",
-    "axios": "^1.13.6",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
-    "lucide-react": "^0.511.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-hook-form": "^7.72.0",
-    "recharts": "^3.2.1",
-    "sonner": "^2.0.7",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss": "^4.2.2",
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^24.7.0",
-    "@types/react": "^19.1.14",
-    "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react": "^5.1.0",
-    "eslint": "^9.39.1",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.4.24",
-    "globals": "^16.4.0",
-    "prettier": "^3.6.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0",
-    "vite": "^7.1.7"
-  }
-}
-
-
-path: /src/api/artifacts.ts
+path: /api/artifacts.ts
 ----------------------------------------
 import { buildArtifactContentUrl, buildArtifactDownloadUrl } from '@/api/client';
 
@@ -129,7 +15,7 @@ export const artifactsApi = {
 };
 
 
-path: /src/api/catalog.ts
+path: /api/catalog.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
 import type {
@@ -138,7 +24,6 @@ import type {
   BootstrapImage,
   BootstrapImageLogEntry,
   ContainerPreset,
-  ExecutionLanguage,
   JobTemplate,
   PaginatedResponse,
   RuntimeResources,
@@ -169,7 +54,6 @@ export const catalogApi = {
 
   previewDockerfile: (data: {
     baseImage: string;
-    executionLanguage: ExecutionLanguage;
     environments: BootstrapEnvironmentSpec[];
     dockerfileOverride?: string | null;
   }) =>
@@ -184,7 +68,6 @@ export const catalogApi = {
     name: string;
     baseImage: string;
     tag: string;
-    executionLanguage: ExecutionLanguage;
     environments: BootstrapEnvironmentSpec[];
     dockerfileText?: string;
     runtimeResources?: RuntimeResources | null;
@@ -206,7 +89,7 @@ export const catalogApi = {
 };
 
 
-path: /src/api/client.ts
+path: /api/client.ts
 ----------------------------------------
 import axios, { AxiosError } from 'axios';
 
@@ -283,7 +166,7 @@ export function buildRunWebSocketUrl(runId: string) {
 }
 
 
-path: /src/api/dashboard.ts
+path: /api/dashboard.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
 import type { DashboardSummary, RecentEvent, Run, Worker } from '@/api/types';
@@ -296,7 +179,7 @@ export const dashboardApi = {
 };
 
 
-path: /src/api/jobs.ts
+path: /api/jobs.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
 import type {
@@ -404,7 +287,7 @@ export const jobsApi = {
 };
 
 
-path: /src/api/runs.ts
+path: /api/runs.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
 import type { PaginatedResponse, Run, RunEvent } from '@/api/types';
@@ -424,7 +307,7 @@ export const runsApi = {
 };
 
 
-path: /src/api/tokens.ts
+path: /api/tokens.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
 import type { ShareTokenDetails } from '@/api/types';
@@ -435,7 +318,7 @@ export const tokensApi = {
 };
 
 
-path: /src/api/types.ts
+path: /api/types.ts
 ----------------------------------------
 export type ExecutionLanguage = 'python' | 'javascript';
 export type RunStatus = 'created' | 'running' | 'finished' | 'failed' | 'cancelled' | 'lost';
@@ -481,7 +364,6 @@ export interface BootstrapImage {
   full_image_name: string;
   dockerfile_text: string;
   environments: BootstrapEnvironmentSpec[];
-  execution_language?: ExecutionLanguage;
   runtime_resources?: RuntimeResources | null;
   sdk_version?: string | null;
   status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
@@ -510,7 +392,6 @@ export interface JobPayload {
   description?: string | null;
   owner_id?: string | null;
   bootstrap_image_id: string;
-  execution_language?: ExecutionLanguage;
   environment_variables: Record<string, string>;
   resources?: RuntimeResources | null;
   entrypoint: string;
@@ -755,7 +636,7 @@ export interface JobsListResponse {
 }
 
 
-path: /src/api/workers.ts
+path: /api/workers.ts
 ----------------------------------------
 import { api, unwrap } from '@/api/client';
 import type { Worker } from '@/api/types';
@@ -766,7 +647,7 @@ export const workersApi = {
 };
 
 
-path: /src/app/providers.tsx
+path: /app/providers.tsx
 ----------------------------------------
 import type { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -813,7 +694,7 @@ export function AppProviders({ children }: PropsWithChildren) {
 }
 
 
-path: /src/app/route-error-boundary.tsx
+path: /app/route-error-boundary.tsx
 ----------------------------------------
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
@@ -837,7 +718,7 @@ export function RouteErrorBoundary({ error }: { error: Error }) {
 }
 
 
-path: /src/app/router.tsx
+path: /app/router.tsx
 ----------------------------------------
 import {
   Outlet,
@@ -974,14 +855,15 @@ declare module '@tanstack/react-router' {
 }
 
 
-path: /src/app/shell/app-shell.tsx
+path: /app/shell/app-shell.tsx
 ----------------------------------------
 import type { PropsWithChildren } from 'react';
 import { useState } from 'react';
-import { Cpu, Menu, Sparkles, X } from 'lucide-react';
+import { Bell, Cpu, Menu, Search, Sparkles, X } from 'lucide-react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { LanguageSwitcher } from '@/shared/components/app/language-switcher';
 import { Button } from '@/shared/components/ui/button';
+import { Input } from '@/shared/components/ui/input';
 import { cn } from '@/shared/utils/cn';
 import { useI18n } from '@/shared/lib/i18n';
 
@@ -1088,14 +970,26 @@ export function AppShell({ children }: PropsWithChildren) {
                 <Menu className="h-5 w-5" />
               </Button>
 
+              <div className="relative hidden max-w-md flex-1 md:block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  readOnly
+                  value=""
+                  placeholder={t.navigation.searchPlaceholder}
+                  className="h-11 rounded-2xl border-border bg-card pl-10"
+                />
+              </div>
+
               <div className="ml-auto flex items-center gap-3">
                 <LanguageSwitcher className="hidden sm:inline-flex" compact />
 
-                {import.meta.env.DEV ? (
-                  <div className="hidden rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:block">
-                    {import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}
-                  </div>
-                ) : null}
+                <div className="hidden rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:block">
+                  {import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}
+                </div>
+
+                <Button variant="outline" size="icon" className="rounded-full">
+                  <Bell className="h-4 w-4" />
+                </Button>
 
                 <div className="flex items-center gap-3 rounded-full border border-border bg-card px-2.5 py-1.5 shadow-[var(--shadow-soft)]">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -1118,7 +1012,7 @@ export function AppShell({ children }: PropsWithChildren) {
 }
 
 
-path: /src/entities/runs/ui/run-status-badge.tsx
+path: /entities/runs/ui/run-status-badge.tsx
 ----------------------------------------
 import type { RunStatus } from '@/api/types';
 import { Badge } from '@/shared/components/ui/badge';
@@ -1137,7 +1031,7 @@ export function RunStatusBadge({ status }: { status: RunStatus }) {
 }
 
 
-path: /src/entities/workers/ui/worker-status-badge.tsx
+path: /entities/workers/ui/worker-status-badge.tsx
 ----------------------------------------
 import type { WorkerStatus } from '@/api/types';
 import { Badge } from '@/shared/components/ui/badge';
@@ -1153,10 +1047,10 @@ export function WorkerStatusBadge({ status }: { status: WorkerStatus }) {
 }
 
 
-path: /src/features/catalog/bootstrap-build-floating.tsx
+path: /features/catalog/bootstrap-build-floating.tsx
 ----------------------------------------
 import { useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { catalogApi } from '@/api/catalog';
 import { Badge } from '@/shared/components/ui/badge';
@@ -1184,26 +1078,9 @@ function getStatusLabel(status?: string) {
 export function BootstrapBuildFloating() {
   const { build, isActive, isFinished, clearTracking } = useBootstrapBuildTracker();
   const [cancelling, setCancelling] = useState(false);
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
 
   if (!build) return null;
-
-  const labels =
-    lang === 'ru'
-      ? {
-          cancelled: 'Сборка отменена.',
-          cancelling: 'Отмена...',
-          cancelBuild: 'Отменить сборку',
-          failed: 'Сборка завершилась ошибкой или была отменена.',
-          newBuild: 'Новая сборка',
-        }
-      : {
-          cancelled: 'Build cancelled.',
-          cancelling: 'Cancelling...',
-          cancelBuild: 'Cancel build',
-          failed: 'Build failed or was cancelled.',
-          newBuild: 'New build',
-        };
 
   const handleCancel = async () => {
     if (!build.id) return;
@@ -1224,13 +1101,13 @@ export function BootstrapBuildFloating() {
     build.status === 'completed'
       ? t.floating.buildCompleted
       : build.status === 'cancelled'
-        ? labels.cancelled
+        ? 'Build cancelled.'
         : isActive
           ? t.floating.buildInProgress
-          : labels.failed;
+          : t.floating.buildFailed;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] w-[380px] max-w-[calc(100vw-2rem)]">
+    <div className="fixed bottom-4 right-4 z-[100] w-[360px] max-w-[calc(100vw-2rem)]">
       <Card className="border shadow-2xl">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
@@ -1260,56 +1137,45 @@ export function BootstrapBuildFloating() {
                 </p>
               ) : null}
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="mt-3 flex items-center gap-2">
+                <Button size="sm" onClick={() => requestOpenBootstrapBuildDialog()}>
+                  {t.floating.openMonitor}
+                </Button>
+
                 {isFinished ? (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() => requestOpenBootstrapBuildDialog('new')}
-                    >
-                      {labels.newBuild}
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => requestOpenBootstrapBuildDialog('resume')}
-                    >
-                      {t.floating.openMonitor}
-                    </Button>
-
-                    <Button size="sm" variant="ghost" onClick={clearTracking}>
-                      {t.floating.dismiss}
-                    </Button>
-                  </>
+                  <Button size="sm" variant="ghost" onClick={clearTracking}>
+                    {t.floating.dismiss}
+                  </Button>
                 ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() => requestOpenBootstrapBuildDialog('resume')}
-                    >
-                      {t.floating.openMonitor}
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={cancelling}
-                      onClick={handleCancel}
-                    >
-                      {cancelling ? (
-                        <>
-                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                          {labels.cancelling}
-                        </>
-                      ) : (
-                        labels.cancelBuild
-                      )}
-                    </Button>
-                  </>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={cancelling}
+                    onClick={handleCancel}
+                  >
+                    {cancelling ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      'Cancel build'
+                    )}
+                  </Button>
                 )}
               </div>
             </div>
+
+            {isFinished ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={clearTracking}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -1318,7 +1184,7 @@ export function BootstrapBuildFloating() {
 }
 
 
-path: /src/features/catalog/bootstrap-builder-dialog.tsx
+path: /features/catalog/bootstrap-builder-dialog.tsx
 ----------------------------------------
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -1336,7 +1202,6 @@ import {
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { catalogApi } from '@/api/catalog';
-import type { ExecutionLanguage } from '@/api/types';
 import { LanguageSwitcher } from '@/shared/components/app/language-switcher';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
 import { Badge } from '@/shared/components/ui/badge';
@@ -1352,19 +1217,11 @@ import {
 } from '@/shared/components/ui/dialog';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/components/ui/select';
 import { Textarea } from '@/shared/components/ui/textarea';
 import { useI18n } from '@/shared/lib/i18n';
 import { cn } from '@/shared/utils/cn';
 import {
   OPEN_BUILD_DIALOG_EVENT,
-  type BuildDialogIntent,
   useBootstrapBuildTracker,
 } from './model/use-bootstrap-build-tracker';
 
@@ -1395,16 +1252,6 @@ type BuildInsights = {
   stageId: BuildStageId;
   largeLayers: LayerInsight[];
   lastMeaningfulLine: string | null;
-};
-
-type BuilderFormState = {
-  name: string;
-  baseImage: string;
-  tag: string;
-  executionLanguage: ExecutionLanguage;
-  extraDependencies: string;
-  dockerUser: string;
-  dockerPass: string;
 };
 
 const STAGE_META: Array<{
@@ -1478,8 +1325,7 @@ const baseInfoSchema = z.object({
       'Invalid tag. Use lowercase, numbers, dots, underscores, or dashes.',
     ),
   baseImage: z.string().min(1, 'Base image is required'),
-  executionLanguage: z.enum(['python', 'javascript']),
-  extraDependencies: z.string(),
+  extraPackages: z.string(),
 });
 
 const credentialsSchema = z.object({
@@ -1488,22 +1334,6 @@ const credentialsSchema = z.object({
 });
 
 const buildFormSchema = baseInfoSchema.merge(credentialsSchema);
-
-function getDefaultBaseImage(language: ExecutionLanguage) {
-  return language === 'javascript' ? 'node:20-slim' : 'python:3.11-slim';
-}
-
-function getDefaultFormData(language: ExecutionLanguage = 'python'): BuilderFormState {
-  return {
-    name: '',
-    baseImage: getDefaultBaseImage(language),
-    tag: '0.1.0',
-    executionLanguage: language,
-    extraDependencies: '',
-    dockerUser: '',
-    dockerPass: '',
-  };
-}
 
 function rankStage(current: BuildStageId, next: BuildStageId): BuildStageId {
   return stageRank[next] > stageRank[current] ? next : current;
@@ -1605,7 +1435,7 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
     }
 
     if (
-      /building docker image|copy runner\.py|copy sdk|run pip|run npm|run apt-get|run chmod|run python|run python3|run node|run mkdir|exporting to image|load build definition from dockerfile|transferring dockerfile|step\s*\d+\/\d+/.test(
+      /building docker image|copy runner\.py|copy sdk|run pip|run apt-get|run chmod|run python|run python3|run mkdir|exporting to image|load build definition from dockerfile|transferring dockerfile|step\s*\d+\/\d+/.test(
         lower,
       )
     ) {
@@ -1670,17 +1500,11 @@ function StageRow({
   description,
   icon: Icon,
   state,
-  activeLabel,
-  doneLabel,
-  failedLabel,
 }: {
   title: string;
   description: string;
   icon: typeof Package;
   state: 'done' | 'active' | 'pending' | 'failed';
-  activeLabel: string;
-  doneLabel: string;
-  failedLabel: string;
 }) {
   return (
     <div
@@ -1715,14 +1539,14 @@ function StageRow({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <p className="font-medium">{title}</p>
-          {state === 'active' ? <Badge>{activeLabel}</Badge> : null}
+          {state === 'active' ? <Badge>active</Badge> : null}
           {state === 'done' ? (
             <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
-              {doneLabel}
+              done
             </Badge>
           ) : null}
           {state === 'failed' ? (
-            <Badge className="border-red-200 bg-red-50 text-red-700">{failedLabel}</Badge>
+            <Badge className="border-red-200 bg-red-50 text-red-700">failed</Badge>
           ) : null}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -1737,92 +1561,33 @@ function isTerminalStatus(status?: string | null) {
 
 export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
-  const [dialogIntent, setDialogIntent] = useState<BuildDialogIntent>('new');
   const [step, setStep] = useState<BuilderStep>('form');
   const [loading, setLoading] = useState(false);
-  const { build, startTracking, clearTracking, isActive } = useBootstrapBuildTracker();
-  const { t, lang } = useI18n();
+  const { build, startTracking, clearTracking } = useBootstrapBuildTracker();
+  const { t } = useI18n();
 
-  const [formData, setFormData] = useState<BuilderFormState>(() => getDefaultFormData('python'));
+  const [formData, setFormData] = useState({
+    name: '',
+    baseImage: 'python:3.11-slim',
+    tag: '0.1.0',
+    extraPackages: '',
+    dockerUser: '',
+    dockerPass: '',
+  });
+
   const [dockerfile, setDockerfile] = useState('');
+  const [buildId, setBuildId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<BuildProgress | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const previousTrackedStatusRef = useRef<string | null>(build?.status ?? null);
-
-  const progress: BuildProgress | null = build
-    ? {
-        status: build.status,
-        logs: build.logs,
-      }
-    : null;
-
-  const labels =
-    lang === 'ru'
-      ? {
-          executionLanguage: 'Язык выполнения',
-          executionLanguageHelp:
-            'Определяет SDK и тип минимального рантайма внутри bootstrap-образа.',
-          python: 'Python',
-          javascript: 'JavaScript',
-          extraDependencies: 'Доп. зависимости',
-          extraDependenciesHelp:
-            'Для Python — pip пакеты по одному на строку. Для JavaScript — npm пакеты по одному на строку.',
-          dependenciesPlaceholderPython: `requests
-pandas
-numpy`,
-          dependenciesPlaceholderJavascript: `axios
-zod
-dotenv`,
-          dependencyNotePython:
-            'Будут установлены Python-зависимости для окружения по умолчанию.',
-          dependencyNoteJavascript:
-            'Будут установлены JS/npm-зависимости. Бэкенд должен интерпретировать это как javascript stack.',
-          buildCancelled: 'Сборка отменена',
-          newBuild: 'Новая сборка',
-          closeAndReset: 'Закрыть и начать заново',
-        }
-      : {
-          executionLanguage: 'Execution language',
-          executionLanguageHelp:
-            'Determines which SDK and default runtime stack will be installed into the bootstrap image.',
-          python: 'Python',
-          javascript: 'JavaScript',
-          extraDependencies: 'Extra dependencies',
-          extraDependenciesHelp:
-            'For Python: pip packages, one per line. For JavaScript: npm packages, one per line.',
-          dependenciesPlaceholderPython: `requests
-pandas
-numpy`,
-          dependenciesPlaceholderJavascript: `axios
-zod
-dotenv`,
-          dependencyNotePython:
-            'These lines will be installed as Python dependencies for the default environment.',
-          dependencyNoteJavascript:
-            'These lines will be installed as JS/npm dependencies. Backend should interpret them as javascript stack dependencies.',
-          buildCancelled: 'Build cancelled',
-          newBuild: 'New build',
-          closeAndReset: 'Close and start over',
-        };
 
   useEffect(() => {
     if (autoScroll) {
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [autoScroll, progress?.logs]);
-
-  useEffect(() => {
-    const previousStatus = previousTrackedStatusRef.current;
-    const currentStatus = build?.status ?? null;
-
-    if (previousStatus !== currentStatus && currentStatus === 'completed') {
-      onSuccess?.();
-    }
-
-    previousTrackedStatusRef.current = currentStatus;
-  }, [build?.status, onSuccess]);
 
   const handleLogScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
@@ -1834,31 +1599,12 @@ dotenv`,
     }
   };
 
-  const openNewBuildForm = () => {
-    setDialogIntent('new');
-    setStep('form');
-    setFormErrors({});
-    setDockerfile('');
-    setAutoScroll(true);
-    setFormData(getDefaultFormData('python'));
-    setOpen(true);
-  };
-
-  const syncDialogView = (intent: BuildDialogIntent) => {
-    if (build && (!isTerminalStatus(build.status) || intent === 'resume')) {
-      setStep('building');
-      return;
-    }
-
-    setStep('form');
-  };
-
   const handleCancel = async () => {
-    if (!build?.id) return;
+    if (!buildId) return;
 
     setCancelling(true);
     try {
-      await catalogApi.cancelBuild(build.id);
+      await catalogApi.cancelBuild(buildId);
       toast.success('Build cancellation requested');
     } catch (error) {
       console.error(error);
@@ -1869,25 +1615,61 @@ dotenv`,
   };
 
   useEffect(() => {
-    const handler = (event: Event) => {
-      const customEvent = event as CustomEvent<{ intent?: BuildDialogIntent }>;
-      const intent = customEvent.detail?.intent ?? 'resume';
-      setDialogIntent(intent);
-      setOpen(true);
+    let interval: number | undefined;
 
-      if (build && (!isTerminalStatus(build.status) || intent === 'resume')) {
-        setStep('building');
-      } else {
-        setStep('form');
+    if (step === 'building' && buildId) {
+      interval = window.setInterval(async () => {
+        try {
+          const result = await catalogApi.getBuildProgress(buildId);
+          setProgress(result);
+
+          if (isTerminalStatus(result.status)) {
+            if (interval !== undefined) {
+              window.clearInterval(interval);
+            }
+
+            if (result.status === 'completed') {
+              toast.success('Image published successfully');
+              onSuccess?.();
+            } else if (result.status === 'cancelled') {
+              toast('Build cancelled');
+            } else {
+              toast.error('Build failed. Check logs for details.');
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch build progress', error);
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (interval !== undefined) {
+        window.clearInterval(interval);
       }
     };
+  }, [buildId, onSuccess, step]);
+
+  useEffect(() => {
+    if (!build) return;
+
+    setBuildId(build.id);
+    setProgress({
+      status: build.status,
+      logs: build.logs,
+    });
+    setStep('building');
+  }, [build]);
+
+  useEffect(() => {
+    const handler = () => setOpen(true);
 
     window.addEventListener(OPEN_BUILD_DIALOG_EVENT, handler);
 
     return () => {
       window.removeEventListener(OPEN_BUILD_DIALOG_EVENT, handler);
     };
-  }, [build]);
+  }, []);
 
   const insights = useMemo(() => parseBuildInsights(progress), [progress]);
 
@@ -1931,13 +1713,7 @@ dotenv`,
     try {
       const response = await catalogApi.previewDockerfile({
         baseImage: formData.baseImage,
-        executionLanguage: formData.executionLanguage,
-        environments: [
-          {
-            name: 'default',
-            requirements_text: formData.extraDependencies,
-          },
-        ],
+        environments: [{ name: 'default', requirements_text: formData.extraPackages }],
       });
 
       setDockerfile(response.dockerfile);
@@ -1970,29 +1746,23 @@ dotenv`,
 
     try {
       const response = await catalogApi.buildBootstrapImage({
-        name: formData.name,
-        baseImage: formData.baseImage,
-        tag: formData.tag,
-        executionLanguage: formData.executionLanguage,
-        dockerUser: formData.dockerUser,
-        dockerPass: formData.dockerPass,
+        ...formData,
         dockerfileText: dockerfile,
-        environments: [
-          {
-            name: 'default',
-            requirements_text: formData.extraDependencies,
-          },
-        ],
+        environments: [{ name: 'default', requirements_text: formData.extraPackages }],
       });
 
       startTracking({
         id: response.id,
-        status: response.status ?? 'building',
+        status: 'building',
         logs: ['Starting build...'],
         imageRef: `${formData.dockerUser}/${formData.name}:${formData.tag}`,
       });
 
-      setDialogIntent('resume');
+      setBuildId(response.id);
+      setProgress({
+        status: 'building',
+        logs: ['Starting build...'],
+      });
       setStep('building');
     } catch (error) {
       console.error(error);
@@ -2022,7 +1792,7 @@ dotenv`,
 
   const currentStageLabel =
     progress?.status === 'cancelled'
-      ? labels.buildCancelled
+      ? 'cancelled'
       : progress?.status === 'failed'
         ? 'failed'
         : progress?.status === 'completed'
@@ -2030,16 +1800,6 @@ dotenv`,
           : t.catalog.stages[
               insights.stageId as Exclude<BuildStageId, 'completed' | 'failed'>
             ]?.title ?? 'Queued';
-
-  const dependencyPlaceholder =
-    formData.executionLanguage === 'javascript'
-      ? labels.dependenciesPlaceholderJavascript
-      : labels.dependenciesPlaceholderPython;
-
-  const dependencyNote =
-    formData.executionLanguage === 'javascript'
-      ? labels.dependencyNoteJavascript
-      : labels.dependencyNotePython;
 
   return (
     <Dialog
@@ -2051,21 +1811,18 @@ dotenv`,
           return;
         }
 
-        syncDialogView(dialogIntent);
+        if (build) {
+          setBuildId(build.id);
+          setProgress({
+            status: build.status,
+            logs: build.logs,
+          });
+          setStep('building');
+        }
       }}
     >
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setDialogIntent('new');
-            if (!isActive) {
-              setFormData(getDefaultFormData('python'));
-              setDockerfile('');
-              setFormErrors({});
-            }
-          }}
-        >
+        <Button variant="outline">
           <Hammer className="mr-2 h-4 w-4" />
           {t.catalog.createBootstrap}
         </Button>
@@ -2083,78 +1840,6 @@ dotenv`,
 
         {step === 'form' && (
           <div className="space-y-5 py-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <LabelWithHelp
-                  label={labels.executionLanguage}
-                  help={labels.executionLanguageHelp}
-                  htmlFor="executionLanguage"
-                />
-                <Select
-                  value={formData.executionLanguage}
-                  onValueChange={(value) => {
-                    const nextLanguage = value as ExecutionLanguage;
-
-                    setFormData((prev) => {
-                      const previousDefaultBaseImage = getDefaultBaseImage(
-                        prev.executionLanguage,
-                      );
-                      const nextDefaultBaseImage = getDefaultBaseImage(nextLanguage);
-                      const shouldReplaceBaseImage =
-                        !prev.baseImage.trim() || prev.baseImage === previousDefaultBaseImage;
-
-                      return {
-                        ...prev,
-                        executionLanguage: nextLanguage,
-                        baseImage: shouldReplaceBaseImage
-                          ? nextDefaultBaseImage
-                          : prev.baseImage,
-                      };
-                    });
-                  }}
-                >
-                  <SelectTrigger id="executionLanguage">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="python">{labels.python}</SelectItem>
-                    <SelectItem value="javascript">{labels.javascript}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <LabelWithHelp
-                  label={t.catalog.baseImage}
-                  help={t.catalog.baseImageHelp}
-                  htmlFor="baseImage"
-                  className={cn(formErrors.baseImage && 'text-destructive')}
-                />
-                <Input
-                  id="baseImage"
-                  placeholder={
-                    formData.executionLanguage === 'javascript'
-                      ? 'node:20-slim'
-                      : 'python:3.11-slim'
-                  }
-                  className={cn(formErrors.baseImage && 'border-destructive')}
-                  value={formData.baseImage}
-                  onChange={(event) =>
-                    setFormData((prev) => ({ ...prev, baseImage: event.target.value }))
-                  }
-                />
-                {formErrors.baseImage ? (
-                  <p className="text-xs font-medium text-destructive">
-                    {formErrors.baseImage}
-                  </p>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  If this base image already contains model weights, the first build can
-                  take a long time and download tens of GB.
-                </p>
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <LabelWithHelp
@@ -2201,29 +1886,59 @@ dotenv`,
 
             <div className="space-y-2">
               <LabelWithHelp
-                label={labels.extraDependencies}
-                help={labels.extraDependenciesHelp}
+                label={t.catalog.baseImage}
+                help={t.catalog.baseImageHelp}
+                htmlFor="baseImage"
+                className={cn(formErrors.baseImage && 'text-destructive')}
+              />
+              <Input
+                id="baseImage"
+                placeholder="igortet/model-qwen-7b"
+                className={cn(formErrors.baseImage && 'border-destructive')}
+                value={formData.baseImage}
+                onChange={(event) =>
+                  setFormData((prev) => ({ ...prev, baseImage: event.target.value }))
+                }
+              />
+              {formErrors.baseImage ? (
+                <p className="text-xs font-medium text-destructive">
+                  {formErrors.baseImage}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                If this base image already contains model weights, the first build can
+                take a long time and download tens of GB.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <LabelWithHelp
+                label={t.catalog.extraPackages}
+                help={t.catalog.extraPackagesHelp}
                 htmlFor="packages"
               />
               <Textarea
                 id="packages"
                 rows={8}
-                placeholder={dependencyPlaceholder}
-                value={formData.extraDependencies}
+                placeholder={`unsloth
+unsloth-zoo
+bitsandbytes>=0.45.0
+xformers==0.0.35
+transformers>=4.48.0
+datasets>=3.6.0`}
+                value={formData.extraPackages}
                 onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    extraDependencies: event.target.value,
-                  }))
+                  setFormData((prev) => ({ ...prev, extraPackages: event.target.value }))
                 }
               />
-              <p className="text-xs text-muted-foreground">{dependencyNote}</p>
             </div>
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>{t.catalog.headsUpTitle}</AlertTitle>
-              <AlertDescription>{t.catalog.headsUpDesc}</AlertDescription>
+              <AlertDescription>
+                {t.catalog.headsUpDesc}
+              </AlertDescription>
             </Alert>
 
             <div className="flex justify-end pt-2">
@@ -2251,7 +1966,9 @@ dotenv`,
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>{t.help.dockerHubCredsTitle}</AlertTitle>
-              <AlertDescription>{t.help.dockerHubCredsDesc}</AlertDescription>
+              <AlertDescription>
+                {t.help.dockerHubCredsDesc}
+              </AlertDescription>
             </Alert>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -2334,7 +2051,7 @@ dotenv`,
                     : progress?.status === 'failed'
                       ? t.catalog.failed
                       : progress?.status === 'cancelled'
-                        ? labels.buildCancelled
+                        ? 'Build cancelled'
                         : t.catalog.building}
                 </p>
                 <p className="text-sm text-muted-foreground">
@@ -2354,21 +2071,10 @@ dotenv`,
                     {STAGE_META.map((stage, index) => (
                       <StageRow
                         key={stage.id}
-                        title={
-                          t.catalog.stages[
-                            stage.id as Exclude<BuildStageId, 'completed' | 'failed'>
-                          ].title
-                        }
-                        description={
-                          t.catalog.stages[
-                            stage.id as Exclude<BuildStageId, 'completed' | 'failed'>
-                          ].description
-                        }
+                        title={t.catalog.stages[stage.id as Exclude<BuildStageId, 'completed' | 'failed'>].title}
+                        description={t.catalog.stages[stage.id as Exclude<BuildStageId, 'completed' | 'failed'>].description}
                         icon={stage.icon}
                         state={renderStageState(index)}
-                        activeLabel={t.common.active}
-                        doneLabel={t.common.done}
-                        failedLabel={t.common.failed}
                       />
                     ))}
                   </CardContent>
@@ -2417,16 +2123,7 @@ dotenv`,
                     <div>
                       <span className="text-muted-foreground">{t.catalog.targetImage}:</span>{' '}
                       <span className="font-medium">
-                        {build?.imageRef ||
-                          `${formData.dockerUser}/${formData.name}:${formData.tag}`}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">{labels.executionLanguage}:</span>{' '}
-                      <span className="font-medium">
-                        {formData.executionLanguage === 'javascript'
-                          ? labels.javascript
-                          : labels.python}
+                        {formData.dockerUser}/{formData.name}:{formData.tag}
                       </span>
                     </div>
                     <div>
@@ -2488,14 +2185,9 @@ dotenv`,
             <div className="flex items-center justify-between pt-1">
               <div>
                 {isTerminalStatus(progress?.status) ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="ghost" size="sm" onClick={clearTracking}>
-                      {t.catalog.clearStatus}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={openNewBuildForm}>
-                      {labels.newBuild}
-                    </Button>
-                  </div>
+                  <Button variant="ghost" size="sm" onClick={clearTracking}>
+                    {t.catalog.clearStatus}
+                  </Button>
                 ) : (
                   <Button
                     variant="outline"
@@ -2518,13 +2210,7 @@ dotenv`,
 
               <Button
                 variant={isTerminalStatus(progress?.status) ? 'default' : 'outline'}
-                onClick={() => {
-                  if (isTerminalStatus(progress?.status) && dialogIntent === 'new') {
-                    openNewBuildForm();
-                    return;
-                  }
-                  setOpen(false);
-                }}
+                onClick={() => setOpen(false)}
               >
                 {isTerminalStatus(progress?.status) ? t.catalog.close : t.catalog.hide}
               </Button>
@@ -2537,7 +2223,7 @@ dotenv`,
 }
 
 
-path: /src/features/catalog/model/use-bootstrap-build-tracker.ts
+path: /features/catalog/model/use-bootstrap-build-tracker.ts
 ----------------------------------------
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -2546,11 +2232,7 @@ import { ApiClientError } from '@/api/client';
 
 const STORAGE_KEY = 'cloudforge.activeBootstrapBuild';
 const CHANGED_EVENT = 'cloudforge:bootstrap-build-changed';
-const TERMINAL_TTL_MS = 10 * 60 * 1000;
-
 export const OPEN_BUILD_DIALOG_EVENT = 'cloudforge:open-bootstrap-build-dialog';
-
-export type BuildDialogIntent = 'new' | 'resume';
 
 export type BootstrapBuildStatus =
   | 'queued'
@@ -2573,28 +2255,13 @@ function isTerminal(status?: string | null) {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 
-function isExpiredTerminalSnapshot(snapshot: ActiveBootstrapBuild) {
-  if (!isTerminal(snapshot.status)) return false;
-  const updatedAt = new Date(snapshot.updatedAt).getTime();
-  if (Number.isNaN(updatedAt)) return false;
-  return Date.now() - updatedAt > TERMINAL_TTL_MS;
-}
-
 function readSnapshot(): ActiveBootstrapBuild | null {
   if (typeof window === 'undefined') return null;
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-
-    const snapshot = JSON.parse(raw) as ActiveBootstrapBuild;
-
-    if (isExpiredTerminalSnapshot(snapshot)) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-
-    return snapshot;
+    return JSON.parse(raw) as ActiveBootstrapBuild;
   } catch {
     return null;
   }
@@ -2612,9 +2279,9 @@ function writeSnapshot(value: ActiveBootstrapBuild | null) {
   window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
 }
 
-export function requestOpenBootstrapBuildDialog(intent: BuildDialogIntent = 'resume') {
+export function requestOpenBootstrapBuildDialog() {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(OPEN_BUILD_DIALOG_EVENT, { detail: { intent } }));
+  window.dispatchEvent(new CustomEvent(OPEN_BUILD_DIALOG_EVENT));
 }
 
 export function useBootstrapBuildTracker() {
@@ -2685,7 +2352,6 @@ export function useBootstrapBuildTracker() {
     };
 
     void poll();
-
     const timer = window.setInterval(() => {
       void poll();
     }, 2000);
@@ -2694,7 +2360,7 @@ export function useBootstrapBuildTracker() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [build?.id, build?.imageRef, build?.startedAt, build?.status, build?.logs]);
+  }, [build?.id, build?.imageRef, build?.startedAt, build?.status]);
 
   useEffect(() => {
     const currentStatus = build?.status ?? null;
@@ -2724,7 +2390,6 @@ export function useBootstrapBuildTracker() {
       status?: BootstrapBuildStatus;
     }) => {
       const timestamp = new Date().toISOString();
-
       const snapshot: ActiveBootstrapBuild = {
         id: payload.id,
         status: payload.status ?? 'building',
@@ -2756,7 +2421,7 @@ export function useBootstrapBuildTracker() {
 }
 
 
-path: /src/features/jobs/job-form/attached-files-field.tsx
+path: /features/jobs/job-form/attached-files-field.tsx
 ----------------------------------------
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { useI18n } from '@/shared/lib/i18n';
@@ -2774,7 +2439,7 @@ export function AttachedFilesField() {
 }
 
 
-path: /src/features/jobs/job-form/containers-field-array.tsx
+path: /features/jobs/job-form/containers-field-array.tsx
 ----------------------------------------
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { useI18n } from '@/shared/lib/i18n';
@@ -2792,7 +2457,7 @@ export function ContainersFieldArray() {
 }
 
 
-path: /src/features/jobs/job-form/environments-field-array.tsx
+path: /features/jobs/job-form/environments-field-array.tsx
 ----------------------------------------
 import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, type Control, type UseFormRegister } from 'react-hook-form';
@@ -2867,7 +2532,7 @@ export function EnvironmentsFieldArray({
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
-            </CardContent>[]
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -2876,9 +2541,9 @@ export function EnvironmentsFieldArray({
 }
 
 
-path: /src/features/jobs/job-form/job-builder-form.tsx
+path: /features/jobs/job-form/job-builder-form.tsx
 ----------------------------------------
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from '@tanstack/react-router';
@@ -2887,12 +2552,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { catalogApi } from '@/api/catalog';
 import { jobsApi } from '@/api/jobs';
-import type {
-  ExecutionLanguage,
-  Job,
-  JobDetailsResponse,
-  JobFile,
-} from '@/api/types';
+import type { Job, JobDetailsResponse, JobFile } from '@/api/types';
 import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
 import { EnvironmentsFieldArray } from '@/features/jobs/job-form/environments-field-array';
 import {
@@ -2927,105 +2587,6 @@ function makeLocalId() {
   return `local_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function getMainFilePath(language: ExecutionLanguage) {
-  return language === 'javascript' ? 'src/main.js' : 'src/main.py';
-}
-
-function getMainFileMimeType(language: ExecutionLanguage) {
-  return language === 'javascript' ? 'text/javascript' : 'text/x-python';
-}
-
-function getMainFileContent(language: ExecutionLanguage) {
-  if (language === 'javascript') {
-    return `console.log('Cloud Forge JavaScript job started');\n`;
-  }
-
-  return `print("Cloud Forge Python job started")\n`;
-}
-
-function getRunScriptContent(language: ExecutionLanguage) {
-  if (language === 'javascript') {
-    return `#!/usr/bin/env bash
-set -euo pipefail
-
-node src/main.js
-`;
-  }
-
-  return `#!/usr/bin/env bash
-set -euo pipefail
-
-python src/main.py
-`;
-}
-
-function makeMainDraft(language: ExecutionLanguage): EditableJobFile {
-  const relativePath = getMainFilePath(language);
-
-  return {
-    local_id: makeLocalId(),
-    relative_path: relativePath,
-    filename: relativePath.split('/').pop() || relativePath,
-    source_type: 'inline',
-    mime_type: getMainFileMimeType(language),
-    is_executable: false,
-    inline_content: getMainFileContent(language),
-    status: 'new',
-    content_loaded: true,
-    file: null,
-  };
-}
-
-function makeRunScriptDraft(language: ExecutionLanguage): EditableJobFile {
-  return {
-    local_id: makeLocalId(),
-    relative_path: 'scripts/run.sh',
-    filename: 'run.sh',
-    source_type: 'inline',
-    mime_type: 'text/x-shellscript',
-    is_executable: true,
-    inline_content: getRunScriptContent(language),
-    status: 'new',
-    content_loaded: true,
-    file: null,
-  };
-}
-
-function makeDefaultScaffold(language: ExecutionLanguage): EditableJobFile[] {
-  return [makeRunScriptDraft(language), makeMainDraft(language)];
-}
-
-function isDefaultScaffold(files: EditableJobFile[], language: ExecutionLanguage) {
-  const visibleFiles = files
-    .filter((file) => file.status !== 'deleted')
-    .sort((left, right) => left.relative_path.localeCompare(right.relative_path));
-
-  if (visibleFiles.length !== 2) return false;
-
-  const [mainFile, runFile] = [...visibleFiles].sort((left, right) =>
-    left.relative_path.localeCompare(right.relative_path),
-  );
-
-  const expectedMainPath = getMainFilePath(language);
-  const expectedMainContent = getMainFileContent(language);
-  const expectedRunContent = getRunScriptContent(language);
-
-  const actualMain = visibleFiles.find((file) => file.relative_path === expectedMainPath);
-  const actualRun = visibleFiles.find((file) => file.relative_path === 'scripts/run.sh');
-
-  return Boolean(
-    mainFile &&
-      runFile &&
-      actualMain &&
-      actualRun &&
-      actualMain.source_type === 'inline' &&
-      actualMain.inline_content === expectedMainContent &&
-      actualRun.source_type === 'inline' &&
-      actualRun.inline_content === expectedRunContent &&
-      actualRun.is_executable,
-  );
-}
-
 function mapJobFileToEditable(file: JobFile): EditableJobFile {
   return {
     local_id: makeLocalId(),
@@ -3043,12 +2604,26 @@ function mapJobFileToEditable(file: JobFile): EditableJobFile {
   };
 }
 
+function makeInlineDraft(): EditableJobFile {
+  return {
+    local_id: makeLocalId(),
+    relative_path: 'src/main.py',
+    filename: 'main.py',
+    source_type: 'inline',
+    mime_type: 'text/x-python',
+    is_executable: false,
+    inline_content: '',
+    status: 'new',
+    content_loaded: true,
+    file: null,
+  };
+}
+
 function guessMimeType(name: string) {
   const lower = name.toLowerCase();
   if (lower.endsWith('.py')) return 'text/x-python';
   if (lower.endsWith('.sh')) return 'text/x-shellscript';
   if (lower.endsWith('.js')) return 'text/javascript';
-  if (lower.endsWith('.jsx')) return 'text/jsx';
   if (lower.endsWith('.ts')) return 'text/typescript';
   if (lower.endsWith('.tsx')) return 'text/tsx';
   if (lower.endsWith('.json')) return 'application/json';
@@ -3086,14 +2661,13 @@ export function JobBuilderForm({
   initialBootstrapImageId?: string | null;
   onSaved: (job: Job) => Promise<void> | void;
 }) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const isEditMode = Boolean(jobId);
   const [tab, setTab] = useState<'general' | 'files'>('general');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [files, setFiles] = useState<EditableJobFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [loadingContentFileId, setLoadingContentFileId] = useState<string | null>(null);
-  const previousLanguageRef = useRef<ExecutionLanguage>('python');
 
   const bootstrapImagesQuery = useQuery({
     queryKey: ['bootstrap-images'],
@@ -3110,21 +2684,6 @@ export function JobBuilderForm({
     defaultValues: initialValues,
   });
 
-  const selectedExecutionLanguage = form.watch('execution_language');
-
-  const languageLabels =
-    lang === 'ru'
-      ? {
-          executionLanguage: 'Язык выполнения',
-          python: 'Python',
-          javascript: 'JavaScript',
-        }
-      : {
-          executionLanguage: 'Execution language',
-          python: 'Python',
-          javascript: 'JavaScript',
-        };
-
   useEffect(() => {
     form.reset(initialValues);
     const mappedFiles = (initialJobDetails?.files ?? []).map(mapJobFileToEditable);
@@ -3132,7 +2691,6 @@ export function JobBuilderForm({
     setSelectedFileId(mappedFiles[0]?.local_id || null);
     setSubmitError(null);
     setTab('general');
-    previousLanguageRef.current = initialValues.execution_language;
   }, [form, initialJobDetails?.files, initialValues]);
 
   useEffect(() => {
@@ -3142,56 +2700,6 @@ export function JobBuilderForm({
     }
   }, [files, selectedFileId]);
 
-  useEffect(() => {
-    if (isEditMode) return;
-    if (files.length > 0) return;
-
-    const scaffold = makeDefaultScaffold(selectedExecutionLanguage);
-    setFiles(scaffold);
-    setSelectedFileId(scaffold[0]?.local_id || null);
-  }, [files.length, isEditMode, selectedExecutionLanguage]);
-
-  useEffect(() => {
-    if (isEditMode) {
-      previousLanguageRef.current = selectedExecutionLanguage;
-      return;
-    }
-
-    const previousLanguage = previousLanguageRef.current;
-    if (previousLanguage === selectedExecutionLanguage) return;
-
-    setFiles((current) =>
-      isDefaultScaffold(current, previousLanguage)
-        ? makeDefaultScaffold(selectedExecutionLanguage)
-        : current,
-    );
-
-    const selectedBootstrapImageId = form.getValues('bootstrap_image_id');
-    if (selectedBootstrapImageId) {
-      const images = bootstrapImagesQuery.data?.items ?? [];
-      const stillValid = images.some(
-        (image) =>
-          image.id === selectedBootstrapImageId &&
-          (image.execution_language ?? 'python') === selectedExecutionLanguage &&
-          image.status === 'completed',
-      );
-
-      if (!stillValid) {
-        form.setValue('bootstrap_image_id', '', {
-          shouldDirty: true,
-          shouldValidate: true,
-        });
-      }
-    }
-
-    previousLanguageRef.current = selectedExecutionLanguage;
-  }, [
-    bootstrapImagesQuery.data?.items,
-    form,
-    isEditMode,
-    selectedExecutionLanguage,
-  ]);
-
   const filesByLocalId = useMemo(() => {
     return new Map(files.map((file) => [file.local_id, file]));
   }, [files]);
@@ -3199,11 +2707,7 @@ export function JobBuilderForm({
   const selectedFile = selectedFileId ? filesByLocalId.get(selectedFileId) || null : null;
 
   const activeBootstrapImages =
-    bootstrapImagesQuery.data?.items.filter(
-      (image) =>
-        image.status === 'completed' &&
-        (image.execution_language ?? 'python') === selectedExecutionLanguage,
-    ) || [];
+    bootstrapImagesQuery.data?.items.filter((image) => image.status === 'completed') || [];
 
   const updateFile = (localId: string, patch: Partial<EditableJobFile>) => {
     setFiles((current) =>
@@ -3212,7 +2716,7 @@ export function JobBuilderForm({
   };
 
   const addInlineFile = () => {
-    const next = makeMainDraft(selectedExecutionLanguage);
+    const next = makeInlineDraft();
     setFiles((current) => [...current, next]);
     setSelectedFileId(next.local_id);
     setTab('files');
@@ -3434,35 +2938,6 @@ export function JobBuilderForm({
                   </div>
 
                   <div className="space-y-2">
-                    <Label>{languageLabels.executionLanguage}</Label>
-                    <Select
-                      value={selectedExecutionLanguage}
-                      onValueChange={(value) =>
-                        form.setValue('execution_language', value as ExecutionLanguage, {
-                          shouldDirty: true,
-                          shouldTouch: true,
-                          shouldValidate: true,
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="python">{languageLabels.python}</SelectItem>
-                        <SelectItem value="javascript">{languageLabels.javascript}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {form.formState.errors.execution_language ? (
-                      <p className="text-xs text-destructive">
-                        {form.formState.errors.execution_language.message}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
                     <Label>{t.forms.job.fields.bootstrapImage}</Label>
                     <Select
                       value={form.watch('bootstrap_image_id')}
@@ -3491,20 +2966,6 @@ export function JobBuilderForm({
                       </p>
                     ) : null}
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="job-entrypoint">{t.forms.job.fields.entrypoint}</Label>
-                    <Input
-                      id="job-entrypoint"
-                      {...form.register('entrypoint')}
-                      placeholder="scripts/run.sh"
-                    />
-                    {form.formState.errors.entrypoint ? (
-                      <p className="text-xs text-destructive">
-                        {form.formState.errors.entrypoint.message}
-                      </p>
-                    ) : null}
-                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -3512,11 +2973,23 @@ export function JobBuilderForm({
                   <Textarea id="job-description" {...form.register('description')} />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="job-entrypoint-args">
-                      {t.forms.job.fields.entrypointArgs}
-                    </Label>
+                    <Label htmlFor="job-entrypoint">{t.forms.job.fields.entrypoint}</Label>
+                    <Input
+                      id="job-entrypoint"
+                      {...form.register('entrypoint')}
+                      placeholder="scripts/train.sh"
+                    />
+                    {form.formState.errors.entrypoint ? (
+                      <p className="text-xs text-destructive">
+                        {form.formState.errors.entrypoint.message}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="job-entrypoint-args">{t.forms.job.fields.entrypointArgs}</Label>
                     <Input
                       id="job-entrypoint-args"
                       {...form.register('entrypoint_args_text')}
@@ -3553,7 +3026,7 @@ export function JobBuilderForm({
                         <div className="grid gap-2 md:grid-cols-2">
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              Docker image
+                              {t.jobs.tokens.details.dockerImage}
                             </div>
                             <div className="mt-1 font-medium">{selected.full_image_name}</div>
                           </div>
@@ -3567,10 +3040,10 @@ export function JobBuilderForm({
 
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              {languageLabels.executionLanguage}
+                              {t.navigation.catalog}
                             </div>
-                            <div className="mt-1 font-medium capitalize">
-                              {selected.execution_language ?? 'python'}
+                            <div className="mt-1 font-medium">
+                              {selected.environments.length}
                             </div>
                           </div>
 
@@ -3648,7 +3121,7 @@ export function JobBuilderForm({
 }
 
 
-path: /src/features/jobs/job-form/job-files-editor.tsx
+path: /features/jobs/job-form/job-files-editor.tsx
 ----------------------------------------
 import { ChangeEvent } from 'react';
 import {
@@ -3926,14 +3399,14 @@ export function JobFilesEditor({
 }
 
 
-path: /src/features/jobs/job-form/job-form-helpers.ts
+path: /features/jobs/job-form/job-form-helpers.ts
 ----------------------------------------
 export function defaultEntrypoint() {
   return 'scripts/run.sh';
 }
 
 
-path: /src/features/jobs/job-form/job-form-mappers.ts
+path: /features/jobs/job-form/job-form-mappers.ts
 ----------------------------------------
 import type { Job, JobPayload } from '@/api/types';
 import type { JobFormValues } from '@/features/jobs/job-form/job-form-schema';
@@ -3955,7 +3428,6 @@ export function mapJobToFormValues(
     title: job?.title ?? '',
     description: job?.description ?? '',
     bootstrap_image_id: job?.bootstrap_image_id ?? bootstrapImageId ?? '',
-    execution_language: job?.execution_language ?? 'python',
     entrypoint: job?.entrypoint ?? 'scripts/run.sh',
     entrypoint_args_text: (job?.entrypoint_args ?? []).join(' '),
     working_dir: job?.working_dir ?? '/workspace',
@@ -3974,7 +3446,6 @@ export function mapFormValuesToPayload(values: JobFormValues): JobPayload {
     title: values.title.trim(),
     description: values.description?.trim() || null,
     bootstrap_image_id: values.bootstrap_image_id,
-    execution_language: values.execution_language,
     entrypoint: values.entrypoint.trim(),
     entrypoint_args: splitArgs(values.entrypoint_args_text),
     working_dir: values.working_dir?.trim() || '/workspace',
@@ -3991,7 +3462,7 @@ export function mapFormValuesToPayload(values: JobFormValues): JobPayload {
 }
 
 
-path: /src/features/jobs/job-form/job-form-schema.ts
+path: /features/jobs/job-form/job-form-schema.ts
 ----------------------------------------
 import { z } from 'zod';
 
@@ -4011,7 +3482,6 @@ export const jobFormSchema = z.object({
   title: z.string().min(3, 'Title must contain at least 3 characters'),
   description: z.string().optional(),
   bootstrap_image_id: z.string().min(1, 'Choose a bootstrap image'),
-  execution_language: z.enum(['python', 'javascript']).default('python'),
   entrypoint: z.string().min(1, 'Entrypoint is required'),
   entrypoint_args_text: z.string(),
   working_dir: z.string(),
@@ -4022,7 +3492,7 @@ export const jobFormSchema = z.object({
 export type JobFormValues = z.infer<typeof jobFormSchema>;
 
 
-path: /src/features/jobs/job-form/template-picker-dialog.tsx
+path: /features/jobs/job-form/template-picker-dialog.tsx
 ----------------------------------------
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -4204,7 +3674,7 @@ export function TemplatePickerDialog({
 }
 
 
-path: /src/features/runs/use-run-websocket.ts
+path: /features/runs/use-run-websocket.ts
 ----------------------------------------
 import { useEffect, useRef } from 'react';
 import { buildRunWebSocketUrl } from '@/api/client';
@@ -4312,7 +3782,7 @@ export function useRunWebsocket({
 }
 
 
-path: /src/features/tokens/create-share-token-dialog.tsx
+path: /features/tokens/create-share-token-dialog.tsx
 ----------------------------------------
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -4435,7 +3905,7 @@ export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
 }
 
 
-path: /src/features/tokens/revoke-token-button.tsx
+path: /features/tokens/revoke-token-button.tsx
 ----------------------------------------
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -4502,7 +3972,7 @@ export function RevokeTokenButton({
 }
 
 
-path: /src/main.tsx
+path: /main.tsx
 ----------------------------------------
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -4523,7 +3993,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 
 
-path: /src/pages/catalog/catalog-page.tsx
+path: /pages/catalog/catalog-page.tsx
 ----------------------------------------
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -4753,7 +4223,7 @@ export function CatalogPage() {
 }
 
 
-path: /src/pages/dashboard-page.tsx
+path: /pages/dashboard-page.tsx
 ----------------------------------------
 import { useQuery } from '@tanstack/react-query';
 import { Activity, Layers, Play, Server } from 'lucide-react';
@@ -4998,7 +4468,7 @@ export function DashboardPage() {
 }
 
 
-path: /src/pages/jobs/job-details-page.tsx
+path: /pages/jobs/job-details-page.tsx
 ----------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -5311,7 +4781,7 @@ export function JobDetailsPage() {
 }
 
 
-path: /src/pages/jobs/job-editor-page.tsx
+path: /pages/jobs/job-editor-page.tsx
 ----------------------------------------
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
@@ -5429,7 +4899,7 @@ export function JobEditorPage() {
 }
 
 
-path: /src/pages/jobs/job-runs-page.tsx
+path: /pages/jobs/job-runs-page.tsx
 ----------------------------------------
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
@@ -5538,12 +5008,12 @@ export function JobRunsPage() {
 }
 
 
-path: /src/pages/jobs/job-tokens-page.tsx
+path: /pages/jobs/job-tokens-page.tsx
 ----------------------------------------
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { AlertTriangle, ArrowLeft, KeyRound, PlayCircle, Terminal } from 'lucide-react';
+import { ArrowLeft, KeyRound, PlayCircle, Terminal } from 'lucide-react';
 import { jobsApi } from '@/api/jobs';
 import { tokensApi } from '@/api/tokens';
 import { CreateShareTokenDialog } from '@/features/tokens/create-share-token-dialog';
@@ -5551,7 +5021,6 @@ import { RevokeTokenButton } from '@/features/tokens/revoke-token-button';
 import { CopyButton } from '@/shared/components/app/copy-button';
 import { EmptyState } from '@/shared/components/app/empty-state';
 import { PageHeader } from '@/shared/components/app/page-header';
-import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
@@ -5559,13 +5028,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useI18n } from '@/shared/lib/i18n';
 import { formatDateTime, formatRelative } from '@/shared/utils/format';
 
-function containsLocalUrl(value?: string | null) {
-  if (!value) return false;
-  return /:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(value);
-}
-
 export function JobTokensPage() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { jobId } = useParams({ from: '/jobs/$jobId/tokens' });
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
@@ -5582,27 +5046,6 @@ export function JobTokensPage() {
 
   const dockerCommand =
     tokenDetailsQuery.data?.docker_command || tokenDetailsQuery.data?.worker_command || '';
-
-  const hasLocalUrls = useMemo(() => {
-    return (
-      containsLocalUrl(tokenDetailsQuery.data?.claim_url) ||
-      containsLocalUrl(tokenDetailsQuery.data?.share_url) ||
-      containsLocalUrl(dockerCommand)
-    );
-  }, [dockerCommand, tokenDetailsQuery.data?.claim_url, tokenDetailsQuery.data?.share_url]);
-
-  const localWarning =
-    lang === 'ru'
-      ? {
-          title: 'Обнаружен localhost в ссылках или docker-команде',
-          description:
-            'localhost работает только если воркер запускается на той же машине, где доступен backend. Для Docker на macOS/Windows обычно нужен host.docker.internal. Для удалённого воркера нужен LAN или публичный hostname backend.',
-        }
-      : {
-          title: 'localhost detected in links or docker command',
-          description:
-            'localhost only works when the worker runs on the same machine as the backend. For Docker on macOS/Windows you usually need host.docker.internal. For a remote worker use the backend LAN/public hostname.',
-        };
 
   return (
     <div className="space-y-6">
@@ -5717,14 +5160,6 @@ export function JobTokensPage() {
 
           {tokenDetailsQuery.data ? (
             <div className="space-y-5">
-              {hasLocalUrls ? (
-                <Alert variant="warning">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>{localWarning.title}</AlertTitle>
-                  <AlertDescription>{localWarning.description}</AlertDescription>
-                </Alert>
-              ) : null}
-
               <div className="rounded-2xl border border-border bg-muted/50 p-4">
                 <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
                   {t.jobs.tokens.details.tokenValue}
@@ -5838,7 +5273,7 @@ export function JobTokensPage() {
 }
 
 
-path: /src/pages/jobs/jobs-list-page.tsx
+path: /pages/jobs/jobs-list-page.tsx
 ----------------------------------------
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -6120,7 +5555,7 @@ export function JobsListPage() {
 }
 
 
-path: /src/pages/not-found-page.tsx
+path: /pages/not-found-page.tsx
 ----------------------------------------
 import { Link } from '@tanstack/react-router';
 import { Compass } from 'lucide-react';
@@ -6132,7 +5567,7 @@ export function NotFoundPage() {
 }
 
 
-path: /src/pages/runs/run-details-page.tsx
+path: /pages/runs/run-details-page.tsx
 ----------------------------------------
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -6643,7 +6078,7 @@ export function RunDetailsPage() {
 }
 
 
-path: /src/pages/workers/workers-list-page.tsx
+path: /pages/workers/workers-list-page.tsx
 ----------------------------------------
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -6744,7 +6179,7 @@ export function WorkersListPage() {
 }
 
 
-path: /src/shared/components/app/code-block.tsx
+path: /shared/components/app/code-block.tsx
 ----------------------------------------
 import { CopyButton } from '@/shared/components/app/copy-button';
 
@@ -6761,7 +6196,7 @@ export function CodeBlock({ code, language, className = '' }: { code: string; la
 }
 
 
-path: /src/shared/components/app/copy-button.tsx
+path: /shared/components/app/copy-button.tsx
 ----------------------------------------
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
@@ -6798,7 +6233,7 @@ export function CopyButton({
 }
 
 
-path: /src/shared/components/app/empty-state.tsx
+path: /shared/components/app/empty-state.tsx
 ----------------------------------------
 import type { LucideIcon } from 'lucide-react';
 
@@ -6816,7 +6251,7 @@ export function EmptyState({ icon: Icon, title, description, action }: { icon: L
 }
 
 
-path: /src/shared/components/app/language-switcher.tsx
+path: /shared/components/app/language-switcher.tsx
 ----------------------------------------
 import { Languages } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
@@ -6867,7 +6302,7 @@ export function LanguageSwitcher({
 }
 
 
-path: /src/shared/components/app/page-header.tsx
+path: /shared/components/app/page-header.tsx
 ----------------------------------------
 import type { PropsWithChildren, ReactNode } from 'react';
 
@@ -6891,7 +6326,7 @@ export function HeaderActions({ children }: PropsWithChildren) {
 }
 
 
-path: /src/shared/components/app/pagination-controls.tsx
+path: /shared/components/app/pagination-controls.tsx
 ----------------------------------------
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
@@ -6926,7 +6361,7 @@ export function PaginationControls({ page, pageSize, total, onPageChange }: { pa
 }
 
 
-path: /src/shared/components/app/stat-card.tsx
+path: /shared/components/app/stat-card.tsx
 ----------------------------------------
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/shared/components/ui/card';
@@ -6949,7 +6384,7 @@ export function StatCard({ title, value, subtitle, icon: Icon }: { title: string
 }
 
 
-path: /src/shared/components/ui/alert-dialog.tsx
+path: /shared/components/ui/alert-dialog.tsx
 ----------------------------------------
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 import * as React from 'react';
@@ -6984,7 +6419,7 @@ export const AlertDialogCancel = React.forwardRef<React.ElementRef<typeof AlertD
 AlertDialogCancel.displayName = AlertDialogPrimitive.Cancel.displayName;
 
 
-path: /src/shared/components/ui/alert.tsx
+path: /shared/components/ui/alert.tsx
 ----------------------------------------
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -7048,7 +6483,7 @@ AlertDescription.displayName = "AlertDescription"
 export { Alert, AlertTitle, AlertDescription }
 
 
-path: /src/shared/components/ui/badge.tsx
+path: /shared/components/ui/badge.tsx
 ----------------------------------------
 import { cva, type VariantProps } from 'class-variance-authority';
 import type { HTMLAttributes } from 'react';
@@ -7075,7 +6510,7 @@ export function Badge({ className, variant, ...props }: BadgeProps) {
 }
 
 
-path: /src/shared/components/ui/button.tsx
+path: /shared/components/ui/button.tsx
 ----------------------------------------
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
@@ -7123,7 +6558,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = 'Button';
 
 
-path: /src/shared/components/ui/card.tsx
+path: /shared/components/ui/card.tsx
 ----------------------------------------
 import * as React from 'react';
 import { cn } from '@/shared/utils/cn';
@@ -7161,7 +6596,7 @@ export const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<
 CardFooter.displayName = 'CardFooter';
 
 
-path: /src/shared/components/ui/checkbox.tsx
+path: /shared/components/ui/checkbox.tsx
 ----------------------------------------
 import * as React from 'react';
 import { cn } from '@/shared/utils/cn';
@@ -7171,7 +6606,7 @@ export function Checkbox({ className, ...props }: React.InputHTMLAttributes<HTML
 }
 
 
-path: /src/shared/components/ui/dialog.tsx
+path: /shared/components/ui/dialog.tsx
 ----------------------------------------
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
@@ -7209,7 +6644,7 @@ export const DialogDescription = React.forwardRef<React.ElementRef<typeof Dialog
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 
-path: /src/shared/components/ui/dropdown-menu.tsx
+path: /shared/components/ui/dropdown-menu.tsx
 ----------------------------------------
 import * as React from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
@@ -7273,7 +6708,7 @@ export const DropdownMenuRadioItem = React.forwardRef<React.ElementRef<typeof Dr
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
 
 
-path: /src/shared/components/ui/input.tsx
+path: /shared/components/ui/input.tsx
 ----------------------------------------
 import * as React from 'react';
 import { cn } from '@/shared/utils/cn';
@@ -7285,7 +6720,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<'in
 Input.displayName = 'Input';
 
 
-path: /src/shared/components/ui/label.tsx
+path: /shared/components/ui/label.tsx
 ----------------------------------------
 import * as LabelPrimitive from '@radix-ui/react-label';
 import * as React from 'react';
@@ -7298,7 +6733,7 @@ export const Label = React.forwardRef<React.ElementRef<typeof LabelPrimitive.Roo
 Label.displayName = LabelPrimitive.Root.displayName;
 
 
-path: /src/shared/components/ui/select.tsx
+path: /shared/components/ui/select.tsx
 ----------------------------------------
 import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
@@ -7338,7 +6773,7 @@ export const SelectItem = React.forwardRef<React.ElementRef<typeof SelectPrimiti
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
 
-path: /src/shared/components/ui/separator.tsx
+path: /shared/components/ui/separator.tsx
 ----------------------------------------
 import * as SeparatorPrimitive from '@radix-ui/react-separator';
 import * as React from 'react';
@@ -7350,7 +6785,7 @@ export const Separator = React.forwardRef<React.ElementRef<typeof SeparatorPrimi
 Separator.displayName = SeparatorPrimitive.Root.displayName;
 
 
-path: /src/shared/components/ui/skeleton.tsx
+path: /shared/components/ui/skeleton.tsx
 ----------------------------------------
 import { cn } from '@/shared/utils/cn';
 
@@ -7359,7 +6794,7 @@ export function Skeleton({ className }: { className?: string }) {
 }
 
 
-path: /src/shared/components/ui/table.tsx
+path: /shared/components/ui/table.tsx
 ----------------------------------------
 import * as React from 'react';
 import { cn } from '@/shared/utils/cn';
@@ -7385,7 +6820,7 @@ export const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttr
 TableCell.displayName = 'TableCell';
 
 
-path: /src/shared/components/ui/tabs.tsx
+path: /shared/components/ui/tabs.tsx
 ----------------------------------------
 import * as React from 'react';
 import * as TabsPrimitive from '@radix-ui/react-tabs';
@@ -7409,7 +6844,7 @@ export const TabsContent = React.forwardRef<React.ElementRef<typeof TabsPrimitiv
 TabsContent.displayName = TabsPrimitive.Content.displayName;
 
 
-path: /src/shared/components/ui/textarea.tsx
+path: /shared/components/ui/textarea.tsx
 ----------------------------------------
 import * as React from 'react';
 import { cn } from '@/shared/utils/cn';
@@ -7421,7 +6856,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.ComponentPro
 Textarea.displayName = 'Textarea';
 
 
-path: /src/shared/lib/api-error.ts
+path: /shared/lib/api-error.ts
 ----------------------------------------
 import axios from 'axios';
 import { ApiClientError } from '@/api/client';
@@ -7479,7 +6914,7 @@ export function getApiErrorMessage(error: unknown): string {
 }
 
 
-path: /src/shared/lib/i18n/index.tsx
+path: /shared/lib/i18n/index.tsx
 ----------------------------------------
 import { createContext, useContext, useState, ReactNode } from 'react';
 
@@ -8352,7 +7787,7 @@ export function useI18n() {
 }
 
 
-path: /src/shared/utils/cn.ts
+path: /shared/utils/cn.ts
 ----------------------------------------
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -8362,7 +7797,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 
-path: /src/shared/utils/format.ts
+path: /shared/utils/format.ts
 ----------------------------------------
 import { format, formatDistanceToNowStrict } from 'date-fns';
 
@@ -8391,7 +7826,7 @@ export function formatFileSize(value?: number | null) {
 }
 
 
-path: /src/shared/utils/object.ts
+path: /shared/utils/object.ts
 ----------------------------------------
 export type KeyValuePair = { key: string; value: string };
 
@@ -8419,85 +7854,9 @@ export function compactObject<T extends Record<string, unknown>>(input: T) {
 }
 
 
-path: /tsconfig.app.json
-----------------------------------------
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "useDefineForClassFields": true,
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "allowJs": false,
-    "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-    "types": ["vite/client"]
-  },
-  "include": ["src"]
-}
-
-
-path: /tsconfig.json
-----------------------------------------
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
-
-
-path: /tsconfig.node.json
-----------------------------------------
-{
-  "compilerOptions": {
-    "composite": true,
-    "skipLibCheck": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true
-  },
-  "include": ["vite.config.ts", "eslint.config.js"]
-}
-
-
-path: /vite.config.d.ts
-----------------------------------------
-declare const _default: import("vite").UserConfig;
-export default _default;
-
-
-path: /vite.config.ts
-----------------------------------------
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-import path from 'node:path';
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-});
-
-
 === SUMMARY ===
-included: 78
+included: 69
 skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 305049
+totalBytes(approx): 284813

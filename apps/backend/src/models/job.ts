@@ -1,3 +1,4 @@
+export type ExecutionLanguage = 'python' | 'javascript';
 export type RunStatus = 'created' | 'running' | 'finished' | 'failed' | 'cancelled' | 'lost';
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -32,9 +33,10 @@ export interface BootstrapImage {
   full_image_name: string;
   dockerfile_text: string;
   environments: BootstrapEnvironmentSpec[];
+  execution_language: ExecutionLanguage;
   runtime_resources?: RuntimeResources | null;
   sdk_version?: string | null;
-  status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed';
+  status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
   error?: string | null;
   build_started_at?: string | null;
   build_finished_at?: string | null;
@@ -48,6 +50,7 @@ export interface Job {
   description?: string | null;
   owner_id?: string | null;
   bootstrap_image_id: string;
+  execution_language: ExecutionLanguage;
   environment_variables: Record<string, string>;
   resources?: RuntimeResources | null;
   entrypoint: string;
@@ -100,6 +103,7 @@ export interface RunManifestFile {
 export interface RunManifest {
   run_id: string;
   job_id: string;
+  execution_language: ExecutionLanguage;
   bootstrap_image: {
     id: string;
     full_image_name: string;
@@ -217,7 +221,7 @@ export interface JobDraftTemplate {
     mime_type: string;
   }>;
   execution_code: string;
-  execution_language: 'python' | 'javascript';
+  execution_language: ExecutionLanguage;
   entrypoint?: string | null;
 }
 

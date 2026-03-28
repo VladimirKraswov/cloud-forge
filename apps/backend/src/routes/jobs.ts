@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobService } from '../services/job.service';
-import { RunStatus } from '../models/job';
+import { ExecutionLanguage, RunStatus } from '../models/job';
 import { config } from '../utils/config';
 import {
   JobValidationError,
@@ -15,6 +15,7 @@ interface CreateJobBody {
   description?: string | null;
   owner_id?: string | null;
   bootstrap_image_id: string;
+  execution_language?: ExecutionLanguage;
   environment_variables?: Record<string, string>;
   resources?: {
     gpus?: string;

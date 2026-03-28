@@ -5,7 +5,11 @@ import { ApiClientError } from '@/api/client';
 
 const STORAGE_KEY = 'cloudforge.activeBootstrapBuild';
 const CHANGED_EVENT = 'cloudforge:bootstrap-build-changed';
+const TERMINAL_TTL_MS = 10 * 60 * 1000;
+
 export const OPEN_BUILD_DIALOG_EVENT = 'cloudforge:open-bootstrap-build-dialog';
+
+export type BuildDialogIntent = 'new' | 'resume';
 
 export type BootstrapBuildStatus =
   | 'queued'
@@ -28,13 +32,28 @@ function isTerminal(status?: string | null) {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 
+function isExpiredTerminalSnapshot(snapshot: ActiveBootstrapBuild) {
+  if (!isTerminal(snapshot.status)) return false;
+  const updatedAt = new Date(snapshot.updatedAt).getTime();
+  if (Number.isNaN(updatedAt)) return false;
+  return Date.now() - updatedAt > TERMINAL_TTL_MS;
+}
+
 function readSnapshot(): ActiveBootstrapBuild | null {
   if (typeof window === 'undefined') return null;
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as ActiveBootstrapBuild;
+
+    const snapshot = JSON.parse(raw) as ActiveBootstrapBuild;
+
+    if (isExpiredTerminalSnapshot(snapshot)) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+
+    return snapshot;
   } catch {
     return null;
   }
@@ -52,9 +71,9 @@ function writeSnapshot(value: ActiveBootstrapBuild | null) {
   window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
 }
 
-export function requestOpenBootstrapBuildDialog() {
+export function requestOpenBootstrapBuildDialog(intent: BuildDialogIntent = 'resume') {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(OPEN_BUILD_DIALOG_EVENT));
+  window.dispatchEvent(new CustomEvent(OPEN_BUILD_DIALOG_EVENT, { detail: { intent } }));
 }
 
 export function useBootstrapBuildTracker() {
@@ -125,6 +144,7 @@ export function useBootstrapBuildTracker() {
     };
 
     void poll();
+
     const timer = window.setInterval(() => {
       void poll();
     }, 2000);
@@ -133,7 +153,7 @@ export function useBootstrapBuildTracker() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [build?.id, build?.imageRef, build?.startedAt, build?.status]);
+  }, [build?.id, build?.imageRef, build?.startedAt, build?.status, build?.logs]);
 
   useEffect(() => {
     const currentStatus = build?.status ?? null;
@@ -163,6 +183,7 @@ export function useBootstrapBuildTracker() {
       status?: BootstrapBuildStatus;
     }) => {
       const timestamp = new Date().toISOString();
+
       const snapshot: ActiveBootstrapBuild = {
         id: payload.id,
         status: payload.status ?? 'building',

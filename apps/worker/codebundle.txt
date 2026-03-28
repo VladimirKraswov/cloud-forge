@@ -1,985 +1,11 @@
 === CODE BUNDLE ===
-root: /Volumes/Extend/work/cloud-forge
+root: /Volumes/Extend/work/cloud-forge/apps/worker
 ignore: .codebundleignore
-generated: 2026-03-28T15:38:29.606Z
+generated: 2026-03-28T17:12:32.834Z
 
 
 
 path: /.dockerignore
-----------------------------------------
-node_modules
-dist
-db.sqlite
-.env
-
-
-path: /.env
-----------------------------------------
-PORT=3000
-REDIS_URL=redis://redis:6379
-MINIO_ENDPOINT=http://minio:9000
-MINIO_ACCESS_KEY=cloudforge
-MINIO_SECRET_KEY=cloudforge123
-MINIO_BUCKET=cloud-forge
-
-PUBLIC_BASE_URL=http://192.168.31.13:3000
-
-PUBLISHED_WORKER_IMAGE=xproger/cloud-forge-worker
-PUBLISHED_WORKER_TAG=0.1.1
-
-
-path: /.env.example
-----------------------------------------
-PORT=3000
-DATABASE_URL=db.sqlite
-REDIS_URL=redis://localhost:6379
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_ACCESS_KEY=cloudforge
-MINIO_SECRET_KEY=cloudforge123
-MINIO_BUCKET=cloud-forge
-PUBLIC_BASE_URL=http://localhost:3000
-
-# Published worker image for remote execution
-PUBLISHED_WORKER_IMAGE=xproger/cloud-forge-worker
-PUBLISHED_WORKER_TAG=0.1.1
-
-
-path: /.github/workflows/publish-worker.yml
-----------------------------------------
-name: Publish Worker Image
-
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Worker version tag, for example 0.1.0"
-        required: true
-  push:
-    tags:
-      - 'worker-v*'
-
-jobs:
-  publish-worker:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve version
-        id: version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            TAG="${GITHUB_REF_NAME}"
-            echo "value=${TAG#worker-v}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: xproger/cloud-forge-worker
-          tags: |
-            type=raw,value=${{ steps.version.outputs.value }}
-            type=raw,value=latest
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./apps/worker
-          file: ./apps/worker/Dockerfile
-          push: true
-          platforms: linux/amd64
-          build-args: |
-            VERSION=${{ steps.version.outputs.value }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-
-path: /.gitignore
-----------------------------------------
-# Node
-node_modules/
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Build
-dist/
-build/
-*.tsbuildinfo
-
-# TypeScript
-*.js
-*.js.map
-
-# Logs
-logs/
-*.log
-
-# SQLite database
-*.sqlite
-*.sqlite3
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Docker
-docker-compose.override.yml
-
-# VSCode
-.vscode/
-*.code-workspace
-
-# Mac / Linux
-.DS_Store
-*.swp
-
-# Temp
-tmp/
-temp/
-
-
-path: /.husky/_/.gitignore
-----------------------------------------
-*
-
-
-path: /.husky/_/applypatch-msg
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/commit-msg
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/h
-----------------------------------------
-#!/usr/bin/env sh
-[ "$HUSKY" = "2" ] && set -x
-n=$(basename "$0")
-s=$(dirname "$(dirname "$0")")/$n
-
-[ ! -f "$s" ] && exit 0
-
-if [ -f "$HOME/.huskyrc" ]; then
-	echo "husky - '~/.huskyrc' is DEPRECATED, please move your code to ~/.config/husky/init.sh"
-fi
-i="${XDG_CONFIG_HOME:-$HOME/.config}/husky/init.sh"
-[ -f "$i" ] && . "$i"
-
-[ "${HUSKY-}" = "0" ] && exit 0
-
-export PATH="node_modules/.bin:$PATH"
-sh -e "$s" "$@"
-c=$?
-
-[ $c != 0 ] && echo "husky - $n script failed (code $c)"
-[ $c = 127 ] && echo "husky - command not found in PATH=$PATH"
-exit $c
-
-
-path: /.husky/_/husky.sh
-----------------------------------------
-echo "husky - DEPRECATED
-
-Please remove the following two lines from $0:
-
-#!/usr/bin/env sh
-. \"\$(dirname -- \"\$0\")/_/husky.sh\"
-
-They WILL FAIL in v10.0.0
-"
-
-
-path: /.husky/_/post-applypatch
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-checkout
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-commit
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-merge
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/post-rewrite
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-applypatch
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-auto-gc
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-commit
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-merge-commit
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-push
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/pre-rebase
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.husky/_/prepare-commit-msg
-----------------------------------------
-#!/usr/bin/env sh
-. "$(dirname "$0")/h"
-
-
-path: /.prettierrc
-----------------------------------------
-{
-  "semi": true,
-  "trailingComma": "all",
-  "singleQuote": true,
-  "printWidth": 100,
-  "tabWidth": 2
-}
-
-
-path: /.vscode/c_cpp_properties.json
-----------------------------------------
-{
-  "configurations": [
-    {
-      "name": "STM32",
-      "includePath": [
-        "${workspaceFolder}/Core/Inc",
-        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
-        "${workspaceFolder}/Drivers/CMSIS/Include",
-        "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
-        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"
-      ],
-      "defines": [
-        "USE_HAL_DRIVER",
-        "STM32F407xx"
-      ],
-      "compilerPath": "/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.macos64_1.0.100.202509120712/tools/bin/arm-none-eabi-gcc",
-      "cStandard": "c11",
-      "cppStandard": "c++17",
-      "intelliSenseMode": "gcc-arm",
-      "browse": {
-        "path": [
-          "${workspaceFolder}/Core/Inc",
-          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
-          "${workspaceFolder}/Drivers/CMSIS/Include",
-          "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
-          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"
-        ],
-        "limitSymbolsToIncludedHeaders": true
-      }
-    }
-  ],
-  "version": 4
-}
-
-
-path: /apps/backend/.env.example
-----------------------------------------
-PORT=3000
-PUBLIC_BASE_URL=https://api.cloud-forge.ru
-REDIS_URL=redis://redis:6379
-MINIO_ENDPOINT=http://minio:9000
-MINIO_ACCESS_KEY=your_minio_access_key
-MINIO_SECRET_KEY=your_minio_secret_key
-MINIO_BUCKET=cloud-forge
-PUBLISHED_WORKER_IMAGE=xproger/cloud-forge-worker
-PUBLISHED_WORKER_TAG=latest
-WORKER_ASSETS_PATH=/app/worker
-NPM_NETWORK=nginx-proxy-manager_default
-
-
-path: /apps/backend/Dockerfile
-----------------------------------------
-FROM node:20-slim AS builder
-
-WORKDIR /app
-
-# Using root-level package.json for workspaces if needed, but here we can just build the backend
-COPY package*.json ./
-RUN npm install
-
-COPY tsconfig*.json ./
-COPY src ./src
-
-RUN npm run build
-
-FROM node:20-slim AS runtime
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV PORT=3000
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl docker.io \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY package*.json ./
-RUN npm install --omit=dev
-
-COPY --from=builder /app/dist ./dist
-
-# Optional: if worker assets are provided during build, they can be included.
-# But for a cleaner separation, we can mount them or download them.
-# The code now supports WORKER_ASSETS_PATH.
-# By default, we expect them in /app/worker if we want them inside the image.
-# COPY worker/runner.py ./worker/runner.py
-# COPY worker/sdk ./worker/sdk
-
-RUN mkdir -p /app/data
-
-EXPOSE 3000
-
-CMD ["node", "dist/server.js"]
-
-
-path: /apps/backend/package.json
-----------------------------------------
-{
-  "name": "cloud-forge",
-  "version": "0.1.0",
-  "type": "commonjs",
-  "scripts": {
-    "dev": "ts-node src/server.ts",
-    "dev:full": "docker compose -f ../../infra/compose/docker-compose.dev.yml up -d redis minio && npm run dev",
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "start:prod": "npm run build && node dist/server.js",
-    "docker:up": "docker compose -f ../../infra/compose/docker-compose.dev.yml up -d",
-    "docker:down": "docker compose -f ../../infra/compose/docker-compose.dev.yml down",
-    "docker:logs": "docker compose -f ../../infra/compose/docker-compose.dev.yml logs -f backend",
-    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f ../worker/Dockerfile ../worker",
-    "worker:publish": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker push \"$WORKER_IMAGE:$WORKER_TAG\" && docker push \"$WORKER_IMAGE:latest\"",
-    "lint": "eslint 'src/**/*.ts'",
-    "test": "vitest",
-    "test:e2e": "vitest run tests/e2e",
-    "test:watch": "vitest"
-  },
-  "lint-staged": {
-    "src/**/*.ts": [
-      "eslint --fix",
-      "prettier --write"
-    ]
-  },
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.600.0",
-    "@aws-sdk/s3-request-presigner": "^3.600.0",
-    "@fastify/cors": "^11.2.0",
-    "@fastify/multipart": "^9.4.0",
-    "@fastify/swagger": "^9.7.0",
-    "@fastify/swagger-ui": "^5.2.5",
-    "@fastify/websocket": "^11.2.0",
-    "bullmq": "^5.71.1",
-    "dotenv": "^16.6.1",
-    "fastify": "^5.8.4",
-    "ioredis": "^5.10.1",
-    "pino": "^9.14.0",
-    "pino-pretty": "^13.1.3",
-    "sqlite3": "^5.1.7",
-    "uuid": "^11.1.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^20.19.37",
-    "@types/supertest": "^6.0.3",
-    "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "@vitest/coverage-v8": "^4.1.1",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^9.1.2",
-    "eslint-plugin-prettier": "^5.5.5",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.8.1",
-    "supertest": "^7.2.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.2",
-    "uuid": "^11.1.0",
-    "vitest": "^4.1.1"
-  }
-}
-
-
-path: /apps/backend/tests/e2e/smoke-flow.test.ts
-----------------------------------------
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Fastify, { FastifyInstance } from 'fastify';
-import fastifyMultipart from '@fastify/multipart';
-import { initDb } from '../../src/db/index';
-import db from '../../src/db/index';
-import jobsRoutes from '../../src/routes/jobs';
-import workerRoutes from '../../src/routes/worker';
-import artifactsRoutes from '../../src/routes/artifacts';
-
-// Mock ArtifactService to avoid real MinIO calls in this e2e test
-vi.mock('../../src/services/artifact.service', () => ({
-  ArtifactService: {
-    ensureBucket: vi.fn().mockResolvedValue(undefined),
-    uploadRunArtifact: vi.fn().mockResolvedValue({
-      id: 'mock_artifact_id',
-      filename: 'output.txt',
-      relative_path: 'output.txt',
-      size_bytes: 14,
-      storage_key: 'runs/run_id/artifacts/mock_artifact_id/output.txt',
-    }),
-    getDownloadUrl: vi.fn().mockResolvedValue('http://mock-minio/download'),
-    uploadJobFile: vi.fn(),
-  },
-}));
-
-describe('Smoke E2E: Full Job & Run Lifecycle', () => {
-  let app: FastifyInstance;
-
-  beforeEach(async () => {
-    app = Fastify({ logger: false });
-    await initDb();
-
-    await app.register(fastifyMultipart);
-    await app.register(jobsRoutes);
-    await app.register(workerRoutes);
-    await app.register(artifactsRoutes);
-  });
-
-  afterEach(async () => {
-    await new Promise<void>((resolve) => {
-      db.serialize(() => {
-        db.run('DELETE FROM jobs', () => {});
-        db.run('DELETE FROM share_tokens', () => {});
-        db.run('DELETE FROM runs', () => {});
-        db.run('DELETE FROM logs', () => {});
-        db.run('DELETE FROM run_artifacts', () => {});
-        db.run('DELETE FROM workers', () => resolve());
-      });
-    });
-  });
-
-  it('should complete the full happy path flow', async () => {
-    // 1. Setup a dummy bootstrap image
-    const bootstrap_id = 'img_smoke_test';
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        `INSERT INTO bootstrap_images (id, name, base_image, tag, full_image_name, dockerfile_text, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [bootstrap_id, 'Smoke Image', 'node:20-slim', 'latest', 'node:20-slim', 'FROM node:20-slim', 'completed'],
-        (err) => (err ? reject(err) : resolve()),
-      );
-    });
-
-    const validateRes = await app.inject({
-      method: 'POST',
-      url: '/jobs/validate',
-      payload: {
-        title: 'Smoke Test Job',
-        bootstrap_image_id: bootstrap_id,
-        entrypoint: 'main.js',
-      },
-    });
-
-    expect(validateRes.statusCode).toBe(200);
-    expect(validateRes.json().valid).toBe(true);
-
-    const createJobRes = await app.inject({
-      method: 'POST',
-      url: '/jobs',
-      payload: {
-        title: 'Smoke Test Job',
-        bootstrap_image_id: bootstrap_id,
-        entrypoint: 'main.js',
-      },
-    });
-
-    expect(createJobRes.statusCode).toBe(201);
-    const { id: job_id } = createJobRes.json() as { id: string };
-
-    const patchRes = await app.inject({
-      method: 'PATCH',
-      url: `/jobs/${job_id}`,
-      payload: {
-        description: 'Updated description',
-      },
-    });
-
-    expect(patchRes.statusCode).toBe(200);
-
-    const cloneRes = await app.inject({
-      method: 'POST',
-      url: `/jobs/${job_id}/clone`,
-    });
-
-    expect(cloneRes.statusCode).toBe(201);
-    const { id: cloned_job_id } = cloneRes.json() as { id: string };
-    expect(cloned_job_id).not.toBe(job_id);
-
-    const createTokenRes = await app.inject({
-      method: 'POST',
-      url: `/jobs/${job_id}/share-tokens`,
-      payload: {
-        expires_in_seconds: 3600,
-        max_claims: 1,
-      },
-    });
-
-    expect(createTokenRes.statusCode).toBe(201);
-
-    const {
-      token,
-      docker_image,
-      docker_command,
-    } = createTokenRes.json() as {
-      token: string;
-      docker_image: string;
-      docker_command: string;
-    };
-
-    expect(docker_image).toBe('node:20-slim');
-    expect(docker_command).toContain('node:20-slim');
-    expect(docker_command).toContain(token);
-
-    const claimRes = await app.inject({
-      method: 'GET',
-      url: '/api/run-config',
-      query: { token },
-    });
-
-    expect(claimRes.statusCode).toBe(200);
-    const { run_id } = claimRes.json() as { run_id: string };
-
-    const startRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/start',
-      payload: {
-        run_id,
-        worker_id: 'smoke_worker_1',
-        worker_name: 'Smoke Worker',
-      },
-    });
-
-    expect(startRes.statusCode).toBe(200);
-
-    const logRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/logs',
-      payload: {
-        run_id,
-        message: 'Job started',
-        level: 'info',
-      },
-    });
-
-    expect(logRes.statusCode).toBe(200);
-
-    const hbRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/heartbeat',
-      payload: {
-        run_id,
-        worker_id: 'smoke_worker_1',
-        worker_name: 'Smoke Worker',
-      },
-    });
-
-    expect(hbRes.statusCode).toBe(200);
-    expect(hbRes.json().should_stop).toBe(false);
-
-    const artifactRes = await app.inject({
-      method: 'POST',
-      url: '/artifacts/upload-run',
-      query: { runId: run_id, relativePath: 'output.txt' },
-      headers: { 'content-type': 'multipart/form-data; boundary=bound' },
-      payload:
-        '--bound\r\n' +
-        'Content-Disposition: form-data; name="file"; filename="output.txt"\r\n' +
-        'Content-Type: text/plain\r\n\r\n' +
-        'hello artifact\r\n' +
-        '--bound--\r\n',
-    });
-
-    expect(artifactRes.statusCode).toBe(200);
-
-    const finishRes = await app.inject({
-      method: 'POST',
-      url: '/api/runs/finish',
-      payload: {
-        run_id,
-        status: 'finished',
-        result: 'Success',
-        metrics: { duration_ms: 500 },
-      },
-    });
-
-    expect(finishRes.statusCode).toBe(200);
-
-    const runDetailsRes = await app.inject({
-      method: 'GET',
-      url: `/api/runs/${run_id}`,
-    });
-
-    expect(runDetailsRes.statusCode).toBe(200);
-    const runDetails = runDetailsRes.json() as {
-      status: string;
-      logs: Array<{ message: string }>;
-      artifacts: Array<{ filename: string }>;
-    };
-
-    expect(runDetails.status).toBe('finished');
-    expect(runDetails.logs.length).toBeGreaterThan(0);
-    expect(runDetails.logs[0].message).toBe('Job started');
-    expect(runDetails.artifacts.length).toBeGreaterThan(0);
-    expect(runDetails.artifacts[0].filename).toBe('output.txt');
-
-    const activeTokenRes = await app.inject({
-      method: 'POST',
-      url: `/jobs/${job_id}/share-tokens`,
-      payload: { max_claims: 1 },
-    });
-
-    const activeToken = (activeTokenRes.json() as { token: string }).token;
-
-    await app.inject({
-      method: 'GET',
-      url: '/api/run-config',
-      query: { token: activeToken },
-    });
-
-    const deleteRes = await app.inject({
-      method: 'DELETE',
-      url: `/jobs/${job_id}`,
-    });
-
-    expect(deleteRes.statusCode).toBe(400);
-    expect(deleteRes.json().error).toContain('active runs');
-  });
-});
-
-
-path: /apps/backend/tsconfig.json
-----------------------------------------
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "rootDir": "src",
-    "outDir": "dist",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "exclude": ["node_modules", "dist", "tests", "vitest.config.ts", "web"]
-}
-
-
-path: /apps/backend/vitest.config.ts
-----------------------------------------
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    globals: true,
-    environment: 'node',
-  },
-});
-
-
-path: /apps/web/.codebundleignore
-----------------------------------------
-node_modules/
-dist/
-build/
-.git/
-.next/
-.llm-lab
-coverage/
-public/
-libs/
-web/
-datasets/
-smoke-test/
-
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-bundle-code.js
-
-
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-*.ico
-*.pdf
-*.zip
-*.rar
-*.7z
-*.exe
-*.dll
-*.so
-*.dylib
-*.woff
-*.woff2
-*.ttf
-*.eot
-*.mp4
-*.mp3
-*.wav
-*.css
-*.scss
-*.md
-*.html
-*.txt
-
-
-path: /apps/web/.env.example
-----------------------------------------
-VITE_API_BASE_URL=https://api.cloud-forge.ru
-
-
-path: /apps/web/.gitignore
-----------------------------------------
-node_modules
-dist
-.vercel
-.next
-.DS_Store
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-
-path: /apps/web/Dockerfile
-----------------------------------------
-# Build stage
-FROM node:20-slim AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-RUN npm run build
-
-# Production stage
-FROM nginx:stable-alpine
-
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Default nginx config for SPA
-RUN printf "server { \n\
-    listen 80; \n\
-    location / { \n\
-        root /usr/share/nginx/html; \n\
-        index index.html index.htm; \n\
-        try_files \$uri \$uri/ /index.html; \n\
-    } \n\
-}" > /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
-
-
-path: /apps/web/package.json
-----------------------------------------
-{
-  "name": "cloud-forge-web",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "@radix-ui/react-alert-dialog": "^1.1.14",
-    "@radix-ui/react-dialog": "^1.1.14",
-    "@radix-ui/react-dropdown-menu": "^2.1.16",
-    "@radix-ui/react-label": "^2.1.7",
-    "@radix-ui/react-select": "^2.2.5",
-    "@radix-ui/react-separator": "^1.1.7",
-    "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@tailwindcss/vite": "^4.2.2",
-    "@tanstack/react-query": "^5.95.2",
-    "@tanstack/react-query-devtools": "^5.95.2",
-    "@tanstack/react-router": "^1.168.7",
-    "@tanstack/react-router-devtools": "^1.166.11",
-    "axios": "^1.13.6",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
-    "lucide-react": "^0.511.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-hook-form": "^7.72.0",
-    "recharts": "^3.2.1",
-    "sonner": "^2.0.7",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss": "^4.2.2",
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^24.7.0",
-    "@types/react": "^19.1.14",
-    "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react": "^5.1.0",
-    "eslint": "^9.39.1",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.4.24",
-    "globals": "^16.4.0",
-    "prettier": "^3.6.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0",
-    "vite": "^7.1.7"
-  }
-}
-
-
-path: /apps/web/tsconfig.app.json
-----------------------------------------
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "useDefineForClassFields": true,
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "allowJs": false,
-    "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-    "types": ["vite/client"]
-  },
-  "include": ["src"]
-}
-
-
-path: /apps/web/tsconfig.json
-----------------------------------------
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
-
-
-path: /apps/web/tsconfig.node.json
-----------------------------------------
-{
-  "compilerOptions": {
-    "composite": true,
-    "skipLibCheck": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true
-  },
-  "include": ["vite.config.ts", "eslint.config.js"]
-}
-
-
-path: /apps/web/vite.config.d.ts
-----------------------------------------
-declare const _default: import("vite").UserConfig;
-export default _default;
-
-
-path: /apps/web/vite.config.ts
-----------------------------------------
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-import path from 'node:path';
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-});
-
-
-path: /apps/worker/.dockerignore
 ----------------------------------------
 __pycache__/
 *.pyc
@@ -988,7 +14,267 @@ scripts/
 .DS_Store
 
 
-path: /apps/worker/Dockerfile
+path: /bundle-code.js
+----------------------------------------
+#!/usr/bin/env node
+/**
+ * bundle-code.js
+ * Собирает весь текстовый код проекта в один файл, помечая секции путями.
+ * - Рекурсивный обход
+ * - Пропуск бинарных файлов (по содержимому)
+ * - Игнор по .codebundleignore (gitignore-like)
+ */
+
+const  fs = require("fs");
+const  fsp = require("fs/promises");
+const  path = require("path")
+
+const PROJECT_ROOT = process.cwd();
+const IGNORE_FILE_NAME = ".codebundleignore";
+const OUTPUT_FILE = path.join(PROJECT_ROOT, "codebundle.txt");
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;   // 200MB
+
+// Если заполнить — соберёт только эти расширения. Если пусто — любые текстовые.
+const ONLY_EXTENSIONS = new Set([
+  // ".js", ".jsx", ".ts", ".tsx", ".json", ".css", ".scss", ".md", ".html", ".yml", ".yaml"
+]);
+
+function normalizeToPosix(p) {
+  return p.split(path.sep).join("/");
+}
+
+function stripBom(s) {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+async function readIgnoreFile(ignorePath) {
+  try {
+    const raw = await fsp.readFile(ignorePath, "utf8");
+    return stripBom(raw)
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith("#"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Компилируем игнор-правила.
+ * Поддержка:
+ * - "node_modules/" (игнор любой сегмент /node_modules/ в любом месте)
+ * - "dist/" и т.п.
+ * - "*.ext"
+ * - "path/to/file" (точный относительный путь)
+ * - "!pattern" (снять игнор)
+ */
+function buildIgnoreMatcher(patterns) {
+  // дефолтные, чтобы не протекало даже если забыли
+  const defaultPatterns = [
+    "node_modules/",
+    ".git/",
+    "dist/",
+    "build/",
+    ".next/",
+    "coverage/",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+  ];
+
+  const all = [...defaultPatterns, ...patterns];
+
+  const rules = all.map(p => ({
+    neg: p.startsWith("!"),
+    pat: (p.startsWith("!") ? p.slice(1) : p).trim(),
+  })).filter(r => r.pat);
+
+  function matchRule(relPosix, pat) {
+    // relPosix: "admin/node_modules/express/index.js"
+
+    // directory pattern: "node_modules/"
+    if (pat.endsWith("/")) {
+      const seg = pat.slice(0, -1);
+      if (!seg) return false;
+
+      // матч:
+      // - если путь начинается с seg/
+      // - или содержит /seg/ как сегмент
+      return (
+        relPosix === seg ||
+        relPosix.startsWith(seg + "/") ||
+        relPosix.includes("/" + seg + "/") ||
+        relPosix.endsWith("/" + seg)
+      );
+    }
+
+    // glob extension: "*.png"
+    if (pat.startsWith("*.") && !pat.includes("/")) {
+      const ext = pat.slice(1); // ".png"
+      return relPosix.toLowerCase().endsWith(ext.toLowerCase());
+    }
+
+    // exact file path
+    return relPosix === pat;
+  }
+
+  return function isIgnored(relPosix) {
+    let ignored = false;
+    for (const r of rules) {
+      if (matchRule(relPosix, r.pat)) {
+        ignored = !r.neg; // если negation — снимаем игнор
+      }
+    }
+    return ignored;
+  };
+}
+
+async function isProbablyBinary(filePath) {
+  const fd = await fsp.open(filePath, "r");
+  try {
+    const { size } = await fd.stat();
+    const toRead = Math.min(size, 8192);
+    const buf = Buffer.allocUnsafe(toRead);
+    const { bytesRead } = await fd.read(buf, 0, toRead, 0);
+    if (bytesRead === 0) return false;
+
+    let nulCount = 0;
+    let weirdCount = 0;
+    for (let i = 0; i < bytesRead; i++) {
+      const b = buf[i];
+      if (b === 0) nulCount++;
+      const ok =
+        b === 9 || b === 10 || b === 13 || (b >= 32 && b <= 126) || b >= 128;
+      if (!ok) weirdCount++;
+    }
+    if (nulCount > 0) return true;
+    return (weirdCount / bytesRead) > 0.25;
+  } finally {
+    await fd.close();
+  }
+}
+
+async function* walk(dirAbs, isIgnored) {
+  let entries;
+  try {
+    entries = await fsp.readdir(dirAbs, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const ent of entries) {
+    const abs = path.join(dirAbs, ent.name);
+    const rel = path.relative(PROJECT_ROOT, abs);
+    const relPosix = normalizeToPosix(rel);
+
+    // не включаем output и ignore файл
+    if (path.resolve(abs) === path.resolve(OUTPUT_FILE)) continue;
+    if (relPosix === IGNORE_FILE_NAME) continue;
+
+    if (isIgnored(relPosix)) continue;
+
+    if (ent.isDirectory()) {
+      yield* walk(abs, isIgnored);
+    } else if (ent.isFile()) {
+      yield { abs, relPosix };
+    }
+  }
+}
+
+async function bundle() {
+  const ignorePath = path.join(PROJECT_ROOT, IGNORE_FILE_NAME);
+  const patterns = await readIgnoreFile(ignorePath);
+  const isIgnored = buildIgnoreMatcher(patterns);
+
+  const out = fs.createWriteStream(OUTPUT_FILE, { encoding: "utf8" });
+
+  let totalBytes = 0;
+  let included = 0;
+  let skippedBinary = 0;
+  let skippedSize = 0;
+  let skippedExt = 0;
+
+  out.write(`=== CODE BUNDLE ===\n`);
+  out.write(`root: ${normalizeToPosix(PROJECT_ROOT)}\n`);
+  out.write(`ignore: ${IGNORE_FILE_NAME}\n`);
+  out.write(`generated: ${new Date().toISOString()}\n\n`);
+
+  for await (const file of walk(PROJECT_ROOT, isIgnored)) {
+    const ext = path.extname(file.relPosix).toLowerCase();
+    if (ONLY_EXTENSIONS.size && !ONLY_EXTENSIONS.has(ext)) {
+      skippedExt++;
+      continue;
+    }
+
+    let stat;
+    try {
+      stat = await fsp.stat(file.abs);
+    } catch {
+      continue;
+    }
+
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      skippedSize++;
+      continue;
+    }
+    if (totalBytes + stat.size > MAX_TOTAL_BYTES) {
+      out.write(`\n\n=== STOP: total size limit reached (${MAX_TOTAL_BYTES} bytes) ===\n`);
+      break;
+    }
+
+    let binary;
+    try {
+      binary = await isProbablyBinary(file.abs);
+    } catch {
+      continue;
+    }
+    if (binary) {
+      skippedBinary++;
+      continue;
+    }
+
+    let content;
+    try {
+      content = await fsp.readFile(file.abs, "utf8");
+    } catch {
+      continue;
+    }
+
+    out.write(`\n\npath: /${file.relPosix}\n`);
+    out.write(`----------------------------------------\n`);
+    out.write(content);
+    if (!content.endsWith("\n")) out.write("\n");
+
+    totalBytes += stat.size;
+    included++;
+  }
+
+  out.write(`\n\n=== SUMMARY ===\n`);
+  out.write(`included: ${included}\n`);
+  out.write(`skipped(binary): ${skippedBinary}\n`);
+  out.write(`skipped(size): ${skippedSize}\n`);
+  out.write(`skipped(ext): ${skippedExt}\n`);
+  out.write(`totalBytes(approx): ${totalBytes}\n`);
+
+  await new Promise((res, rej) => {
+    out.end(res);
+    out.on("error", rej);
+  });
+
+  console.log(`Done. Output: ${OUTPUT_FILE}`);
+}
+
+bundle().catch(err => {
+  console.error("Error:", err);
+  process.exitCode = 1;
+});
+
+
+path: /Dockerfile
 ----------------------------------------
 FROM python:3.11-slim
 
@@ -1020,7 +306,7 @@ WORKDIR /workspace
 ENTRYPOINT ["python3", "/app/runner.py"]
 
 
-path: /apps/worker/examples/job.py
+path: /examples/job.py
 ----------------------------------------
 from cloudforge import info, warn, upload_artifact, artifacts_path, input_path, raise_if_cancel_requested
 
@@ -1039,7 +325,7 @@ result = upload_artifact(model_file)
 info(f"artifact uploaded: {result['relative_path']}")
 
 
-path: /apps/worker/runner.py
+path: /runner.py
 ----------------------------------------
 #!/usr/bin/env python3
 """
@@ -1642,7 +928,7 @@ post_json(
 print(f"🏁 Run {run_id} finished with status: {final_status}")
 
 
-path: /apps/worker/scripts/publish-worker.sh
+path: /scripts/publish-worker.sh
 ----------------------------------------
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -1979,7 +1265,7 @@ main() {
 main "$@"
 
 
-path: /apps/worker/sdk/python/cloudforge.py
+path: /sdk/python/cloudforge.py
 ----------------------------------------
 import json
 import mimetypes
@@ -2238,211 +1524,9 @@ def upload_artifacts_directory(directory: str | Path) -> List[Dict[str, Any]]:
     return uploaded
 
 
-path: /infra/compose/docker-compose.dev.yml
-----------------------------------------
-services:
-  backend:
-    build:
-      context: ../../apps/backend
-      dockerfile: Dockerfile
-    ports:
-      - '3000:3000'
-    environment:
-      PORT: 3000
-      REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: cloudforge
-      MINIO_SECRET_KEY: cloudforge123
-      MINIO_BUCKET: cloud-forge
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
-      PUBLISHED_WORKER_IMAGE: ${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}
-      PUBLISHED_WORKER_TAG: ${PUBLISHED_WORKER_TAG:-0.1.0}
-      WORKER_ASSETS_PATH: /app/worker
-    depends_on:
-      - redis
-      - minio
-    volumes:
-      - sqlite-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ../../apps/worker:/app/worker
-    restart: unless-stopped
-
-  web:
-    build:
-      context: ../../apps/web
-      dockerfile: Dockerfile
-    ports:
-      - '5173:80'
-    environment:
-      VITE_API_BASE_URL: http://localhost:3000
-    depends_on:
-      - backend
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - '6379:6379'
-    command: redis-server --appendonly yes
-
-  minio:
-    image: minio/minio:latest
-    ports:
-      - '9000:9000'
-      - '9001:9001'
-    environment:
-      MINIO_ROOT_USER: cloudforge
-      MINIO_ROOT_PASSWORD: cloudforge123
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio-data:/data
-
-volumes:
-  minio-data:
-  sqlite-data:
-
-
-path: /infra/compose/docker-compose.prod.yml
-----------------------------------------
-services:
-  backend:
-    image: ${BACKEND_IMAGE:-cloud-forge-backend:latest}
-    environment:
-      PORT: 3000
-      PUBLIC_BASE_URL: https://api.cloud-forge.ru
-      REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${MINIO_BUCKET:-cloud-forge}
-      PUBLISHED_WORKER_IMAGE: ${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}
-      PUBLISHED_WORKER_TAG: ${PUBLISHED_WORKER_TAG:-latest}
-      # Worker assets can be mounted as a volume or built into the image
-      WORKER_ASSETS_PATH: /app/worker
-    volumes:
-      - sqlite-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./worker-assets:/app/worker:ro
-    networks:
-      - internal
-      - npm-network
-    restart: unless-stopped
-
-  web:
-    image: ${WEB_IMAGE:-cloud-forge-web:latest}
-    environment:
-      VITE_API_BASE_URL: https://api.cloud-forge.ru
-    networks:
-      - internal
-      - npm-network
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes
-    networks:
-      - internal
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-
-  minio:
-    image: minio/minio:latest
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio-data:/data
-    networks:
-      - internal
-    restart: unless-stopped
-
-volumes:
-  minio-data:
-  sqlite-data:
-  redis-data:
-
-networks:
-  internal:
-  npm-network:
-    external: true
-    name: ${NPM_NETWORK:-nginx-proxy-manager_default}
-
-
-path: /infra/deploy/deploy-backend.sh
-----------------------------------------
-#!/usr/bin/env bash
-set -e
-
-# Usage: ./deploy-backend.sh [tag]
-TAG=${1:-latest}
-IMAGE_NAME="cloud-forge-backend:$TAG"
-
-echo "Building backend image: $IMAGE_NAME..."
-docker build -t "$IMAGE_NAME" -f apps/backend/Dockerfile apps/backend
-
-echo "Deploying backend..."
-# Assuming we are in the same folder where docker-compose.prod.yml is.
-# Or we can use the environment variables to update the service.
-export BACKEND_IMAGE="$IMAGE_NAME"
-docker compose -f infra/compose/docker-compose.prod.yml up -d backend
-
-
-path: /infra/deploy/deploy-web.sh
-----------------------------------------
-#!/usr/bin/env bash
-set -e
-
-# Usage: ./deploy-web.sh [tag]
-TAG=${1:-latest}
-IMAGE_NAME="cloud-forge-web:$TAG"
-
-echo "Building web image: $IMAGE_NAME..."
-docker build -t "$IMAGE_NAME" -f apps/web/Dockerfile apps/web
-
-echo "Deploying web..."
-export WEB_IMAGE="$IMAGE_NAME"
-docker compose -f infra/compose/docker-compose.prod.yml up -d web
-
-
-path: /infra/deploy/deploy-worker.sh
-----------------------------------------
-#!/usr/bin/env bash
-set -e
-
-# Usage: ./deploy-worker.sh [tag]
-TAG=${1:-latest}
-IMAGE_NAME="xproger/cloud-forge-worker:$TAG"
-
-echo "Building and publishing worker image: $IMAGE_NAME..."
-# Note: uses the script from the worker app
-./apps/worker/scripts/publish-worker.sh --version "$TAG" --image xproger/cloud-forge-worker --single-platform
-
-
-path: /package.json
-----------------------------------------
-{
-  "name": "cloud-forge-monorepo",
-  "private": true,
-  "workspaces": [
-    "apps/*"
-  ],
-  "scripts": {
-    "dev:backend": "npm run dev --workspace=apps/backend",
-    "dev:web": "npm run dev --workspace=apps/web",
-    "build:backend": "npm run build --workspace=apps/backend",
-    "build:web": "npm run build --workspace=apps/web",
-    "build:worker": "npm run worker:build --workspace=apps/backend",
-    "test:backend": "npm run test --workspace=apps/backend",
-    "lint:backend": "npm run lint --workspace=apps/backend",
-    "lint:web": "npm run lint --workspace=apps/web"
-  }
-}
-
-
 === SUMMARY ===
-included: 52
-skipped(binary): 1
+included: 7
+skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 58789
+totalBytes(approx): 40337

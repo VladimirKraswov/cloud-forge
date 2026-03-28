@@ -7,7 +7,8 @@ build/
 coverage/
 public/
 libs/
-web/
+apps/backend/src
+apps/web/src
 datasets/
 smoke-test/
 
@@ -15,6 +16,7 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 bundle-code.js
+
 
 
 *.png

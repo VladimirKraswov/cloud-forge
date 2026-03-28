@@ -4,6 +4,7 @@ import { JobService } from '../services/job.service';
 import { LogLevel, RunStatus } from '../models/job';
 import { broadcastRunLog, broadcastRunProgress, broadcastRunStatus } from './ws';
 import { config } from '../utils/config';
+import { WorkerControlService } from '../services/worker-control.service';
 
 const parseMetrics = (metrics: unknown): unknown => {
   if (typeof metrics !== 'string') return metrics;
@@ -203,14 +204,102 @@ export default async function workerRoutes(app: FastifyInstance) {
       try {
         const result = await JobService.cancelRun(req.params.id, req.body?.reason);
 
+        let remote_command_sent = false;
+
         if (result.final) {
           broadcastRunStatus(req.params.id, 'cancelled');
+        } else {
+          remote_command_sent = WorkerControlService.sendStop(
+            req.params.id,
+            req.body?.reason || 'Run cancelled by user',
+          );
         }
 
-        return reply.send(result);
+        return reply.send({
+          ...result,
+          remote_command_sent,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to cancel run';
         req.log.error({ err }, '[POST /api/runs/:id/cancel] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/:id/signal',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { signal: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const signalName = String(req.body?.signal || '').trim();
+        if (!signalName) {
+          return reply.code(400).send({ error: 'signal is required' });
+        }
+
+        const sent = WorkerControlService.sendSignal(req.params.id, signalName);
+        if (!sent) {
+          return reply.code(404).send({ error: 'Active worker connection for run not found' });
+        }
+
+        return reply.send({
+          ok: true,
+          sent: true,
+          signal: signalName,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to signal run';
+        req.log.error({ err }, '[POST /api/runs/:id/signal] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/:id/exec',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: {
+          command: string;
+          args?: string[];
+          cwd?: string;
+          timeout_seconds?: number;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const command = String(req.body?.command || '').trim();
+        if (!command) {
+          return reply.code(400).send({ error: 'command is required' });
+        }
+
+        const result = await WorkerControlService.requestToRun(
+          req.params.id,
+          'run.exec',
+          {
+            command,
+            args: Array.isArray(req.body?.args) ? req.body.args : [],
+            cwd: req.body?.cwd ?? null,
+            timeout_seconds:
+              req.body?.timeout_seconds == null ? 30 : Number(req.body.timeout_seconds),
+          },
+          ((req.body?.timeout_seconds == null ? 30 : Number(req.body.timeout_seconds)) + 5) * 1000,
+        );
+
+        return reply.send({
+          ok: true,
+          result,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to exec on worker';
+        req.log.error({ err }, '[POST /api/runs/:id/exec] failed');
         return reply.code(400).send({ error: message });
       }
     },

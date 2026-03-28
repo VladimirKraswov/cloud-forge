@@ -5,6 +5,7 @@ import type {
   BootstrapImage,
   BootstrapImageLogEntry,
   ContainerPreset,
+  ExecutionLanguage,
   JobTemplate,
   PaginatedResponse,
   RuntimeResources,
@@ -35,6 +36,7 @@ export const catalogApi = {
 
   previewDockerfile: (data: {
     baseImage: string;
+    executionLanguage: ExecutionLanguage;
     environments: BootstrapEnvironmentSpec[];
     dockerfileOverride?: string | null;
   }) =>
@@ -49,6 +51,7 @@ export const catalogApi = {
     name: string;
     baseImage: string;
     tag: string;
+    executionLanguage: ExecutionLanguage;
     environments: BootstrapEnvironmentSpec[];
     dockerfileText?: string;
     runtimeResources?: RuntimeResources | null;

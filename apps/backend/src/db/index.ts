@@ -95,6 +95,7 @@ export const initDb = async (): Promise<void> => {
       description TEXT,
       owner_id TEXT,
       bootstrap_image_id TEXT,
+      execution_language TEXT NOT NULL DEFAULT 'python',
       environment_variables TEXT NOT NULL DEFAULT '{}',
       resources_json TEXT,
       entrypoint TEXT NOT NULL,
@@ -108,6 +109,7 @@ export const initDb = async (): Promise<void> => {
   // Migrate older jobs table
   await renameColumn('jobs', 'resources', 'resources_json');
   await ensureColumn('jobs', 'bootstrap_image_id', 'bootstrap_image_id TEXT');
+  await ensureColumn('jobs', 'execution_language', `execution_language TEXT NOT NULL DEFAULT 'python'`);
   await ensureColumn(
     'jobs',
     'environment_variables',
@@ -117,6 +119,14 @@ export const initDb = async (): Promise<void> => {
   await ensureColumn('jobs', 'entrypoint', `entrypoint TEXT NOT NULL DEFAULT 'main.py'`);
   await ensureColumn('jobs', 'entrypoint_args', `entrypoint_args TEXT NOT NULL DEFAULT '[]'`);
   await ensureColumn('jobs', 'working_dir', `working_dir TEXT NOT NULL DEFAULT '/workspace'`);
+
+  await runAsync(`
+    UPDATE jobs
+    SET execution_language = CASE
+      WHEN execution_language IS NULL OR TRIM(execution_language) = '' THEN 'python'
+      ELSE execution_language
+    END
+  `);
 
   // Share tokens
   await runAsync(`
@@ -216,6 +226,7 @@ export const initDb = async (): Promise<void> => {
       tag TEXT NOT NULL,
       dockerfile_text TEXT,
       environments_json TEXT NOT NULL DEFAULT '[]',
+      execution_language TEXT NOT NULL DEFAULT 'python',
       runtime_resources_json TEXT,
       sdk_version TEXT,
       full_image_name TEXT NOT NULL,
@@ -235,12 +246,27 @@ export const initDb = async (): Promise<void> => {
     'environments_json',
     `environments_json TEXT NOT NULL DEFAULT '[]'`,
   );
+  await ensureColumn(
+    'bootstrap_images',
+    'execution_language',
+    `execution_language TEXT NOT NULL DEFAULT 'python'`,
+  );
   await ensureColumn('bootstrap_images', 'runtime_resources_json', 'runtime_resources_json TEXT');
   await ensureColumn('bootstrap_images', 'sdk_version', 'sdk_version TEXT');
   await ensureColumn('bootstrap_images', 'build_started_at', 'build_started_at DATETIME');
   await ensureColumn('bootstrap_images', 'build_finished_at', 'build_finished_at DATETIME');
 
-  // Some older versions used extra_packages; keep column if it exists, but no migration needed.
+  await runAsync(`
+    UPDATE bootstrap_images
+    SET execution_language = CASE
+      WHEN execution_language IS NOT NULL AND TRIM(execution_language) <> '' THEN execution_language
+      WHEN LOWER(IFNULL(base_image, '')) LIKE 'node:%'
+        OR LOWER(IFNULL(name, '')) LIKE '%javascript%'
+        OR LOWER(IFNULL(name, '')) LIKE '%node%'
+      THEN 'javascript'
+      ELSE 'python'
+    END
+  `);
 
   // Bootstrap image logs
   await runAsync(`

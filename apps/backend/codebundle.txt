@@ -1,0 +1,6571 @@
+=== CODE BUNDLE ===
+root: /Volumes/Extend/work/cloud-forge/apps/backend
+ignore: .codebundleignore
+generated: 2026-03-28T17:26:18.512Z
+
+
+
+path: /.env.example
+----------------------------------------
+PORT=3000
+PUBLIC_BASE_URL=https://api.cloud-forge.ru
+REDIS_URL=redis://redis:6379
+MINIO_ENDPOINT=http://minio:9000
+MINIO_ACCESS_KEY=your_minio_access_key
+MINIO_SECRET_KEY=your_minio_secret_key
+MINIO_BUCKET=cloud-forge
+PUBLISHED_WORKER_IMAGE=xproger/cloud-forge-worker
+PUBLISHED_WORKER_TAG=latest
+WORKER_ASSETS_PATH=/app/worker
+NPM_NETWORK=nginx-proxy-manager_default
+
+
+path: /bundle-code.js
+----------------------------------------
+#!/usr/bin/env node
+/**
+ * bundle-code.js
+ * Собирает весь текстовый код проекта в один файл, помечая секции путями.
+ * - Рекурсивный обход
+ * - Пропуск бинарных файлов (по содержимому)
+ * - Игнор по .codebundleignore (gitignore-like)
+ */
+
+const  fs = require("fs");
+const  fsp = require("fs/promises");
+const  path = require("path")
+
+const PROJECT_ROOT = process.cwd();
+const IGNORE_FILE_NAME = ".codebundleignore";
+const OUTPUT_FILE = path.join(PROJECT_ROOT, "codebundle.txt");
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;   // 200MB
+
+// Если заполнить — соберёт только эти расширения. Если пусто — любые текстовые.
+const ONLY_EXTENSIONS = new Set([
+  // ".js", ".jsx", ".ts", ".tsx", ".json", ".css", ".scss", ".md", ".html", ".yml", ".yaml"
+]);
+
+function normalizeToPosix(p) {
+  return p.split(path.sep).join("/");
+}
+
+function stripBom(s) {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+async function readIgnoreFile(ignorePath) {
+  try {
+    const raw = await fsp.readFile(ignorePath, "utf8");
+    return stripBom(raw)
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith("#"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Компилируем игнор-правила.
+ * Поддержка:
+ * - "node_modules/" (игнор любой сегмент /node_modules/ в любом месте)
+ * - "dist/" и т.п.
+ * - "*.ext"
+ * - "path/to/file" (точный относительный путь)
+ * - "!pattern" (снять игнор)
+ */
+function buildIgnoreMatcher(patterns) {
+  // дефолтные, чтобы не протекало даже если забыли
+  const defaultPatterns = [
+    "node_modules/",
+    ".git/",
+    "dist/",
+    "build/",
+    ".next/",
+    "coverage/",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+  ];
+
+  const all = [...defaultPatterns, ...patterns];
+
+  const rules = all.map(p => ({
+    neg: p.startsWith("!"),
+    pat: (p.startsWith("!") ? p.slice(1) : p).trim(),
+  })).filter(r => r.pat);
+
+  function matchRule(relPosix, pat) {
+    // relPosix: "admin/node_modules/express/index.js"
+
+    // directory pattern: "node_modules/"
+    if (pat.endsWith("/")) {
+      const seg = pat.slice(0, -1);
+      if (!seg) return false;
+
+      // матч:
+      // - если путь начинается с seg/
+      // - или содержит /seg/ как сегмент
+      return (
+        relPosix === seg ||
+        relPosix.startsWith(seg + "/") ||
+        relPosix.includes("/" + seg + "/") ||
+        relPosix.endsWith("/" + seg)
+      );
+    }
+
+    // glob extension: "*.png"
+    if (pat.startsWith("*.") && !pat.includes("/")) {
+      const ext = pat.slice(1); // ".png"
+      return relPosix.toLowerCase().endsWith(ext.toLowerCase());
+    }
+
+    // exact file path
+    return relPosix === pat;
+  }
+
+  return function isIgnored(relPosix) {
+    let ignored = false;
+    for (const r of rules) {
+      if (matchRule(relPosix, r.pat)) {
+        ignored = !r.neg; // если negation — снимаем игнор
+      }
+    }
+    return ignored;
+  };
+}
+
+async function isProbablyBinary(filePath) {
+  const fd = await fsp.open(filePath, "r");
+  try {
+    const { size } = await fd.stat();
+    const toRead = Math.min(size, 8192);
+    const buf = Buffer.allocUnsafe(toRead);
+    const { bytesRead } = await fd.read(buf, 0, toRead, 0);
+    if (bytesRead === 0) return false;
+
+    let nulCount = 0;
+    let weirdCount = 0;
+    for (let i = 0; i < bytesRead; i++) {
+      const b = buf[i];
+      if (b === 0) nulCount++;
+      const ok =
+        b === 9 || b === 10 || b === 13 || (b >= 32 && b <= 126) || b >= 128;
+      if (!ok) weirdCount++;
+    }
+    if (nulCount > 0) return true;
+    return (weirdCount / bytesRead) > 0.25;
+  } finally {
+    await fd.close();
+  }
+}
+
+async function* walk(dirAbs, isIgnored) {
+  let entries;
+  try {
+    entries = await fsp.readdir(dirAbs, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const ent of entries) {
+    const abs = path.join(dirAbs, ent.name);
+    const rel = path.relative(PROJECT_ROOT, abs);
+    const relPosix = normalizeToPosix(rel);
+
+    // не включаем output и ignore файл
+    if (path.resolve(abs) === path.resolve(OUTPUT_FILE)) continue;
+    if (relPosix === IGNORE_FILE_NAME) continue;
+
+    if (isIgnored(relPosix)) continue;
+
+    if (ent.isDirectory()) {
+      yield* walk(abs, isIgnored);
+    } else if (ent.isFile()) {
+      yield { abs, relPosix };
+    }
+  }
+}
+
+async function bundle() {
+  const ignorePath = path.join(PROJECT_ROOT, IGNORE_FILE_NAME);
+  const patterns = await readIgnoreFile(ignorePath);
+  const isIgnored = buildIgnoreMatcher(patterns);
+
+  const out = fs.createWriteStream(OUTPUT_FILE, { encoding: "utf8" });
+
+  let totalBytes = 0;
+  let included = 0;
+  let skippedBinary = 0;
+  let skippedSize = 0;
+  let skippedExt = 0;
+
+  out.write(`=== CODE BUNDLE ===\n`);
+  out.write(`root: ${normalizeToPosix(PROJECT_ROOT)}\n`);
+  out.write(`ignore: ${IGNORE_FILE_NAME}\n`);
+  out.write(`generated: ${new Date().toISOString()}\n\n`);
+
+  for await (const file of walk(PROJECT_ROOT, isIgnored)) {
+    const ext = path.extname(file.relPosix).toLowerCase();
+    if (ONLY_EXTENSIONS.size && !ONLY_EXTENSIONS.has(ext)) {
+      skippedExt++;
+      continue;
+    }
+
+    let stat;
+    try {
+      stat = await fsp.stat(file.abs);
+    } catch {
+      continue;
+    }
+
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      skippedSize++;
+      continue;
+    }
+    if (totalBytes + stat.size > MAX_TOTAL_BYTES) {
+      out.write(`\n\n=== STOP: total size limit reached (${MAX_TOTAL_BYTES} bytes) ===\n`);
+      break;
+    }
+
+    let binary;
+    try {
+      binary = await isProbablyBinary(file.abs);
+    } catch {
+      continue;
+    }
+    if (binary) {
+      skippedBinary++;
+      continue;
+    }
+
+    let content;
+    try {
+      content = await fsp.readFile(file.abs, "utf8");
+    } catch {
+      continue;
+    }
+
+    out.write(`\n\npath: /${file.relPosix}\n`);
+    out.write(`----------------------------------------\n`);
+    out.write(content);
+    if (!content.endsWith("\n")) out.write("\n");
+
+    totalBytes += stat.size;
+    included++;
+  }
+
+  out.write(`\n\n=== SUMMARY ===\n`);
+  out.write(`included: ${included}\n`);
+  out.write(`skipped(binary): ${skippedBinary}\n`);
+  out.write(`skipped(size): ${skippedSize}\n`);
+  out.write(`skipped(ext): ${skippedExt}\n`);
+  out.write(`totalBytes(approx): ${totalBytes}\n`);
+
+  await new Promise((res, rej) => {
+    out.end(res);
+    out.on("error", rej);
+  });
+
+  console.log(`Done. Output: ${OUTPUT_FILE}`);
+}
+
+bundle().catch(err => {
+  console.error("Error:", err);
+  process.exitCode = 1;
+});
+
+
+path: /Dockerfile
+----------------------------------------
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+# Using root-level package.json for workspaces if needed, but here we can just build the backend
+COPY package*.json ./
+RUN npm install
+
+COPY tsconfig*.json ./
+COPY src ./src
+
+RUN npm run build
+
+FROM node:20-slim AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+RUN npm install --omit=dev
+
+COPY --from=builder /app/dist ./dist
+
+# Optional: if worker assets are provided during build, they can be included.
+# But for a cleaner separation, we can mount them or download them.
+# The code now supports WORKER_ASSETS_PATH.
+# By default, we expect them in /app/worker if we want them inside the image.
+# COPY worker/runner.py ./worker/runner.py
+# COPY worker/sdk ./worker/sdk
+
+RUN mkdir -p /app/data
+
+EXPOSE 3000
+
+CMD ["node", "dist/server.js"]
+
+
+path: /package.json
+----------------------------------------
+{
+  "name": "cloud-forge",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "dev:full": "docker compose -f ../../infra/compose/docker-compose.dev.yml up -d redis minio && npm run dev",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:prod": "npm run build && node dist/server.js",
+    "docker:up": "docker compose -f ../../infra/compose/docker-compose.dev.yml up -d",
+    "docker:down": "docker compose -f ../../infra/compose/docker-compose.dev.yml down",
+    "docker:logs": "docker compose -f ../../infra/compose/docker-compose.dev.yml logs -f backend",
+    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f ../worker/Dockerfile ../worker",
+    "worker:publish": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker push \"$WORKER_IMAGE:$WORKER_TAG\" && docker push \"$WORKER_IMAGE:latest\"",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest",
+    "test:e2e": "vitest run tests/e2e",
+    "test:watch": "vitest"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/multipart": "^9.4.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "@fastify/websocket": "^11.2.0",
+    "bullmq": "^5.71.1",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.8.4",
+    "ioredis": "^5.10.1",
+    "pino": "^9.14.0",
+    "pino-pretty": "^13.1.3",
+    "sqlite3": "^5.1.7",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^20.19.37",
+    "@types/supertest": "^6.0.3",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
+    "@vitest/coverage-v8": "^4.1.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-prettier": "^5.5.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.1",
+    "supertest": "^7.2.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.2",
+    "uuid": "^11.1.0",
+    "vitest": "^4.1.1"
+  }
+}
+
+
+path: /src/catalog/presets.ts
+----------------------------------------
+// catalog/presets.ts
+import { ContainerPreset } from '../models/job';
+import { config } from '../utils/config';
+import { jobTemplates } from './templates';
+// Базовый официальный bootstrap-образ
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+export { jobTemplates };
+
+export const containerPresets: ContainerPreset[] = [
+  {
+    id: 'bootstrap-python',
+    name: 'Cloud Forge Bootstrap (Python)',
+    category: 'bootstrap',
+    description:
+      'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK.',
+    recommended_for: ['python', 'remote-run', 'sdk', 'hello-world'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
+      is_parent: true,
+      resources: {
+        shm_size: '2g',
+        cpu_limit: 2,
+        memory_limit: '4g',
+      },
+    },
+  },
+  {
+    id: 'bootstrap-node',
+    name: 'Cloud Forge Bootstrap (Node.js)',
+    category: 'bootstrap',
+    description: 'Официальный bootstrap-контейнер для JavaScript/Node.js job.',
+    recommended_for: ['javascript', 'node', 'automation'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: OFFICIAL_BOOTSTRAP_IMAGE,
+      is_parent: true,
+      resources: {
+        shm_size: '1g',
+        cpu_limit: 2,
+        memory_limit: '4g',
+      },
+    },
+  },
+
+  // ── Custom Model Workers (для больших моделей) ─────────────────────
+  {
+    id: 'custom-model-worker',
+    name: 'Custom Model Worker',
+    category: 'bootstrap',
+    description: 'Self-contained bootstrap-образ с большой моделью внутри (50GB+).',
+    recommended_for: ['llm', 'finetune', 'gpu'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0', // ← Замени на свой актуальный образ при необходимости
+      is_parent: true,
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '64g',
+        cpu_limit: 8,
+      },
+    },
+  },
+
+  {
+    id: 'qwen-7b-finetune-worker',
+    name: 'Qwen 7B Fine-tune Worker',
+    category: 'bootstrap',
+    description: 'Bootstrap с предзагруженной моделью Qwen 7B для fine-tuning.',
+    recommended_for: ['finetune', 'qwen', 'llm', 'gpu'],
+    support_level: 'supported',
+    container: {
+      name: 'bootstrap',
+      image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0',
+      is_parent: true,
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '64g',
+        cpu_limit: 8,
+      },
+    },
+  },
+
+  // Runtime пресеты
+  {
+    id: 'pytorch-cu121',
+    name: 'PyTorch CUDA 12.1',
+    category: 'runtime',
+    description: 'Контейнер с PyTorch и CUDA для обучения и инференса.',
+    recommended_for: ['pytorch', 'training', 'gpu'],
+    support_level: 'future',
+    container: {
+      name: 'pytorch',
+      image: 'pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime',
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '32g',
+      },
+    },
+  },
+  {
+    id: 'vllm-runtime',
+    name: 'vLLM Runtime',
+    category: 'runtime',
+    description: 'Контейнер для высокопроизводительного инференса LLM через vLLM.',
+    recommended_for: ['llm', 'inference', 'vllm'],
+    support_level: 'future',
+    container: {
+      name: 'vllm',
+      image: 'vllm/vllm-openai:latest',
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '32g',
+      },
+    },
+  },
+  {
+    id: 'unsloth-finetune',
+    name: 'Unsloth Fine-tune',
+    category: 'runtime',
+    description: 'Контейнер для быстрого SFT/LoRA fine-tuning с Unsloth.',
+    recommended_for: ['llm', 'finetune', 'unsloth'],
+    support_level: 'future',
+    container: {
+      name: 'unsloth',
+      image: 'unsloth/unsloth:latest',
+      resources: {
+        gpus: 'all',
+        shm_size: '16g',
+        memory_limit: '48g',
+      },
+    },
+  },
+];
+
+
+path: /src/catalog/templates/hello-world.ts
+----------------------------------------
+// catalog/templates/hello-world.ts
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
+
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapPython: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '2g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
+
+export const helloWorldPython: JobTemplate = {
+  id: 'hello-world-python',
+  name: 'Hello World (Remote Python)',
+  description: 'Минимальный job для проверки удалённого запуска через Docker.',
+  tags: ['python', 'hello-world', 'remote-run', 'sdk', 'supported'],
+  support_level: 'supported',
+  draft: {
+    title: 'Hello World',
+    description: 'Проверочный remote job для публикации bootstrap-образа.',
+    containers: [bootstrapPython],
+    environments: {
+      APP_ENV: 'production',
+    },
+    attached_files: [],
+    execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("hello world job started")
+info("Cloud Forge SDK is available inside the bootstrap container")
+raise_if_cancel_requested()
+
+hello_file = artifacts_path("hello.txt")
+hello_file.parent.mkdir(parents=True, exist_ok=True)
+hello_file.write_text("hello from cloud forge\\n", encoding="utf-8")
+
+summary_file = artifacts_path("summary.json")
+summary_file.write_text(
+    json.dumps(
+        {
+            "message": "hello from cloud forge",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "artifacts": ["hello.txt", "summary.json"],
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
+info(f"artifact written: {hello_file}")
+info(f"artifact written: {summary_file}")
+info("hello world job finished successfully")
+`,
+    execution_language: 'python',
+    entrypoint: 'main.py',
+  },
+};
+
+
+path: /src/catalog/templates/index.ts
+----------------------------------------
+// catalog/templates/index.ts
+import { JobTemplate } from '../../models/job';
+
+import { helloWorldPython } from './hello-world';
+import { pythonBasic } from './python-basic';
+import { javascriptBasic } from './javascript-basic';
+import { qwen7bFinetune } from './qwen-7b-finetune';
+
+export const jobTemplates: JobTemplate[] = [
+  helloWorldPython,
+  pythonBasic,
+  javascriptBasic,
+  qwen7bFinetune,
+];
+
+
+path: /src/catalog/templates/javascript-basic.ts
+----------------------------------------
+// catalog/templates/javascript-basic.ts
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
+
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapNode: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '1g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
+
+export const javascriptBasic: JobTemplate = {
+  id: 'javascript-basic',
+  name: 'JavaScript Basic',
+  description: 'Простой Node.js job с bootstrap-контейнером.',
+  tags: ['javascript', 'node', 'basic', 'sdk'],
+  support_level: 'supported',
+  draft: {
+    title: 'JavaScript Basic Job',
+    description: 'Шаблон базовой JavaScript job для скриптов и автоматизации.',
+    containers: [bootstrapNode],
+    environments: {
+      APP_ENV: 'development',
+    },
+    attached_files: [],
+    execution_code: `const fs = require('fs');
+const path = require('path');
+const {
+  info,
+  artifactsPath,
+  raiseIfCancelRequested,
+} = require('cloudforge');
+
+async function main() {
+  await info('javascript job started');
+  await info('Cloud Forge SDK is available inside the bootstrap container');
+  raiseIfCancelRequested();
+
+  const resultPath = artifactsPath('result.txt');
+  fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+  fs.writeFileSync(resultPath, 'hello from cloud forge');
+
+  const summaryPath = artifactsPath('summary.json');
+  fs.writeFileSync(
+    summaryPath,
+    JSON.stringify(
+      {
+        language: 'javascript',
+        message: 'hello from cloud forge',
+        generated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+
+  await info(\`result written to \${resultPath}\`);
+  await info(\`summary written to \${summaryPath}\`);
+}
+
+main().catch(async (err) => {
+  try {
+    await info(\`fatal error: \${err.message}\`);
+  } finally {
+    process.exit(1);
+  }
+});
+`,
+    execution_language: 'javascript',
+    entrypoint: 'main.js',
+  },
+};
+
+
+path: /src/catalog/templates/python-basic.ts
+----------------------------------------
+// catalog/templates/python-basic.ts
+import { JobTemplate, Container } from '../../models/job';
+import { config } from '../../utils/config';
+
+const OFFICIAL_BOOTSTRAP_IMAGE = `${config.publishedWorkerImage}:${config.publishedWorkerTag}`;
+
+const bootstrapPython: Container = {
+  name: 'bootstrap',
+  image: OFFICIAL_BOOTSTRAP_IMAGE,
+  is_parent: true,
+  resources: {
+    shm_size: '2g',
+    cpu_limit: 2,
+    memory_limit: '4g',
+  },
+};
+
+export const pythonBasic: JobTemplate = {
+  id: 'python-basic',
+  name: 'Python Basic',
+  description: 'Простой Python job с одним bootstrap-контейнером.',
+  tags: ['python', 'basic', 'sdk'],
+  support_level: 'supported',
+  draft: {
+    title: 'Python Basic Job',
+    description: 'Шаблон базовой Python job для обработки данных или автоматизации.',
+    containers: [bootstrapPython],
+    environments: {
+      APP_ENV: 'development',
+    },
+    attached_files: [],
+    execution_code: `from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("python job started")
+raise_if_cancel_requested()
+
+result_file = artifacts_path("result.txt")
+result_file.parent.mkdir(parents=True, exist_ok=True)
+result_file.write_text("hello from cloud forge", encoding="utf-8")
+
+metadata_file = artifacts_path("metadata.json")
+metadata_file.write_text(
+    json.dumps(
+        {
+            "language": "python",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "message": "hello from cloud forge",
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+
+info(f"result written to {result_file}")
+info(f"metadata written to {metadata_file}")
+`,
+    execution_language: 'python',
+    entrypoint: 'main.py',
+  },
+};
+
+
+path: /src/catalog/templates/qwen-7b-finetune.ts
+----------------------------------------
+// catalog/templates/qwen-7b-finetune.ts
+import { JobTemplate, Container } from '../../models/job';
+
+const qwen7bFinetuneWorker: Container = {
+  name: 'bootstrap',
+  image: 'igortet/cloud-forge-worker-qwen-7b:0.1.0',
+  is_parent: true,
+  resources: {
+    gpus: 'all',
+    shm_size: '16g',
+    memory_limit: '64g',
+    cpu_limit: 8,
+  },
+};
+
+export const qwen7bFinetune: JobTemplate = {
+  id: 'qwen-7b-finetune',
+  name: 'Qwen 7B Fine-tune',
+  description: 'Готовый шаблон для fine-tuning модели Qwen 7B с self-contained bootstrap-образом.',
+  tags: ['llm', 'finetune', 'qwen', 'gpu', 'supported'],
+  support_level: 'supported',
+  draft: {
+    title: 'Qwen 7B Fine-tune',
+    description: 'Модель уже внутри bootstrap-образа. Добавь свой код обучения.',
+    containers: [qwen7bFinetuneWorker],
+    environments: {
+      MODEL_DIR: '/models/qwen-7b',
+      HF_HOME: '/workspace/.cache/huggingface',
+      OUTPUT_DIR: '/workspace/artifacts/output',
+    },
+    attached_files: [],
+    execution_code: `# Ваш код fine-tuning здесь
+from cloudforge import info, artifacts_path, raise_if_cancel_requested
+from datetime import datetime
+import json
+
+info("Qwen 7B fine-tuning job started")
+raise_if_cancel_requested()
+
+# Пример использования Unsloth или transformers:
+# from unsloth import FastLanguageModel
+# model, tokenizer = FastLanguageModel.from_pretrained("/models/qwen-7b")
+
+info("Fine-tuning completed successfully")
+
+summary_file = artifacts_path("training_summary.json")
+summary_file.write_text(
+    json.dumps({
+        "status": "completed",
+        "model": "Qwen-7B",
+        "finished_at": datetime.utcnow().isoformat() + "Z"
+    }, indent=2),
+    encoding="utf-8"
+)
+`,
+    execution_language: 'python',
+    entrypoint: null,
+  },
+};
+
+
+path: /src/db/index.ts
+----------------------------------------
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import fs from 'fs';
+import { config } from '../utils/config';
+
+// Ensure the directory for the database exists
+const dbDir = path.dirname(config.databaseUrl);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new sqlite3.Database(config.databaseUrl);
+
+const runAsync = (sql: string, params: unknown[] = []): Promise<void> =>
+  new Promise((resolve, reject) => {
+    db.run(sql, params, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+
+const allAsync = <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> =>
+  new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve((rows as T[]) || []);
+    });
+  });
+
+type TableInfoRow = {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: 0 | 1;
+  dflt_value: string | null;
+  pk: 0 | 1;
+};
+
+const getTableColumns = async (tableName: string): Promise<Set<string>> => {
+  const rows = await allAsync<TableInfoRow>(`PRAGMA table_info(${tableName})`);
+  return new Set(rows.map((row) => row.name));
+};
+
+const ensureColumn = async (
+  tableName: string,
+  columnName: string,
+  columnSql: string,
+): Promise<void> => {
+  const columns = await getTableColumns(tableName);
+  if (!columns.has(columnName)) {
+    await runAsync(`ALTER TABLE ${tableName} ADD COLUMN ${columnSql}`);
+  }
+};
+
+const renameTable = async (oldName: string, newName: string): Promise<void> => {
+  const tables = await allAsync<{ name: string }>(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+    [oldName],
+  );
+  if (tables.length > 0) {
+    const targetExists = await allAsync<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+      [newName],
+    );
+    if (targetExists.length === 0) {
+      console.log(`[DB] Renaming table ${oldName} to ${newName}`);
+      await runAsync(`ALTER TABLE ${oldName} RENAME TO ${newName}`);
+    }
+  }
+};
+
+const renameColumn = async (
+  tableName: string,
+  oldColumn: string,
+  newColumn: string,
+): Promise<void> => {
+  const columns = await getTableColumns(tableName);
+  if (columns.has(oldColumn) && !columns.has(newColumn)) {
+    console.log(`[DB] Renaming column ${oldColumn} to ${newColumn} in table ${tableName}`);
+    await runAsync(`ALTER TABLE ${tableName} RENAME COLUMN ${oldColumn} TO ${newColumn}`);
+  }
+};
+
+export const initDb = async (): Promise<void> => {
+  console.log('[DB] Starting database initialization...');
+
+  // Migrations for consistency
+  await renameTable('custom_bootstrap_images', 'bootstrap_images');
+
+  // Jobs
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      owner_id TEXT,
+      bootstrap_image_id TEXT,
+      execution_language TEXT NOT NULL DEFAULT 'python',
+      environment_variables TEXT NOT NULL DEFAULT '{}',
+      resources_json TEXT,
+      entrypoint TEXT NOT NULL,
+      entrypoint_args TEXT NOT NULL DEFAULT '[]',
+      working_dir TEXT NOT NULL DEFAULT '/workspace',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migrate older jobs table
+  await renameColumn('jobs', 'resources', 'resources_json');
+  await ensureColumn('jobs', 'bootstrap_image_id', 'bootstrap_image_id TEXT');
+  await ensureColumn('jobs', 'execution_language', `execution_language TEXT NOT NULL DEFAULT 'python'`);
+  await ensureColumn(
+    'jobs',
+    'environment_variables',
+    `environment_variables TEXT NOT NULL DEFAULT '{}'`,
+  );
+  await ensureColumn('jobs', 'resources_json', 'resources_json TEXT');
+  await ensureColumn('jobs', 'entrypoint', `entrypoint TEXT NOT NULL DEFAULT 'main.py'`);
+  await ensureColumn('jobs', 'entrypoint_args', `entrypoint_args TEXT NOT NULL DEFAULT '[]'`);
+  await ensureColumn('jobs', 'working_dir', `working_dir TEXT NOT NULL DEFAULT '/workspace'`);
+
+  await runAsync(`
+    UPDATE jobs
+    SET execution_language = CASE
+      WHEN execution_language IS NULL OR TRIM(execution_language) = '' THEN 'python'
+      ELSE execution_language
+    END
+  `);
+
+  // Share tokens
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS share_tokens (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      expires_at DATETIME,
+      max_claims INTEGER,
+      claim_count INTEGER NOT NULL DEFAULT 0,
+      revoked INTEGER NOT NULL DEFAULT 0,
+      last_claimed_at DATETIME,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Workers
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS workers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      host TEXT,
+      status TEXT NOT NULL DEFAULT 'online',
+      current_run_id TEXT,
+      capabilities TEXT,
+      last_seen_at DATETIME,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Runs
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS runs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      share_token_id TEXT NOT NULL,
+      bootstrap_image_id TEXT,
+      worker_id TEXT,
+      status TEXT NOT NULL DEFAULT 'created',
+      worker_name TEXT,
+      result TEXT,
+      metrics TEXT,
+      run_manifest TEXT NOT NULL,
+      stage TEXT,
+      progress REAL,
+      status_message TEXT,
+      started_at DATETIME,
+      finished_at DATETIME,
+      last_heartbeat_at DATETIME,
+      cancel_requested_at DATETIME,
+      cancel_reason TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migrate older runs table
+  await ensureColumn('runs', 'bootstrap_image_id', 'bootstrap_image_id TEXT');
+  await ensureColumn('runs', 'run_manifest', `run_manifest TEXT NOT NULL DEFAULT '{}'`);
+  await ensureColumn('runs', 'stage', 'stage TEXT');
+  await ensureColumn('runs', 'progress', 'progress REAL');
+  await ensureColumn('runs', 'status_message', 'status_message TEXT');
+
+  // Logs
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',
+      message TEXT NOT NULL,
+      timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Run artifacts
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS run_artifacts (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      storage_key TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Bootstrap images
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS bootstrap_images (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      base_image TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      dockerfile_text TEXT,
+      environments_json TEXT NOT NULL DEFAULT '[]',
+      execution_language TEXT NOT NULL DEFAULT 'python',
+      runtime_resources_json TEXT,
+      sdk_version TEXT,
+      full_image_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      error TEXT,
+      build_started_at DATETIME,
+      build_finished_at DATETIME,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migrate older bootstrap images table
+  await ensureColumn('bootstrap_images', 'dockerfile_text', 'dockerfile_text TEXT');
+  await ensureColumn(
+    'bootstrap_images',
+    'environments_json',
+    `environments_json TEXT NOT NULL DEFAULT '[]'`,
+  );
+  await ensureColumn(
+    'bootstrap_images',
+    'execution_language',
+    `execution_language TEXT NOT NULL DEFAULT 'python'`,
+  );
+  await ensureColumn('bootstrap_images', 'runtime_resources_json', 'runtime_resources_json TEXT');
+  await ensureColumn('bootstrap_images', 'sdk_version', 'sdk_version TEXT');
+  await ensureColumn('bootstrap_images', 'build_started_at', 'build_started_at DATETIME');
+  await ensureColumn('bootstrap_images', 'build_finished_at', 'build_finished_at DATETIME');
+
+  await runAsync(`
+    UPDATE bootstrap_images
+    SET execution_language = CASE
+      WHEN execution_language IS NOT NULL AND TRIM(execution_language) <> '' THEN execution_language
+      WHEN LOWER(IFNULL(base_image, '')) LIKE 'node:%'
+        OR LOWER(IFNULL(name, '')) LIKE '%javascript%'
+        OR LOWER(IFNULL(name, '')) LIKE '%node%'
+      THEN 'javascript'
+      ELSE 'python'
+    END
+  `);
+
+  // Bootstrap image logs
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS bootstrap_image_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      image_id TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',
+      message TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Job files
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS job_files (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      storage_key TEXT,
+      inline_content TEXT,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      is_executable INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Run events
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS run_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      stage TEXT,
+      progress REAL,
+      message TEXT,
+      level TEXT,
+      payload TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Indexes
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_jobs_bootstrap_image_id ON jobs(bootstrap_image_id)`,
+  );
+
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_job_id ON share_tokens(job_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_token ON share_tokens(token)`);
+
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_job_id ON runs(job_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_share_token_id ON runs(share_token_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_worker_id ON runs(worker_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)`);
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_runs_last_heartbeat_at ON runs(last_heartbeat_at)`,
+  );
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_runs_bootstrap_image_id ON runs(bootstrap_image_id)`,
+  );
+
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_workers_last_seen_at ON workers(last_seen_at)`);
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_id ON run_artifacts(run_id)`);
+
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_bootstrap_image_logs_image_id ON bootstrap_image_logs(image_id)`,
+  );
+
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_job_files_job_id ON job_files(job_id)`);
+  await runAsync(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_job_files_job_path ON job_files(job_id, relative_path)`,
+  );
+
+  await runAsync(`CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id)`);
+
+  console.log('[DB] Database initialized successfully');
+};
+
+export default db;
+
+
+path: /src/models/index.ts
+----------------------------------------
+import db from '../db/index';
+import {
+  BootstrapImage,
+  ExecutionLanguage,
+  Job,
+  JobFile,
+  JobListItem,
+  LogEntry,
+  LogLevel,
+  Run,
+  RunArtifact,
+  RunEvent,
+  RunManifest,
+  RunStatus,
+  ShareToken,
+  Worker,
+  WorkerStatus,
+} from './job';
+
+const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const getAsync = <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
+  new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) return reject(err);
+      resolve((row as T) || null);
+    });
+  });
+
+const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
+  new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve((rows as T[]) || []);
+    });
+  });
+
+const runAsync = (sql: string, params: unknown[] = []): Promise<void> =>
+  new Promise((resolve, reject) => {
+    db.run(sql, params, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+
+const mapBootstrapImageRow = (row: any): BootstrapImage => ({
+  id: row.id,
+  name: row.name,
+  base_image: row.base_image,
+  tag: row.tag,
+  full_image_name: row.full_image_name,
+  dockerfile_text: row.dockerfile_text,
+  environments: parseJson(row.environments_json, []),
+  execution_language: (row.execution_language ?? 'python') as ExecutionLanguage,
+  runtime_resources: parseJson(row.runtime_resources_json, null),
+  sdk_version: row.sdk_version ?? null,
+  status: row.status,
+  error: row.error ?? null,
+  build_started_at: row.build_started_at ?? null,
+  build_finished_at: row.build_finished_at ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapJobRow = (row: any): Job => ({
+  id: row.id,
+  title: row.title,
+  description: row.description ?? null,
+  owner_id: row.owner_id ?? null,
+  bootstrap_image_id: row.bootstrap_image_id,
+  execution_language: (row.execution_language ?? 'python') as ExecutionLanguage,
+  environment_variables: parseJson(row.environment_variables, {}),
+  resources: parseJson(row.resources_json, null),
+  entrypoint: row.entrypoint,
+  entrypoint_args: parseJson(row.entrypoint_args, []),
+  working_dir: row.working_dir ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapJobFileRow = (row: any): JobFile => ({
+  id: row.id,
+  job_id: row.job_id,
+  relative_path: row.relative_path,
+  filename: row.filename,
+  source_type: row.source_type,
+  storage_key: row.storage_key ?? null,
+  inline_content: row.inline_content ?? null,
+  mime_type: row.mime_type,
+  size_bytes: row.size_bytes,
+  is_executable: Boolean(row.is_executable),
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapRunRow = (row: any): Run => ({
+  id: row.id,
+  job_id: row.job_id,
+  share_token_id: row.share_token_id,
+  bootstrap_image_id: row.bootstrap_image_id,
+  worker_id: row.worker_id ?? null,
+  worker_name: row.worker_name ?? null,
+  status: row.status,
+  stage: row.stage ?? null,
+  progress: row.progress ?? null,
+  status_message: row.status_message ?? null,
+  result: row.result ?? null,
+  metrics: parseJson(row.metrics, null),
+  run_manifest: parseJson<RunManifest>(row.run_manifest, {
+    run_id: row.id,
+    job_id: row.job_id,
+    execution_language: 'python',
+    bootstrap_image: {
+      id: row.bootstrap_image_id,
+      full_image_name: '',
+      name: '',
+    },
+    workspace: {
+      root: '/workspace',
+      artifacts_dir: '/workspace/artifacts',
+      tmp_dir: '/workspace/tmp',
+    },
+    environment_variables: {},
+    entrypoint: '',
+    entrypoint_args: [],
+    working_dir: '/workspace',
+    files: [],
+    control: {
+      start_url: '',
+      heartbeat_url: '',
+      logs_url: '',
+      progress_url: '',
+      finish_url: '',
+      cancel_url: '',
+    },
+    artifacts: {
+      upload_url: '',
+    },
+  }),
+  started_at: row.started_at ?? null,
+  finished_at: row.finished_at ?? null,
+  last_heartbeat_at: row.last_heartbeat_at ?? null,
+  cancel_requested_at: row.cancel_requested_at ?? null,
+  cancel_reason: row.cancel_reason ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapShareTokenRow = (row: any): ShareToken => ({
+  id: row.id,
+  job_id: row.job_id,
+  token: row.token,
+  expires_at: row.expires_at ?? null,
+  max_claims: row.max_claims ?? null,
+  claim_count: row.claim_count ?? 0,
+  revoked: Boolean(row.revoked),
+  last_claimed_at: row.last_claimed_at ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapWorkerRow = (row: any): Worker => ({
+  id: row.id,
+  name: row.name,
+  host: row.host ?? null,
+  status: row.status as WorkerStatus,
+  current_run_id: row.current_run_id ?? null,
+  capabilities: parseJson<Record<string, unknown> | null>(row.capabilities, null),
+  last_seen_at: row.last_seen_at ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+const mapRunEventRow = (row: any): RunEvent => ({
+  id: row.id,
+  run_id: row.run_id,
+  type: row.type,
+  stage: row.stage ?? null,
+  progress: row.progress ?? null,
+  message: row.message ?? null,
+  level: row.level ?? null,
+  payload: parseJson(row.payload, null),
+  created_at: row.created_at,
+});
+
+const mapRunArtifactRow = (row: any): RunArtifact => ({
+  id: row.id,
+  run_id: row.run_id,
+  filename: row.filename,
+  relative_path: row.relative_path,
+  size_bytes: row.size_bytes,
+  storage_key: row.storage_key,
+  mime_type: row.mime_type,
+  created_at: row.created_at,
+});
+
+export class BootstrapImageModel {
+  static async create(data: {
+    id: string;
+    name: string;
+    base_image: string;
+    tag: string;
+    full_image_name: string;
+    dockerfile_text: string;
+    environments: BootstrapImage['environments'];
+    execution_language: ExecutionLanguage;
+    runtime_resources?: BootstrapImage['runtime_resources'];
+    sdk_version?: string | null;
+    status: BootstrapImage['status'];
+    error?: string | null;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO bootstrap_images (
+        id, name, base_image, tag, full_image_name, dockerfile_text,
+        environments_json, execution_language, runtime_resources_json, sdk_version, status, error, build_started_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `,
+      [
+        data.id,
+        data.name,
+        data.base_image,
+        data.tag,
+        data.full_image_name,
+        data.dockerfile_text,
+        JSON.stringify(data.environments || []),
+        data.execution_language,
+        JSON.stringify(data.runtime_resources || {}),
+        data.sdk_version ?? null,
+        data.status,
+        data.error ?? null,
+      ],
+    );
+  }
+
+  static async update(
+    id: string,
+    patch: Partial<{
+      full_image_name: string;
+      dockerfile_text: string;
+      environments: BootstrapImage['environments'];
+      execution_language: ExecutionLanguage;
+      runtime_resources: BootstrapImage['runtime_resources'];
+      status: BootstrapImage['status'];
+      error: string | null;
+      build_finished_at: string | null;
+    }>,
+  ): Promise<void> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+
+    if (patch.full_image_name !== undefined) {
+      sets.push('full_image_name = ?');
+      params.push(patch.full_image_name);
+    }
+    if (patch.dockerfile_text !== undefined) {
+      sets.push('dockerfile_text = ?');
+      params.push(patch.dockerfile_text);
+    }
+    if (patch.environments !== undefined) {
+      sets.push('environments_json = ?');
+      params.push(JSON.stringify(patch.environments));
+    }
+    if (patch.execution_language !== undefined) {
+      sets.push('execution_language = ?');
+      params.push(patch.execution_language);
+    }
+    if (patch.runtime_resources !== undefined) {
+      sets.push('runtime_resources_json = ?');
+      params.push(JSON.stringify(patch.runtime_resources || {}));
+    }
+    if (patch.status !== undefined) {
+      sets.push('status = ?');
+      params.push(patch.status);
+    }
+    if (patch.error !== undefined) {
+      sets.push('error = ?');
+      params.push(patch.error);
+    }
+    if (patch.build_finished_at !== undefined) {
+      sets.push('build_finished_at = ?');
+      params.push(patch.build_finished_at);
+    }
+
+    if (!sets.length) return;
+
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+
+    await runAsync(`UPDATE bootstrap_images SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+
+  static async findById(id: string): Promise<BootstrapImage | null> {
+    const row = await getAsync<any>('SELECT * FROM bootstrap_images WHERE id = ?', [id]);
+    return row ? mapBootstrapImageRow(row) : null;
+  }
+
+  static async findCompletedByName(name: string): Promise<BootstrapImage | null> {
+    const row = await getAsync<any>(
+      `SELECT * FROM bootstrap_images WHERE name = ? AND status = 'completed' ORDER BY datetime(created_at) DESC LIMIT 1`,
+      [name],
+    );
+    return row ? mapBootstrapImageRow(row) : null;
+  }
+
+  static async list(options?: { status?: BootstrapImage['status'] }): Promise<BootstrapImage[]> {
+    const params: unknown[] = [];
+    let where = '';
+
+    if (options?.status) {
+      where = 'WHERE status = ?';
+      params.push(options.status);
+    }
+
+    const rows = await allAsync<any>(
+      `SELECT * FROM bootstrap_images ${where} ORDER BY datetime(created_at) DESC, id DESC`,
+      params,
+    );
+    return rows.map(mapBootstrapImageRow);
+  }
+}
+
+export class BootstrapImageLogModel {
+  static async add(imageId: string, message: string, level: LogLevel = 'info'): Promise<void> {
+    await runAsync(`INSERT INTO bootstrap_image_logs (image_id, level, message) VALUES (?, ?, ?)`, [
+      imageId,
+      level,
+      message,
+    ]);
+  }
+
+  static async listByImageId(imageId: string): Promise<
+    Array<{
+      id: number;
+      image_id: string;
+      level: LogLevel;
+      message: string;
+      created_at: string;
+    }>
+  > {
+    return allAsync(
+      `SELECT id, image_id, level, message, created_at FROM bootstrap_image_logs WHERE image_id = ? ORDER BY id ASC`,
+      [imageId],
+    );
+  }
+}
+
+export class JobModel {
+  static async create(data: {
+    id: string;
+    title: string;
+    description?: string | null;
+    owner_id?: string | null;
+    bootstrap_image_id: string;
+    execution_language: ExecutionLanguage;
+    environment_variables?: Record<string, string>;
+    resources?: Job['resources'];
+    entrypoint: string;
+    entrypoint_args?: string[];
+    working_dir?: string | null;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO jobs (
+        id, title, description, owner_id, bootstrap_image_id, execution_language,
+        environment_variables, resources_json, entrypoint, entrypoint_args, working_dir
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        data.id,
+        data.title,
+        data.description ?? null,
+        data.owner_id ?? null,
+        data.bootstrap_image_id,
+        data.execution_language,
+        JSON.stringify(data.environment_variables || {}),
+        JSON.stringify(data.resources || {}),
+        data.entrypoint,
+        JSON.stringify(data.entrypoint_args || []),
+        data.working_dir ?? null,
+      ],
+    );
+  }
+
+  static async findById(id: string): Promise<Job | null> {
+    const row = await getAsync<any>('SELECT * FROM jobs WHERE id = ?', [id]);
+    return row ? mapJobRow(row) : null;
+  }
+
+  static async list(filters: {
+    search?: string;
+    status?: RunStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ jobs: JobListItem[]; total: number }> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.search) {
+      conditions.push('(j.title LIKE ? OR IFNULL(j.description, "") LIKE ?)');
+      params.push(`%${filters.search}%`, `%${filters.search}%`);
+    }
+
+    if (filters.status) {
+      conditions.push('lr.status = ?');
+      params.push(filters.status);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRow = await getAsync<{ total: number }>(
+      `
+      SELECT COUNT(*) as total
+      FROM jobs j
+      LEFT JOIN runs lr ON lr.id = (
+        SELECT r.id
+        FROM runs r
+        WHERE r.job_id = j.id
+        ORDER BY datetime(r.created_at) DESC, r.id DESC
+        LIMIT 1
+      )
+      ${whereClause}
+      `,
+      params,
+    );
+
+    const limit = filters.limit ?? 20;
+    const offset = filters.offset ?? 0;
+
+    const rows = await allAsync<any>(
+      `
+      SELECT
+        j.*,
+        bi.name AS bootstrap_image_name,
+        bi.full_image_name AS bootstrap_full_image_name,
+        lr.status AS latest_run_status,
+        COALESCE(lr.started_at, lr.created_at) AS latest_run_at,
+        (SELECT COUNT(*) FROM runs WHERE job_id = j.id) as runs_count,
+        (SELECT COUNT(*) FROM runs WHERE job_id = j.id AND status IN ('created', 'running')) as active_runs_count
+      FROM jobs j
+      JOIN bootstrap_images bi ON bi.id = j.bootstrap_image_id
+      LEFT JOIN runs lr ON lr.id = (
+        SELECT r.id
+        FROM runs r
+        WHERE r.job_id = j.id
+        ORDER BY datetime(r.created_at) DESC, r.id DESC
+        LIMIT 1
+      )
+      ${whereClause}
+      ORDER BY datetime(j.updated_at) DESC, datetime(j.created_at) DESC
+      LIMIT ? OFFSET ?
+      `,
+      [...params, limit, offset],
+    );
+
+    const jobs = rows.map((row) => ({
+      ...mapJobRow(row),
+      bootstrap_image_name: row.bootstrap_image_name ?? null,
+      bootstrap_full_image_name: row.bootstrap_full_image_name ?? null,
+      latest_run_status: row.latest_run_status ?? null,
+      latest_run_at: row.latest_run_at ?? null,
+      runs_count: row.runs_count ?? 0,
+      active_runs_count: row.active_runs_count ?? 0,
+    }));
+
+    return {
+      jobs,
+      total: countRow?.total ?? 0,
+    };
+  }
+
+  static async update(id: string, patch: Partial<Job>): Promise<void> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+
+    const rawFields: Array<[string, keyof Job]> = [
+      ['title', 'title'],
+      ['description', 'description'],
+      ['owner_id', 'owner_id'],
+      ['bootstrap_image_id', 'bootstrap_image_id'],
+      ['execution_language', 'execution_language'],
+      ['entrypoint', 'entrypoint'],
+      ['working_dir', 'working_dir'],
+    ];
+
+    for (const [column, key] of rawFields) {
+      if (patch[key] !== undefined) {
+        sets.push(`${column} = ?`);
+        params.push(patch[key] as unknown);
+      }
+    }
+
+    if (patch.environment_variables !== undefined) {
+      sets.push('environment_variables = ?');
+      params.push(JSON.stringify(patch.environment_variables || {}));
+    }
+
+    if (patch.resources !== undefined) {
+      sets.push('resources_json = ?');
+      params.push(JSON.stringify(patch.resources || {}));
+    }
+
+    if (patch.entrypoint_args !== undefined) {
+      sets.push('entrypoint_args = ?');
+      params.push(JSON.stringify(patch.entrypoint_args || []));
+    }
+
+    if (!sets.length) return;
+
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+    await runAsync(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+
+  static async delete(id: string): Promise<void> {
+    await runAsync('DELETE FROM jobs WHERE id = ?', [id]);
+  }
+}
+
+export class JobFileModel {
+  static async upsertInline(data: {
+    id: string;
+    job_id: string;
+    relative_path: string;
+    filename: string;
+    inline_content: string;
+    mime_type: string;
+    is_executable: boolean;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO job_files (
+        id, job_id, relative_path, filename, source_type, storage_key, inline_content,
+        mime_type, size_bytes, is_executable
+      ) VALUES (?, ?, ?, ?, 'inline', NULL, ?, ?, ?, ?)
+      ON CONFLICT(job_id, relative_path) DO UPDATE SET
+        filename = excluded.filename,
+        source_type = 'inline',
+        storage_key = NULL,
+        inline_content = excluded.inline_content,
+        mime_type = excluded.mime_type,
+        size_bytes = excluded.size_bytes,
+        is_executable = excluded.is_executable,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        data.id,
+        data.job_id,
+        data.relative_path,
+        data.filename,
+        data.inline_content,
+        data.mime_type,
+        Buffer.byteLength(data.inline_content, 'utf8'),
+        data.is_executable ? 1 : 0,
+      ],
+    );
+  }
+
+  static async upsertUploaded(data: {
+    id: string;
+    job_id: string;
+    relative_path: string;
+    filename: string;
+    storage_key: string;
+    mime_type: string;
+    size_bytes: number;
+    is_executable: boolean;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO job_files (
+        id, job_id, relative_path, filename, source_type, storage_key, inline_content,
+        mime_type, size_bytes, is_executable
+      ) VALUES (?, ?, ?, ?, 'upload', ?, NULL, ?, ?, ?)
+      ON CONFLICT(job_id, relative_path) DO UPDATE SET
+        filename = excluded.filename,
+        source_type = 'upload',
+        storage_key = excluded.storage_key,
+        inline_content = NULL,
+        mime_type = excluded.mime_type,
+        size_bytes = excluded.size_bytes,
+        is_executable = excluded.is_executable,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        data.id,
+        data.job_id,
+        data.relative_path,
+        data.filename,
+        data.storage_key,
+        data.mime_type,
+        data.size_bytes,
+        data.is_executable ? 1 : 0,
+      ],
+    );
+  }
+
+  static async findByJobIdAndPath(jobId: string, relativePath: string): Promise<JobFile | null> {
+    const row = await getAsync<any>(
+      `SELECT * FROM job_files WHERE job_id = ? AND relative_path = ?`,
+      [jobId, relativePath],
+    );
+    return row ? mapJobFileRow(row) : null;
+  }
+
+  static async listByJobId(jobId: string): Promise<JobFile[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM job_files WHERE job_id = ? ORDER BY relative_path ASC`,
+      [jobId],
+    );
+    return rows.map(mapJobFileRow);
+  }
+
+  static async deleteByJobIdAndPath(jobId: string, relativePath: string): Promise<void> {
+    await runAsync(`DELETE FROM job_files WHERE job_id = ? AND relative_path = ?`, [
+      jobId,
+      relativePath,
+    ]);
+  }
+
+  static async deleteByJobId(jobId: string): Promise<void> {
+    await runAsync(`DELETE FROM job_files WHERE job_id = ?`, [jobId]);
+  }
+}
+
+export class ShareTokenModel {
+  static async create(data: {
+    id: string;
+    job_id: string;
+    token: string;
+    expires_at?: string | null;
+    max_claims?: number | null;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO share_tokens (
+        id, job_id, token, expires_at, max_claims
+      ) VALUES (?, ?, ?, ?, ?)
+      `,
+      [data.id, data.job_id, data.token, data.expires_at ?? null, data.max_claims ?? null],
+    );
+  }
+
+  static async findByToken(token: string): Promise<ShareToken | null> {
+    const row = await getAsync<any>('SELECT * FROM share_tokens WHERE token = ?', [token]);
+    return row ? mapShareTokenRow(row) : null;
+  }
+
+  static async findById(id: string): Promise<ShareToken | null> {
+    const row = await getAsync<any>('SELECT * FROM share_tokens WHERE id = ?', [id]);
+    return row ? mapShareTokenRow(row) : null;
+  }
+
+  static async listByJobId(jobId: string): Promise<ShareToken[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM share_tokens WHERE job_id = ? ORDER BY datetime(created_at) DESC, id DESC`,
+      [jobId],
+    );
+    return rows.map(mapShareTokenRow);
+  }
+
+  static async incrementClaim(tokenId: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE share_tokens
+      SET claim_count = claim_count + 1,
+          last_claimed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [tokenId],
+    );
+  }
+
+  static async revoke(tokenId: string): Promise<void> {
+    await runAsync(
+      `UPDATE share_tokens SET revoked = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [tokenId],
+    );
+  }
+}
+
+export class RunModel {
+  static async create(data: {
+    id: string;
+    job_id: string;
+    share_token_id: string;
+    bootstrap_image_id: string;
+    run_manifest: RunManifest;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO runs (
+        id, job_id, share_token_id, bootstrap_image_id, status, run_manifest
+      ) VALUES (?, ?, ?, ?, 'created', ?)
+      `,
+      [
+        data.id,
+        data.job_id,
+        data.share_token_id,
+        data.bootstrap_image_id,
+        JSON.stringify(data.run_manifest),
+      ],
+    );
+  }
+
+  static async findById(id: string): Promise<Run | null> {
+    const row = await getAsync<any>('SELECT * FROM runs WHERE id = ?', [id]);
+    return row ? mapRunRow(row) : null;
+  }
+
+  static async listByJobId(jobId: string): Promise<Run[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM runs WHERE job_id = ? ORDER BY datetime(created_at) DESC, id DESC`,
+      [jobId],
+    );
+    return rows.map(mapRunRow);
+  }
+
+  static async listByJobIdPaginated(jobId: string, limit: number, offset: number): Promise<Run[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM runs WHERE job_id = ? ORDER BY datetime(created_at) DESC, id DESC LIMIT ? OFFSET ?`,
+      [jobId, limit, offset],
+    );
+    return rows.map(mapRunRow);
+  }
+
+  static async countByJobId(jobId: string): Promise<number> {
+    const row = await getAsync<{ total: number }>(
+      `SELECT COUNT(*) as total FROM runs WHERE job_id = ?`,
+      [jobId],
+    );
+    return row?.total ?? 0;
+  }
+
+  static async countActiveByJobId(jobId: string): Promise<number> {
+    const row = await getAsync<{ total: number }>(
+      `SELECT COUNT(*) as total FROM runs WHERE job_id = ? AND status IN ('created', 'running')`,
+      [jobId],
+    );
+    return row?.total ?? 0;
+  }
+
+  static async markRunning(id: string, workerId: string, workerName?: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE runs
+      SET worker_id = ?,
+          worker_name = COALESCE(?, worker_name),
+          status = 'running',
+          started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+          last_heartbeat_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [workerId, workerName ?? null, id],
+    );
+  }
+
+  static async touchHeartbeat(id: string): Promise<void> {
+    await runAsync(
+      `UPDATE runs SET last_heartbeat_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [id],
+    );
+  }
+
+  static async requestCancel(id: string, reason?: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE runs
+      SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+          cancel_reason = COALESCE(?, cancel_reason),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [reason ?? 'Run cancelled by user', id],
+    );
+  }
+
+  static async updateProgress(data: {
+    id: string;
+    stage?: string | null;
+    progress?: number | null;
+    status_message?: string | null;
+    metrics?: unknown;
+  }): Promise<void> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+
+    if (data.stage !== undefined) {
+      sets.push('stage = ?');
+      params.push(data.stage);
+    }
+    if (data.progress !== undefined) {
+      sets.push('progress = ?');
+      params.push(data.progress);
+    }
+    if (data.status_message !== undefined) {
+      sets.push('status_message = ?');
+      params.push(data.status_message);
+    }
+    if (data.metrics !== undefined) {
+      sets.push('metrics = ?');
+      params.push(data.metrics == null ? null : JSON.stringify(data.metrics));
+    }
+
+    if (!sets.length) return;
+
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(data.id);
+
+    await runAsync(`UPDATE runs SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+
+  static async finish(
+    id: string,
+    status: Extract<RunStatus, 'finished' | 'failed' | 'cancelled' | 'lost'>,
+    result?: string,
+    metrics?: unknown,
+  ): Promise<void> {
+    await runAsync(
+      `
+      UPDATE runs
+      SET status = ?,
+          result = ?,
+          metrics = ?,
+          finished_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [status, result ?? null, metrics == null ? null : JSON.stringify(metrics), id],
+    );
+  }
+
+  static async listStaleRuns(cutoffIso: string): Promise<Run[]> {
+    const rows = await allAsync<any>(
+      `
+      SELECT *
+      FROM runs
+      WHERE status IN ('created', 'running')
+        AND datetime(COALESCE(last_heartbeat_at, started_at, created_at)) < datetime(?)
+      ORDER BY datetime(COALESCE(last_heartbeat_at, started_at, created_at)) ASC
+      `,
+      [cutoffIso],
+    );
+    return rows.map(mapRunRow);
+  }
+}
+
+export class LogModel {
+  static async add(runId: string, message: string, level: LogLevel = 'info'): Promise<void> {
+    await runAsync(`INSERT INTO logs (run_id, level, message) VALUES (?, ?, ?)`, [
+      runId,
+      level,
+      message,
+    ]);
+  }
+
+  static async listByRunId(runId: string): Promise<LogEntry[]> {
+    return allAsync<LogEntry>(`SELECT * FROM logs WHERE run_id = ? ORDER BY id ASC`, [runId]);
+  }
+}
+
+export class RunEventModel {
+  static async create(data: {
+    id: string;
+    run_id: string;
+    type: RunEvent['type'];
+    stage?: string | null;
+    progress?: number | null;
+    message?: string | null;
+    level?: LogLevel | null;
+    payload?: Record<string, unknown> | null;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO run_events (
+        id, run_id, type, stage, progress, message, level, payload
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        data.id,
+        data.run_id,
+        data.type,
+        data.stage ?? null,
+        data.progress ?? null,
+        data.message ?? null,
+        data.level ?? null,
+        data.payload == null ? null : JSON.stringify(data.payload),
+      ],
+    );
+  }
+
+  static async listByRunId(runId: string): Promise<RunEvent[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM run_events WHERE run_id = ? ORDER BY datetime(created_at) ASC, id ASC`,
+      [runId],
+    );
+    return rows.map(mapRunEventRow);
+  }
+}
+
+export class WorkerModel {
+  static async upsertHeartbeat(data: {
+    id: string;
+    name: string;
+    host?: string | null;
+    current_run_id?: string | null;
+    capabilities?: Record<string, unknown> | null;
+    status: WorkerStatus;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO workers (
+        id, name, host, status, current_run_id, capabilities, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        host = excluded.host,
+        status = excluded.status,
+        current_run_id = excluded.current_run_id,
+        capabilities = excluded.capabilities,
+        last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        data.id,
+        data.name,
+        data.host ?? null,
+        data.status,
+        data.current_run_id ?? null,
+        data.capabilities ? JSON.stringify(data.capabilities) : null,
+      ],
+    );
+  }
+
+  static async release(workerId: string): Promise<void> {
+    await runAsync(
+      `
+      UPDATE workers
+      SET status = 'online',
+          current_run_id = NULL,
+          last_seen_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [workerId],
+    );
+  }
+
+  static async findById(id: string): Promise<Worker | null> {
+    const row = await getAsync<any>('SELECT * FROM workers WHERE id = ?', [id]);
+    return row ? mapWorkerRow(row) : null;
+  }
+
+  static async list(): Promise<Worker[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM workers ORDER BY datetime(last_seen_at) DESC, datetime(created_at) DESC`,
+    );
+    return rows.map(mapWorkerRow);
+  }
+}
+
+export class RunArtifactModel {
+  static async create(data: {
+    id: string;
+    run_id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO run_artifacts (
+        id, run_id, filename, relative_path, size_bytes, storage_key, mime_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        data.id,
+        data.run_id,
+        data.filename,
+        data.relative_path,
+        data.size_bytes,
+        data.storage_key,
+        data.mime_type,
+      ],
+    );
+  }
+
+  static async listByRunId(runId: string): Promise<RunArtifact[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM run_artifacts WHERE run_id = ? ORDER BY datetime(created_at) ASC, id ASC`,
+      [runId],
+    );
+    return rows.map(mapRunArtifactRow);
+  }
+}
+
+
+path: /src/models/job.ts
+----------------------------------------
+export type ExecutionLanguage = 'python' | 'javascript';
+export type RunStatus = 'created' | 'running' | 'finished' | 'failed' | 'cancelled' | 'lost';
+
+export type LogLevel = 'info' | 'warn' | 'error';
+export type WorkerStatus = 'online' | 'busy' | 'offline';
+
+export interface RuntimeResources {
+  gpus?: string;
+  shm_size?: string;
+  cpu_limit?: number;
+  memory_limit?: string;
+}
+
+export interface Container {
+  name: string;
+  image: string;
+  is_parent?: boolean;
+  resources?: RuntimeResources;
+  env?: Record<string, string>;
+}
+
+export interface BootstrapEnvironmentSpec {
+  name: string;
+  python_binary?: string | null;
+  requirements_text: string;
+}
+
+export interface BootstrapImage {
+  id: string;
+  name: string;
+  base_image: string;
+  tag: string;
+  full_image_name: string;
+  dockerfile_text: string;
+  environments: BootstrapEnvironmentSpec[];
+  execution_language: ExecutionLanguage;
+  runtime_resources?: RuntimeResources | null;
+  sdk_version?: string | null;
+  status: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
+  error?: string | null;
+  build_started_at?: string | null;
+  build_finished_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  title: string;
+  description?: string | null;
+  owner_id?: string | null;
+  bootstrap_image_id: string;
+  execution_language: ExecutionLanguage;
+  environment_variables: Record<string, string>;
+  resources?: RuntimeResources | null;
+  entrypoint: string;
+  entrypoint_args: string[];
+  working_dir?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobListItem extends Job {
+  bootstrap_image_name?: string | null;
+  bootstrap_full_image_name?: string | null;
+  latest_run_status?: RunStatus | null;
+  latest_run_at?: string | null;
+  runs_count: number;
+  active_runs_count: number;
+}
+
+export interface JobFile {
+  id: string;
+  job_id: string;
+  relative_path: string;
+  filename: string;
+  source_type: 'upload' | 'inline';
+  storage_key?: string | null;
+  inline_content?: string | null;
+  mime_type: string;
+  size_bytes: number;
+  is_executable: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceLayout {
+  root: string;
+  artifacts_dir: string;
+  tmp_dir: string;
+}
+
+export interface RunManifestFile {
+  relative_path: string;
+  filename: string;
+  size_bytes: number;
+  mime_type: string;
+  is_executable: boolean;
+  source_type: 'upload' | 'inline';
+  download_url: string;
+}
+
+export interface RunManifest {
+  run_id: string;
+  job_id: string;
+  execution_language: ExecutionLanguage;
+  bootstrap_image: {
+    id: string;
+    full_image_name: string;
+    name: string;
+  };
+  workspace: WorkspaceLayout;
+  environment_variables: Record<string, string>;
+  entrypoint: string;
+  entrypoint_args: string[];
+  working_dir: string;
+  files: RunManifestFile[];
+  control: {
+    start_url: string;
+    heartbeat_url: string;
+    logs_url: string;
+    progress_url: string;
+    finish_url: string;
+    cancel_url: string;
+  };
+  artifacts: {
+    upload_url: string;
+  };
+}
+
+export interface Run {
+  id: string;
+  job_id: string;
+  share_token_id: string;
+  bootstrap_image_id: string;
+  worker_id?: string | null;
+  worker_name?: string | null;
+  status: RunStatus;
+  stage?: string | null;
+  progress?: number | null;
+  status_message?: string | null;
+  result?: string | null;
+  metrics?: unknown;
+  run_manifest: RunManifest;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_heartbeat_at?: string | null;
+  cancel_requested_at?: string | null;
+  cancel_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShareToken {
+  id: string;
+  job_id: string;
+  token: string;
+  expires_at?: string | null;
+  max_claims?: number | null;
+  claim_count: number;
+  revoked: boolean;
+  last_claimed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LogEntry {
+  id?: number;
+  run_id: string;
+  level: LogLevel;
+  message: string;
+  timestamp?: string;
+}
+
+export interface RunEvent {
+  id: string;
+  run_id: string;
+  type: 'status' | 'progress' | 'metric' | 'log';
+  stage?: string | null;
+  progress?: number | null;
+  message?: string | null;
+  level?: LogLevel | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  host?: string | null;
+  status: WorkerStatus;
+  current_run_id?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  last_seen_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RunArtifact {
+  id: string;
+  run_id: string;
+  filename: string;
+  relative_path: string;
+  size_bytes: number;
+  storage_key: string;
+  mime_type: string;
+  created_at: string;
+}
+
+// Optional catalog types retained for the frontend catalog API.
+export interface JobDraftTemplate {
+  title: string;
+  description: string;
+  containers: Container[];
+  environments: Record<string, string>;
+  attached_files: Array<{
+    id: string;
+    filename: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }>;
+  execution_code: string;
+  execution_language: ExecutionLanguage;
+  entrypoint?: string | null;
+}
+
+export interface ContainerPreset {
+  id: string;
+  name: string;
+  category: 'bootstrap' | 'runtime' | 'model' | 'service';
+  description: string;
+  recommended_for: string[];
+  container: Container;
+  support_level: 'supported' | 'future';
+}
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  draft: JobDraftTemplate;
+  support_level: 'supported' | 'future';
+}
+
+
+path: /src/routes/artifacts.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ArtifactService } from '../services/artifact.service';
+import { JobService } from '../services/job.service';
+
+interface UploadRunArtifactQuerystring {
+  runId: string;
+  relativePath?: string;
+}
+
+interface DownloadArtifactQuerystring {
+  key: string;
+}
+
+export default async function artifactsRoutes(app: FastifyInstance) {
+  app.post(
+    '/artifacts/upload-run',
+    async (
+      req: FastifyRequest<{ Querystring: UploadRunArtifactQuerystring }>,
+      reply: FastifyReply,
+    ) => {
+      const file = await req.file();
+
+      if (!file) {
+        return reply.code(400).send({ error: 'No file uploaded' });
+      }
+
+      const buffer = await file.toBuffer();
+      const relativePath = req.query.relativePath || file.filename;
+
+      const uploaded = await ArtifactService.uploadRunArtifact(
+        buffer,
+        file.filename,
+        req.query.runId,
+        relativePath,
+        file.mimetype,
+      );
+
+      const artifact = await JobService.registerRunArtifact({
+        run_id: req.query.runId,
+        filename: uploaded.filename,
+        relative_path: uploaded.relative_path,
+        size_bytes: uploaded.size_bytes,
+        storage_key: uploaded.storage_key,
+        mime_type: file.mimetype,
+      });
+
+      return reply.send({
+        ...artifact,
+        download_path: `/artifacts/download?key=${encodeURIComponent(artifact.storage_key)}`,
+        content_path: `/artifacts/content?key=${encodeURIComponent(artifact.storage_key)}`,
+      });
+    },
+  );
+
+  app.get(
+    '/artifacts/download',
+    async (
+      req: FastifyRequest<{ Querystring: DownloadArtifactQuerystring }>,
+      reply: FastifyReply,
+    ) => {
+      const url = await ArtifactService.getDownloadUrl(req.query.key);
+      return reply.redirect(url);
+    },
+  );
+
+  app.get(
+    '/artifacts/content',
+    async (
+      req: FastifyRequest<{ Querystring: DownloadArtifactQuerystring }>,
+      reply: FastifyReply,
+    ) => {
+      const objectResponse = await ArtifactService.getObject(req.query.key);
+
+      if (objectResponse.ContentType) {
+        reply.type(objectResponse.ContentType);
+      }
+
+      if (objectResponse.ContentLength != null) {
+        reply.header('content-length', String(objectResponse.ContentLength));
+      }
+
+      return reply.send(objectResponse.Body as any);
+    },
+  );
+}
+
+
+path: /src/routes/bootstrap-images.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  BootstrapBuilderService,
+  BootstrapEnvironmentInput,
+} from '../services/bootstrap-builder.service';
+import { ExecutionLanguage } from '../models/job';
+import { JobService } from '../services/job.service';
+
+type PreviewBootstrapImageBody = {
+  baseImage: string;
+  executionLanguage: ExecutionLanguage;
+  environments: BootstrapEnvironmentInput[];
+  dockerfileOverride?: string | null;
+};
+
+type BuildBootstrapImageBody = {
+  name: string;
+  baseImage: string;
+  tag: string;
+  executionLanguage: ExecutionLanguage;
+  environments: BootstrapEnvironmentInput[];
+  dockerfileText?: string | null;
+  runtimeResources?: Record<string, unknown> | null;
+  dockerUser: string;
+  dockerPass: string;
+};
+
+export default async function bootstrapImageRoutes(app: FastifyInstance) {
+  app.post(
+    '/api/bootstrap-images/preview',
+    {
+      schema: {
+        description:
+          'Generate Dockerfile preview for a bootstrap image for Python or JavaScript jobs',
+        body: {
+          type: 'object',
+          required: ['baseImage', 'executionLanguage', 'environments'],
+          properties: {
+            baseImage: { type: 'string', minLength: 1 },
+            executionLanguage: {
+              type: 'string',
+              enum: ['python', 'javascript'],
+            },
+            dockerfileOverride: { type: 'string', nullable: true },
+            environments: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                required: ['name', 'requirements_text'],
+                properties: {
+                  name: { type: 'string', minLength: 1 },
+                  requirements_text: { type: 'string' },
+                  python_binary: { type: 'string', nullable: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: PreviewBootstrapImageBody }>, reply: FastifyReply) => {
+      try {
+        const dockerfile = BootstrapBuilderService.generateDockerfile(
+          req.body.baseImage,
+          req.body.environments,
+          req.body.executionLanguage,
+          req.body.dockerfileOverride || undefined,
+        );
+
+        return reply.send({
+          dockerfile,
+          environments: req.body.environments.map((env) => ({
+            name: env.name,
+            python_binary: env.python_binary || 'python3',
+          })),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to generate Dockerfile';
+        req.log.error({ err }, '[POST /api/bootstrap-images/preview] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/bootstrap-images/build',
+    {
+      schema: {
+        description: 'Build and publish a custom bootstrap image',
+        body: {
+          type: 'object',
+          required: [
+            'name',
+            'baseImage',
+            'tag',
+            'executionLanguage',
+            'environments',
+            'dockerUser',
+            'dockerPass',
+          ],
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            baseImage: { type: 'string', minLength: 1 },
+            tag: { type: 'string', minLength: 1 },
+            executionLanguage: {
+              type: 'string',
+              enum: ['python', 'javascript'],
+            },
+            dockerfileText: { type: 'string', nullable: true },
+            runtimeResources: { type: 'object', additionalProperties: true, nullable: true },
+            dockerUser: { type: 'string', minLength: 1 },
+            dockerPass: { type: 'string', minLength: 1 },
+            environments: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                required: ['name', 'requirements_text'],
+                properties: {
+                  name: { type: 'string', minLength: 1 },
+                  requirements_text: { type: 'string' },
+                  python_binary: { type: 'string', nullable: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Body: BuildBootstrapImageBody }>, reply: FastifyReply) => {
+      try {
+        const id = `img_${uuidv4().replace(/-/g, '')}`;
+        const dockerfileText =
+          req.body.dockerfileText?.trim() ||
+          BootstrapBuilderService.generateDockerfile(
+            req.body.baseImage,
+            req.body.environments,
+            req.body.executionLanguage,
+          );
+
+        void BootstrapBuilderService.buildAndPush({
+          id,
+          name: req.body.name,
+          baseImage: req.body.baseImage,
+          tag: req.body.tag,
+          executionLanguage: req.body.executionLanguage,
+          dockerfileText,
+          environments: req.body.environments,
+          runtimeResources: req.body.runtimeResources,
+          dockerUser: req.body.dockerUser,
+          dockerPass: req.body.dockerPass,
+        });
+
+        return reply.code(201).send({
+          id,
+          status: 'building',
+          dockerfile_text: dockerfileText,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to start build';
+        req.log.error({ err }, '[POST /api/bootstrap-images/build] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/bootstrap-images/build/:id/cancel',
+    {
+      schema: {
+        description: 'Cancel an active bootstrap image build',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        await BootstrapBuilderService.cancelBuild(req.params.id);
+        return reply.send({ success: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to cancel build';
+        req.log.error({ err }, '[POST /api/bootstrap-images/build/:id/cancel] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/api/bootstrap-images/build/:id',
+    {
+      schema: {
+        description: 'Get in-memory build progress for a bootstrap image build',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const progress = BootstrapBuilderService.getProgress(req.params.id);
+
+      if (!progress) {
+        return reply.code(404).send({ error: 'Build session not found' });
+      }
+
+      return reply.send(progress);
+    },
+  );
+
+  app.get(
+    '/api/bootstrap-images',
+    {
+      schema: {
+        description: 'List bootstrap images',
+        querystring: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['draft', 'building', 'pushing', 'completed', 'failed', 'cancelled'],
+            },
+          },
+        },
+      },
+    },
+    async (
+      req: FastifyRequest<{
+        Querystring: {
+          status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
+        };
+      }>,
+    ) => {
+      const items = await JobService.listBootstrapImages({
+        status: req.query.status,
+      });
+
+      return {
+        items,
+        total: items.length,
+      };
+    },
+  );
+
+  app.get(
+    '/api/bootstrap-images/:id',
+    {
+      schema: {
+        description: 'Get a single bootstrap image by id',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const image = await JobService.getBootstrapImage(req.params.id);
+
+      if (!image) {
+        return reply.code(404).send({ error: 'Bootstrap image not found' });
+      }
+
+      return reply.send(image);
+    },
+  );
+
+  app.get(
+    '/api/bootstrap-images/:id/logs',
+    {
+      schema: {
+        description: 'List persisted logs for a bootstrap image build',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const items = await JobService.listBootstrapImageLogs(req.params.id);
+        return reply.send({
+          items,
+          total: items.length,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load bootstrap image logs';
+        req.log.error({ err }, '[GET /api/bootstrap-images/:id/logs] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+}
+
+
+path: /src/routes/catalog.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { containerPresets, jobTemplates } from '../catalog/presets';
+import { ContainerPreset } from '../models/job';
+import { JobService } from '../services/job.service';
+
+export default async function catalogRoutes(app: FastifyInstance) {
+  app.get('/catalog/container-presets', async () => {
+    const customImages = await JobService.listBootstrapImages({ status: 'completed' });
+
+    const customPresets: ContainerPreset[] = customImages.map((img) => ({
+      id: img.id,
+      name: `${img.name} (Custom)`,
+      category: 'bootstrap',
+      description: `Custom bootstrap image based on ${img.base_image}`,
+      recommended_for: ['custom', 'bootstrap', 'ml'],
+      support_level: 'supported',
+      container: {
+        name: 'bootstrap',
+        image: img.full_image_name,
+        is_parent: true,
+        resources: img.runtime_resources || undefined,
+      },
+    }));
+
+    const allPresets = [...containerPresets, ...customPresets];
+
+    return {
+      items: allPresets,
+      total: allPresets.length,
+    };
+  });
+
+  app.get('/catalog/job-templates', async () => {
+    return {
+      items: jobTemplates,
+      total: jobTemplates.length,
+    };
+  });
+
+  app.get(
+    '/catalog/job-templates/:id',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const template = jobTemplates.find((item) => item.id === req.params.id);
+
+      if (!template) {
+        return reply.code(404).send({ error: 'Job template not found' });
+      }
+
+      return reply.send(template);
+    },
+  );
+}
+
+
+path: /src/routes/dashboard.ts
+----------------------------------------
+import { FastifyInstance } from 'fastify';
+import { DashboardService } from '../services/dashboard.service';
+
+export default async function dashboardRoutes(app: FastifyInstance) {
+  app.get(
+    '/dashboard/summary',
+    {
+      schema: {
+        description: 'Get dashboard statistics summary',
+      },
+    },
+    async () => {
+      return DashboardService.getSummary();
+    },
+  );
+
+  app.get(
+    '/dashboard/active-runs',
+    {
+      schema: {
+        description: 'Get list of created/running runs',
+      },
+    },
+    async () => {
+      return DashboardService.getActiveRuns();
+    },
+  );
+
+  app.get(
+    '/dashboard/active-workers',
+    {
+      schema: {
+        description: 'Get list of online/busy workers',
+      },
+    },
+    async () => {
+      return DashboardService.getActiveWorkers();
+    },
+  );
+
+  app.get(
+    '/dashboard/recent-events',
+    {
+      schema: {
+        description: 'Get list of recent terminal run status changes',
+      },
+    },
+    async () => {
+      return DashboardService.getRecentEvents();
+    },
+  );
+}
+
+
+path: /src/routes/health.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import db from '../db/index';
+import { ArtifactService } from '../services/artifact.service';
+
+export default async function healthRoutes(app: FastifyInstance) {
+  app.get('/health/live', async () => {
+    return { status: 'ok' };
+  });
+
+  app.get('/health/ready', async (req: FastifyRequest, reply: FastifyReply) => {
+    const checks: Record<string, string> = {
+      db: 'pending',
+      artifacts: 'pending',
+    };
+
+    let isReady = true;
+
+    // Check DB
+    try {
+      await new Promise<void>((resolve, reject) => {
+        db.get('SELECT 1', (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      checks.db = 'ok';
+    } catch (err) {
+      req.log.error({ err }, 'Readiness check: DB failed');
+      checks.db = 'error';
+      isReady = false;
+    }
+
+    // Check Artifacts (MinIO)
+    try {
+      await ArtifactService.ensureBucket();
+      checks.artifacts = 'ok';
+    } catch (err) {
+      req.log.error({ err }, 'Readiness check: Artifacts failed');
+      checks.artifacts = 'error';
+      isReady = false;
+    }
+
+    if (!isReady) {
+      return reply.code(503).send({
+        status: 'error',
+        checks,
+      });
+    }
+
+    return {
+      status: 'ok',
+      checks,
+    };
+  });
+}
+
+
+path: /src/routes/jobs.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { JobService } from '../services/job.service';
+import { ExecutionLanguage, RunStatus } from '../models/job';
+import { config } from '../utils/config';
+import {
+  JobValidationError,
+  assertValidCreateJobPayload,
+  assertValidRelativePath,
+  validateCreateJobPayload,
+} from '../utils/job-validation';
+import { ArtifactService } from '../services/artifact.service';
+
+interface CreateJobBody {
+  title: string;
+  description?: string | null;
+  owner_id?: string | null;
+  bootstrap_image_id: string;
+  execution_language?: ExecutionLanguage;
+  environment_variables?: Record<string, string>;
+  resources?: {
+    gpus?: string;
+    shm_size?: string;
+    cpu_limit?: number;
+    memory_limit?: string;
+  } | null;
+  entrypoint: string;
+  entrypoint_args?: string[];
+  working_dir?: string | null;
+}
+
+type UpdateJobBody = Partial<CreateJobBody>;
+
+interface CreateShareTokenBody {
+  expires_in_seconds?: number | null;
+  expires_at?: string | null;
+  max_claims?: number | null;
+}
+
+interface ListJobsQuerystring {
+  search?: string;
+  status?: RunStatus;
+  limit?: number;
+  offset?: number;
+}
+
+const getBaseUrl = (req: FastifyRequest): string => {
+  if (config.publicBaseUrl) return config.publicBaseUrl;
+  const host = req.headers.host || `localhost:${config.port}`;
+  return `${req.protocol}://${host}`;
+};
+
+const sendRouteError = (
+  req: FastifyRequest,
+  reply: FastifyReply,
+  err: unknown,
+  route: string,
+  fallbackMessage: string,
+) => {
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const statusCode = /not found/i.test(message) ? 404 : 400;
+
+  req.log.error({ err }, `[${route}] failed`);
+  return reply.code(statusCode).send({ error: message });
+};
+
+export default async function jobsRoutes(app: FastifyInstance) {
+  app.post('/jobs/validate', async (req: FastifyRequest<{ Body: CreateJobBody }>, reply) => {
+    const result = validateCreateJobPayload(req.body);
+
+    if (!result.valid) {
+      return reply.code(422).send(result);
+    }
+
+    return reply.code(200).send(result);
+  });
+
+  app.post('/jobs', async (req: FastifyRequest<{ Body: CreateJobBody }>, reply) => {
+    try {
+      const normalized = assertValidCreateJobPayload(req.body);
+      const created = await JobService.createJob(normalized);
+      return reply.code(201).send(created);
+    } catch (err) {
+      if (err instanceof JobValidationError) {
+        return reply.code(422).send({
+          valid: false,
+          errors: err.details,
+          warnings: [],
+        });
+      }
+
+      return sendRouteError(req, reply, err, 'POST /jobs', 'Failed to create job');
+    }
+  });
+
+  app.get('/jobs', async (req: FastifyRequest<{ Querystring: ListJobsQuerystring }>) => {
+    const limit = req.query.limit ?? 20;
+    const offset = req.query.offset ?? 0;
+
+    return JobService.listJobs({
+      ...req.query,
+      limit: Number(limit),
+      offset: Number(offset),
+    });
+  });
+
+  app.get(
+    '/jobs/:id',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const job = await JobService.getJobDetails(req.params.id);
+
+      if (!job) {
+        return reply.code(404).send({ error: 'Job not found' });
+      }
+
+      return reply.send(job);
+    },
+  );
+
+  app.patch(
+    '/jobs/:id',
+    async (
+      req: FastifyRequest<{ Params: { id: string }; Body: UpdateJobBody }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const result = await JobService.updateJob(req.params.id, req.body as any);
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof JobValidationError) {
+          return reply.code(422).send({
+            valid: false,
+            errors: err.details,
+            warnings: [],
+          });
+        }
+
+        return sendRouteError(req, reply, err, 'PATCH /jobs/:id', 'Failed to update job');
+      }
+    },
+  );
+
+  app.delete(
+    '/jobs/:id',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        await JobService.deleteJob(req.params.id);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(req, reply, err, 'DELETE /jobs/:id', 'Failed to delete job');
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/clone',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const result = await JobService.cloneJob(req.params.id);
+        return reply.code(201).send(result);
+      } catch (err) {
+        return sendRouteError(req, reply, err, 'POST /jobs/:id/clone', 'Failed to clone job');
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/runs',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { limit?: number; offset?: number };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const limit = req.query.limit ?? 20;
+        const offset = req.query.offset ?? 0;
+
+        const result = await JobService.listJobRuns(req.params.id, Number(limit), Number(offset));
+
+        return reply.send(result);
+      } catch (err) {
+        return sendRouteError(req, reply, err, 'GET /jobs/:id/runs', 'Failed to list job runs');
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/share-tokens',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: CreateShareTokenBody;
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const result = await JobService.createShareToken(
+          req.params.id,
+          {
+            expiresInSeconds: req.body?.expires_in_seconds ?? undefined,
+            expiresAt: req.body?.expires_at ?? null,
+            maxClaims: req.body?.max_claims ?? undefined,
+          },
+          getBaseUrl(req),
+        );
+
+        return reply.code(201).send(result);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/share-tokens',
+          'Failed to create share token',
+        );
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/share-tokens',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const result = await JobService.listJobShareTokens(req.params.id);
+        return reply.send(result);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/share-tokens',
+          'Failed to list share tokens',
+        );
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/files',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const files = await JobService.listJobFiles(req.params.id);
+        return reply.send({
+          items: files,
+          total: files.length,
+        });
+      } catch (err) {
+        return sendRouteError(req, reply, err, 'GET /jobs/:id/files', 'Failed to list job files');
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/upload',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath?: string; isExecutable?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const file = await req.file();
+
+        if (!file) {
+          return reply.code(400).send({ error: 'No file uploaded' });
+        }
+
+        const buffer = await file.toBuffer();
+        const relativePath = assertValidRelativePath(
+          req.query.relativePath || file.filename,
+          'relativePath',
+        );
+
+        const uploaded = await ArtifactService.uploadJobFile(
+          buffer,
+          file.filename,
+          req.params.id,
+          relativePath,
+          file.mimetype,
+        );
+
+        const registered = await JobService.registerUploadedJobFile({
+          job_id: req.params.id,
+          relative_path: uploaded.relative_path,
+          filename: uploaded.filename,
+          storage_key: uploaded.storage_key,
+          mime_type: file.mimetype,
+          size_bytes: uploaded.size_bytes,
+          is_executable: req.query.isExecutable === '1' || req.query.isExecutable === 'true',
+        });
+
+        return reply.code(201).send(registered);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/upload',
+          'Failed to upload job file',
+        );
+      }
+    },
+  );
+
+  app.put(
+    '/jobs/:id/files/content',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: {
+          relative_path: string;
+          content: string;
+          mime_type?: string;
+          is_executable?: boolean;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const saved = await JobService.saveInlineJobFile({
+          job_id: req.params.id,
+          relative_path: req.body.relative_path,
+          content: req.body.content ?? '',
+          mime_type: req.body.mime_type,
+          is_executable: req.body.is_executable,
+        });
+
+        return reply.send(saved);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'PUT /jobs/:id/files/content',
+          'Failed to save inline job file',
+        );
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/files/content',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const file = await JobService.getJobFile(req.params.id, req.query.relativePath);
+
+        if (file.source_type === 'inline') {
+          reply.type(file.mime_type || 'text/plain; charset=utf-8');
+          return reply.send(file.inline_content || '');
+        }
+
+        if (!file.storage_key) {
+          return reply.code(404).send({ error: 'File storage key not found' });
+        }
+
+        const objectResponse = await ArtifactService.getObject(file.storage_key);
+
+        if (objectResponse.ContentType) {
+          reply.type(objectResponse.ContentType);
+        } else {
+          reply.type(file.mime_type || 'application/octet-stream');
+        }
+
+        return reply.send(objectResponse.Body as any);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/files/content',
+          'Failed to read job file',
+        );
+      }
+    },
+  );
+
+  app.delete(
+    '/jobs/:id/files',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.deleteJobFile(req.params.id, req.query.relativePath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'DELETE /jobs/:id/files',
+          'Failed to delete job file',
+        );
+      }
+    },
+  );
+}
+
+
+path: /src/routes/tokens.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { JobService } from '../services/job.service';
+import { config } from '../utils/config';
+
+const getBaseUrl = (req: FastifyRequest): string => {
+  if (config.publicBaseUrl) return config.publicBaseUrl;
+  const host = req.headers.host || `localhost:${config.port}`;
+  return `${req.protocol}://${host}`;
+};
+
+export default async function tokensRoutes(app: FastifyInstance) {
+  app.get(
+    '/share-tokens/:id',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const token = await JobService.getShareToken(req.params.id, getBaseUrl(req));
+
+      if (!token) {
+        return reply.code(404).send({ error: 'Share token not found' });
+      }
+
+      return token;
+    },
+  );
+
+  app.post(
+    '/share-tokens/:id/revoke',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        await JobService.revokeShareToken(req.params.id);
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to revoke token';
+        req.log.error({ err }, '[POST /share-tokens/:id/revoke] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+}
+
+
+path: /src/routes/worker.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ArtifactService } from '../services/artifact.service';
+import { JobService } from '../services/job.service';
+import { LogLevel, RunStatus } from '../models/job';
+import { broadcastRunLog, broadcastRunProgress, broadcastRunStatus } from './ws';
+import { config } from '../utils/config';
+
+const parseMetrics = (metrics: unknown): unknown => {
+  if (typeof metrics !== 'string') return metrics;
+
+  try {
+    return JSON.parse(metrics);
+  } catch {
+    return metrics;
+  }
+};
+
+type WorkerPayload = {
+  worker_id: string;
+  worker_name: string;
+  worker_host?: string;
+  capabilities?: Record<string, unknown>;
+};
+
+export default async function workerRoutes(app: FastifyInstance) {
+  app.get(
+    '/api/run-config',
+    async (req: FastifyRequest<{ Querystring: { token: string } }>, reply: FastifyReply) => {
+      try {
+        const baseUrl = config.publicBaseUrl || `${req.protocol}://${req.headers.host}`;
+        const result = await JobService.claimRunByToken(req.query.token, baseUrl);
+        return reply.send(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to claim run';
+        req.log.error({ err }, '[GET /api/run-config] failed');
+        return reply.code(403).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/api/runs/:id/job-files/content',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const file = await JobService.getRunJobFile(req.params.id, req.query.relativePath);
+
+        if (file.source_type === 'inline') {
+          reply.type(file.mime_type || 'text/plain; charset=utf-8');
+          return reply.send(file.inline_content || '');
+        }
+
+        if (!file.storage_key) {
+          return reply.code(404).send({ error: 'File storage key not found' });
+        }
+
+        const objectResponse = await ArtifactService.getObject(file.storage_key);
+
+        if (objectResponse.ContentType) {
+          reply.type(objectResponse.ContentType);
+        } else {
+          reply.type(file.mime_type || 'application/octet-stream');
+        }
+
+        return reply.send(objectResponse.Body as any);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to read run job file';
+        req.log.error({ err }, '[GET /api/runs/:id/job-files/content] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/start',
+    async (
+      req: FastifyRequest<{
+        Body: { run_id: string } & WorkerPayload;
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.markRunStarted(req.body.run_id, {
+          id: req.body.worker_id,
+          name: req.body.worker_name,
+          host: req.body.worker_host ?? null,
+          capabilities: req.body.capabilities ?? null,
+        });
+
+        broadcastRunStatus(req.body.run_id, 'running');
+        return reply.send({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to start run';
+        req.log.error({ err }, '[POST /api/runs/start] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/heartbeat',
+    async (
+      req: FastifyRequest<{
+        Body: { run_id: string } & WorkerPayload;
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const result = await JobService.heartbeatRun(req.body.run_id, {
+          id: req.body.worker_id,
+          name: req.body.worker_name,
+          host: req.body.worker_host ?? null,
+          capabilities: req.body.capabilities ?? null,
+        });
+
+        return reply.send({
+          ok: true,
+          should_stop: result.should_stop,
+          stop_reason: result.stop_reason,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to register heartbeat';
+        req.log.error({ err }, '[POST /api/runs/heartbeat] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/logs',
+    async (
+      req: FastifyRequest<{
+        Body: { run_id: string; message: string; level?: LogLevel };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const level = req.body.level || 'info';
+        await JobService.addRunLog(req.body.run_id, req.body.message, level);
+        broadcastRunLog(req.body.run_id, req.body.message, level);
+        return reply.send({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to submit log';
+        req.log.error({ err }, '[POST /api/runs/logs] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/progress',
+    async (
+      req: FastifyRequest<{
+        Body: {
+          run_id: string;
+          stage?: string;
+          progress?: number;
+          message?: string;
+          extra?: Record<string, unknown>;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.addRunProgress({
+          run_id: req.body.run_id,
+          stage: req.body.stage ?? null,
+          progress: req.body.progress ?? null,
+          message: req.body.message ?? null,
+          extra: req.body.extra ?? null,
+        });
+
+        broadcastRunProgress(req.body.run_id, {
+          stage: req.body.stage ?? null,
+          progress: req.body.progress ?? null,
+          message: req.body.message ?? null,
+          extra: req.body.extra ?? null,
+        });
+
+        return reply.send({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to submit progress';
+        req.log.error({ err }, '[POST /api/runs/progress] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/:id/cancel',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { reason?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const result = await JobService.cancelRun(req.params.id, req.body?.reason);
+
+        if (result.final) {
+          broadcastRunStatus(req.params.id, 'cancelled');
+        }
+
+        return reply.send(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to cancel run';
+        req.log.error({ err }, '[POST /api/runs/:id/cancel] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/finish',
+    async (
+      req: FastifyRequest<{
+        Body: {
+          run_id: string;
+          status: Extract<RunStatus, 'finished' | 'failed' | 'cancelled' | 'lost'>;
+          result?: string;
+          metrics?: unknown;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.finishRun(
+          req.body.run_id,
+          req.body.status,
+          req.body.result,
+          parseMetrics(req.body.metrics),
+        );
+
+        broadcastRunStatus(req.body.run_id, req.body.status);
+        return reply.send({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to finish run';
+        req.log.error({ err }, '[POST /api/runs/finish] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/api/runs/:id/events',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const events = await JobService.listRunEvents(req.params.id);
+        return reply.send({
+          items: events,
+          total: events.length,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to list run events';
+        req.log.error({ err }, '[GET /api/runs/:id/events] failed');
+        return reply.code(404).send({ error: message });
+      }
+    },
+  );
+
+  app.get(
+    '/api/runs/:id',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const result = await JobService.getRun(req.params.id);
+
+      if (!result) {
+        return reply.code(404).send({ error: 'Run not found' });
+      }
+
+      return result;
+    },
+  );
+}
+
+
+path: /src/routes/workers.ts
+----------------------------------------
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { JobService } from '../services/job.service';
+
+export default async function workersRoutes(app: FastifyInstance) {
+  app.get(
+    '/workers',
+    {
+      schema: {
+        description: 'List known workers',
+      },
+    },
+    async () => {
+      return JobService.listWorkers();
+    },
+  );
+
+  app.get(
+    '/workers/:id',
+    {
+      schema: {
+        description: 'Get worker details',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const worker = await JobService.getWorker(req.params.id);
+
+      if (!worker) {
+        return reply.code(404).send({ error: 'Worker not found' });
+      }
+
+      return worker;
+    },
+  );
+}
+
+
+path: /src/routes/ws.ts
+----------------------------------------
+import { FastifyInstance } from 'fastify';
+import { WebSocket } from 'ws';
+import { LogLevel, RunStatus } from '../models/job';
+
+type WSConnection = {
+  socket: WebSocket;
+};
+
+const clients = new Map<string, WSConnection[]>();
+
+const sendToRunClients = (runId: string, payload: Record<string, unknown>) => {
+  const runClients = clients.get(runId) || [];
+  const message = JSON.stringify({
+    ...payload,
+    runId,
+    timestamp: new Date().toISOString(),
+  });
+
+  for (const conn of runClients) {
+    try {
+      conn.socket.send(message);
+    } catch {
+      // ignore failed socket send
+    }
+  }
+};
+
+export const broadcastRunStatus = (runId: string, status: RunStatus) => {
+  sendToRunClients(runId, {
+    type: 'run_status',
+    status,
+  });
+};
+
+export const broadcastRunLog = (runId: string, message: string, level: LogLevel = 'info') => {
+  sendToRunClients(runId, {
+    type: 'run_log',
+    level,
+    message,
+  });
+};
+
+export const broadcastRunProgress = (
+  runId: string,
+  data: {
+    stage?: string | null;
+    progress?: number | null;
+    message?: string | null;
+    extra?: Record<string, unknown> | null;
+  },
+) => {
+  sendToRunClients(runId, {
+    type: 'run_progress',
+    stage: data.stage ?? null,
+    progress: data.progress ?? null,
+    message: data.message ?? null,
+    extra: data.extra ?? null,
+  });
+};
+
+export default async function wsRoutes(app: FastifyInstance) {
+  app.get('/ws/runs/:run_id', { websocket: true } as any, (connection: any, req: any) => {
+    const runId = req.params.run_id as string;
+
+    if (!clients.has(runId)) {
+      clients.set(runId, []);
+    }
+
+    clients.get(runId)!.push(connection);
+
+    connection.socket.on('close', () => {
+      const list = clients.get(runId) || [];
+      clients.set(
+        runId,
+        list.filter((item: any) => item !== connection),
+      );
+    });
+  });
+}
+
+
+path: /src/server.ts
+----------------------------------------
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import fastifyWebsocket from '@fastify/websocket';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
+import fastifyMultipart from '@fastify/multipart';
+
+import { initDb } from './db/index';
+import { config } from './utils/config';
+
+import artifactsRoutes from './routes/artifacts';
+import wsRoutes, { broadcastRunStatus } from './routes/ws';
+import jobsRoutes from './routes/jobs';
+import workerRoutes from './routes/worker';
+import workersRoutes from './routes/workers';
+import tokensRoutes from './routes/tokens';
+import dashboardRoutes from './routes/dashboard';
+import catalogRoutes from './routes/catalog';
+import healthRoutes from './routes/health';
+import bootstrapImageRoutes from './routes/bootstrap-images';
+import { ArtifactService } from './services/artifact.service';
+import { RunWatchdogService } from './services/run-watchdog.service';
+import { BootstrapBuilderService } from './services/bootstrap-builder.service';
+
+const app = Fastify({
+  logger: {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname',
+      },
+    },
+    level: 'info',
+  },
+});
+
+let watchdogTimer: NodeJS.Timeout | null = null;
+
+const startWatchdog = () => {
+  if (watchdogTimer) {
+    return;
+  }
+
+  watchdogTimer = setInterval(async () => {
+    try {
+      const lostRuns = await RunWatchdogService.sweep();
+
+      for (const runId of lostRuns) {
+        app.log.warn({ runId }, 'Run marked as lost by watchdog');
+        broadcastRunStatus(runId, 'lost');
+      }
+    } catch (err) {
+      app.log.error({ err }, 'Run watchdog sweep failed');
+    }
+  }, config.runWatchdogIntervalSeconds * 1000);
+};
+
+const stopWatchdog = () => {
+  if (!watchdogTimer) {
+    return;
+  }
+
+  clearInterval(watchdogTimer);
+  watchdogTimer = null;
+};
+
+const start = async () => {
+  try {
+    await initDb();
+    await BootstrapBuilderService.cleanupInterruptedBuilds();
+
+    try {
+      await ArtifactService.ensureBucket();
+    } catch (err) {
+      app.log.warn(
+        { err },
+        'Artifacts bucket is not ready yet, it will be retried on first upload/download',
+      );
+    }
+
+    await app.register(cors, {
+      origin: [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5174',
+      ],
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    });
+
+    await app.register(fastifyMultipart, {
+      limits: {
+        fileSize: 500 * 1024 * 1024,
+      },
+    });
+
+    await app.register(fastifyWebsocket);
+
+    await app.register(fastifySwagger, {
+      openapi: {
+        info: {
+          title: 'Cloud Forge API',
+          description: 'Distributed Task Orchestration API',
+          version: '2.3.0',
+        },
+      },
+    });
+
+    await app.register(fastifySwaggerUi, {
+      routePrefix: '/docs',
+    });
+
+    await app.register(healthRoutes);
+    await app.register(wsRoutes);
+    await app.register(catalogRoutes);
+    await app.register(bootstrapImageRoutes);
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+    await app.register(workersRoutes);
+    await app.register(tokensRoutes);
+    await app.register(dashboardRoutes);
+    await app.register(artifactsRoutes);
+
+    startWatchdog();
+
+    app.addHook('onClose', async () => {
+      stopWatchdog();
+    });
+
+    await app.listen({ port: config.port, host: '0.0.0.0' });
+
+    console.log(`🚀 Server running on http://localhost:${config.port}`);
+    console.log(`📖 Swagger UI: http://localhost:${config.port}/docs`);
+    console.log(`📦 MinIO Console: http://localhost:9001`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('❌ Failed to start server:', message);
+    process.exit(1);
+  }
+};
+
+start();
+
+
+path: /src/services/artifact.service.ts
+----------------------------------------
+import {
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { v4 as uuidv4 } from 'uuid';
+import { config } from '../utils/config';
+
+const s3Client = new S3Client({
+  endpoint: config.minioEndpoint,
+  region: 'us-east-1',
+  credentials: {
+    accessKeyId: config.minioAccessKey,
+    secretAccessKey: config.minioSecretKey,
+  },
+  forcePathStyle: true,
+});
+
+const BUCKET = config.minioBucket;
+let bucketReadyPromise: Promise<void> | null = null;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const sanitizeFilename = (filename: string): string => filename.replace(/[\\/]/g, '_');
+
+const normalizeRelativePath = (value: string): string =>
+  value
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => segment.replace(/[^a-zA-Z0-9._-]/g, '_'))
+    .join('/');
+
+export class ArtifactService {
+  static async ensureBucket(): Promise<void> {
+    if (!bucketReadyPromise) {
+      bucketReadyPromise = (async () => {
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          try {
+            await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET }));
+            console.log(`[Artifacts] Bucket ready: ${BUCKET}`);
+            return;
+          } catch {
+            try {
+              await s3Client.send(new CreateBucketCommand({ Bucket: BUCKET }));
+              console.log(`[Artifacts] Bucket created: ${BUCKET}`);
+              return;
+            } catch (err) {
+              if (attempt === 5) throw err;
+              await sleep(attempt * 1000);
+            }
+          }
+        }
+      })().catch((err) => {
+        bucketReadyPromise = null;
+        throw err;
+      });
+    }
+
+    return bucketReadyPromise;
+  }
+
+  static async uploadJobFile(
+    file: Buffer,
+    filename: string,
+    jobId: string,
+    relativePath: string,
+    mimeType = 'application/octet-stream',
+  ): Promise<{
+    id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    storage_key: string;
+  }> {
+    await ArtifactService.ensureBucket();
+
+    const fileId = uuidv4();
+    const safeFilename = sanitizeFilename(filename);
+    const normalizedRelativePath =
+      normalizeRelativePath(relativePath || safeFilename) || safeFilename;
+    const storageKey = `jobs/${jobId}/files/${fileId}/${normalizedRelativePath}`;
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+        Body: file,
+        ContentType: mimeType,
+      }),
+    );
+
+    return {
+      id: fileId,
+      filename: safeFilename,
+      relative_path: normalizedRelativePath,
+      size_bytes: file.length,
+      storage_key: storageKey,
+    };
+  }
+
+  static async uploadRunArtifact(
+    file: Buffer,
+    filename: string,
+    runId: string,
+    relativePath: string,
+    mimeType = 'application/octet-stream',
+  ): Promise<{
+    id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    storage_key: string;
+  }> {
+    await ArtifactService.ensureBucket();
+
+    const artifactId = uuidv4();
+    const safeFilename = sanitizeFilename(filename);
+    const normalizedRelativePath =
+      normalizeRelativePath(relativePath || safeFilename) || safeFilename;
+    const storageKey = `runs/${runId}/artifacts/${artifactId}/${normalizedRelativePath}`;
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+        Body: file,
+        ContentType: mimeType,
+      }),
+    );
+
+    return {
+      id: artifactId,
+      filename: safeFilename,
+      relative_path: normalizedRelativePath,
+      size_bytes: file.length,
+      storage_key: storageKey,
+    };
+  }
+
+  static async getDownloadUrl(storageKey: string, expiresIn = 3600): Promise<string> {
+    await ArtifactService.ensureBucket();
+
+    const command = new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: storageKey,
+    });
+
+    return getSignedUrl(s3Client, command, { expiresIn });
+  }
+
+  static async getObject(storageKey: string) {
+    await ArtifactService.ensureBucket();
+
+    const response = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+      }),
+    );
+
+    return response;
+  }
+
+  static async readTextObject(storageKey: string): Promise<string> {
+    const response = await ArtifactService.getObject(storageKey);
+    const body = response.Body;
+
+    if (!body || typeof (body as any).transformToString !== 'function') {
+      throw new Error('Unable to read object body as text');
+    }
+
+    return (body as any).transformToString();
+  }
+}
+
+
+path: /src/services/bootstrap-builder.service.ts
+----------------------------------------
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { spawn, ChildProcess } from 'child_process';
+import db from '../db';
+import { ExecutionLanguage } from '../models/job';
+
+export interface BootstrapEnvironmentInput {
+  name: string;
+  requirements_text: string;
+  python_binary?: string | null;
+}
+
+export interface BuildOptions {
+  id: string;
+  name: string;
+  baseImage: string;
+  tag: string;
+  executionLanguage: ExecutionLanguage;
+  dockerfileText: string;
+  environments: BootstrapEnvironmentInput[];
+  runtimeResources?: Record<string, unknown> | null;
+  dockerUser: string;
+  dockerPass: string;
+}
+
+export interface BuildProgress {
+  status: 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
+  logs: string[];
+}
+
+const buildStatus = new Map<string, BuildProgress>();
+const activeProcesses = new Map<string, ChildProcess>();
+
+const appendLog = async (imageId: string, message: string, level: 'info' | 'error' = 'info') => {
+  const progress = buildStatus.get(imageId);
+  if (progress) {
+    progress.logs.push(message);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    db.run(
+      `INSERT INTO bootstrap_image_logs (image_id, level, message) VALUES (?, ?, ?)`,
+      [imageId, level, message],
+      (err) => {
+        if (err) reject(err);
+        else resolve();
+      },
+    );
+  });
+};
+
+const fileExists = (value: string): boolean => {
+  try {
+    return fs.existsSync(value);
+  } catch {
+    return false;
+  }
+};
+
+const ensureDir = (dir: string) => {
+  fs.mkdirSync(dir, { recursive: true });
+};
+
+const copyDirRecursive = (src: string, dest: string) => {
+  ensureDir(dest);
+
+  for (const item of fs.readdirSync(src)) {
+    const srcPath = path.join(src, item);
+    const destPath = path.join(dest, item);
+    const stat = fs.statSync(srcPath);
+
+    if (stat.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+};
+
+const safeEnvName = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-');
+
+const splitPackageLines = (input: string): string[] =>
+  input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+
+const buildPythonEnvInstallBlock = (env: BootstrapEnvironmentInput): string => {
+  const envName = safeEnvName(env.name || 'default');
+  const reqFile = `requirements-${envName}.txt`;
+  const pythonBinary = (env.python_binary || 'python3').trim() || 'python3';
+
+  return `
+COPY ${reqFile} /tmp/${reqFile}
+RUN ${pythonBinary} -m venv /opt/cloudforge/envs/${envName} && \\
+    /opt/cloudforge/envs/${envName}/bin/pip install --upgrade pip setuptools wheel && \\
+    if [ -s /tmp/${reqFile} ]; then /opt/cloudforge/envs/${envName}/bin/pip install --no-cache-dir -r /tmp/${reqFile}; fi && \\
+    rm -f /tmp/${reqFile}
+`.trim();
+};
+
+const buildJavascriptInstallBlock = (): string => `
+COPY packages.txt /tmp/packages.txt
+RUN mkdir -p /opt/cloudforge/node && \\
+    cd /opt/cloudforge/node && \\
+    npm init -y >/dev/null 2>&1 && \\
+    grep -v '^[[:space:]]*#' /tmp/packages.txt | sed '/^[[:space:]]*$/d' > /tmp/packages-clean.txt && \\
+    if [ -s /tmp/packages-clean.txt ]; then xargs -r npm install --omit=dev --no-fund --no-audit < /tmp/packages-clean.txt; fi && \\
+    rm -f /tmp/packages.txt /tmp/packages-clean.txt
+`.trim();
+
+export class BootstrapBuilderService {
+  static getProgress(id: string) {
+    return buildStatus.get(id);
+  }
+
+  static async cancelBuild(id: string): Promise<void> {
+    const proc = activeProcesses.get(id);
+    if (proc) {
+      console.log(`[Builder] Cancelling build ${id}, killing process`);
+      proc.kill('SIGTERM');
+      activeProcesses.delete(id);
+    }
+
+    const progress = buildStatus.get(id);
+    if (progress) {
+      progress.status = 'cancelled';
+      progress.logs.push('Build cancelled by user.');
+    }
+
+    await this.updateImageStatus(id, 'cancelled', 'Build cancelled by user');
+    await appendLog(id, 'Build cancelled by user', 'info');
+  }
+
+  static async cleanupInterruptedBuilds() {
+    return new Promise<void>((resolve, reject) => {
+      db.run(
+        `
+        UPDATE bootstrap_images
+        SET status = 'failed',
+            error = 'Build interrupted by server restart',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status IN ('building', 'pushing')
+        `,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+  }
+
+  static generateDockerfile(
+    baseImage: string,
+    environments: BootstrapEnvironmentInput[],
+    executionLanguage: ExecutionLanguage,
+    dockerfileOverride?: string,
+  ): string {
+    if (dockerfileOverride && dockerfileOverride.trim()) {
+      return dockerfileOverride;
+    }
+
+    const normalizedEnvs = environments.length
+      ? environments
+      : [{ name: 'default', requirements_text: '' }];
+
+    const defaultEnvName = safeEnvName(normalizedEnvs[0]?.name || 'default');
+    const pythonBlocks =
+      executionLanguage === 'python'
+        ? normalizedEnvs.map((env) => buildPythonEnvInstallBlock(env)).join('\n\n')
+        : '';
+    const javascriptBlock =
+      executionLanguage === 'javascript' ? buildJavascriptInstallBlock() : '';
+
+    return `
+FROM ${baseImage}
+
+SHELL ["/bin/bash", "-lc"]
+
+ENV CLOUD_FORGE_HOME=/opt/cloudforge
+ENV CLOUD_FORGE_ENVS=/opt/cloudforge/envs
+ENV CLOUD_FORGE_NODE_HOME=/opt/cloudforge/node
+ENV PATH="/opt/cloudforge/bin:$PATH"
+
+WORKDIR /opt/cloudforge
+
+COPY runner.py /opt/cloudforge/runner.py
+COPY sdk/ /opt/cloudforge/sdk/
+COPY bin/ /opt/cloudforge/bin/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    python3 python3-venv python3-pip curl ca-certificates bash tini \\
+    && rm -rf /var/lib/apt/lists/*
+
+${
+  executionLanguage === 'javascript'
+    ? `
+RUN if ! command -v node >/dev/null 2>&1; then \\
+      apt-get update && apt-get install -y --no-install-recommends nodejs npm && \\
+      rm -rf /var/lib/apt/lists/*; \\
+    fi
+`.trim()
+    : ''
+}
+
+RUN mkdir -p /opt/cloudforge/envs /opt/cloudforge/node /workspace
+
+${executionLanguage === 'python' ? pythonBlocks : javascriptBlock}
+
+${
+  executionLanguage === 'python'
+    ? `ENV PATH="/opt/cloudforge/envs/${defaultEnvName}/bin:/opt/cloudforge/bin:$PATH"`
+    : `ENV NODE_PATH="/opt/cloudforge/node/node_modules:\${NODE_PATH}"`
+}
+
+WORKDIR /workspace
+ENTRYPOINT ["python3", "/opt/cloudforge/runner.py"]
+`.trim();
+  }
+
+  private static resolveRuntimeAssetsRoot(): string {
+    const candidates = [
+      process.env.WORKER_ASSETS_PATH,
+      path.resolve(process.cwd(), 'worker'),
+      path.resolve(process.cwd(), '../worker'),
+      path.resolve(__dirname, '../../worker'),
+      path.resolve(__dirname, '../../../../apps/worker'),
+      '/app/worker',
+    ].filter((c): c is string => !!c);
+
+    for (const candidate of candidates) {
+      const runnerPath = path.join(candidate, 'runner.py');
+      const sdkPath = path.join(candidate, 'sdk');
+
+      if (fileExists(runnerPath) && fileExists(sdkPath)) {
+        return candidate;
+      }
+    }
+
+    throw new Error(
+      'Worker runtime assets not found: expected worker/runner.py and worker/sdk/ to exist.',
+    );
+  }
+
+  static async buildAndPush(options: BuildOptions) {
+    const {
+      id,
+      name,
+      baseImage,
+      tag,
+      executionLanguage,
+      dockerfileText,
+      environments,
+      dockerUser,
+      dockerPass,
+    } = options;
+
+    const fullImageName = `${dockerUser}/${name}:${tag}`;
+    const workspaceDir = path.join(os.tmpdir(), `build-${id}`);
+
+    buildStatus.set(id, { status: 'building', logs: ['Starting build...'] });
+
+    try {
+      try {
+        await this.runCommand('docker', ['--version'], os.tmpdir(), id, undefined, false, true);
+      } catch {
+        throw new Error(
+          'Docker CLI is not available in the orchestrator environment. Please ensure Docker is installed and the socket is mounted.',
+        );
+      }
+
+      await this.createOrUpdateBuildRecord(options, fullImageName);
+      await appendLog(id, 'Starting build...');
+
+      ensureDir(workspaceDir);
+      ensureDir(path.join(workspaceDir, 'sdk'));
+      ensureDir(path.join(workspaceDir, 'bin'));
+
+      const runtimeAssetsRoot = this.resolveRuntimeAssetsRoot();
+      await appendLog(id, `Using runtime assets from ${runtimeAssetsRoot}`);
+
+      fs.writeFileSync(path.join(workspaceDir, 'Dockerfile'), dockerfileText, 'utf8');
+
+      const runnerSrc = path.join(runtimeAssetsRoot, 'runner.py');
+      const sdkSrc = path.join(runtimeAssetsRoot, 'sdk');
+
+      if (!fileExists(runnerSrc)) {
+        throw new Error(`runner.py not found at ${runnerSrc}`);
+      }
+
+      if (!fileExists(sdkSrc)) {
+        throw new Error(`sdk directory not found at ${sdkSrc}`);
+      }
+
+      fs.copyFileSync(runnerSrc, path.join(workspaceDir, 'runner.py'));
+      copyDirRecursive(sdkSrc, path.join(workspaceDir, 'sdk'));
+
+      const cfPythonPath = path.join(workspaceDir, 'bin', 'cf-python');
+      fs.writeFileSync(
+        cfPythonPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+ENV_NAME="$1"
+shift
+exec "/opt/cloudforge/envs/\${ENV_NAME}/bin/python" "$@"
+`,
+        { encoding: 'utf8', mode: 0o755 },
+      );
+
+      if (executionLanguage === 'javascript') {
+        const packages = environments.flatMap((env) => splitPackageLines(env.requirements_text || ''));
+        fs.writeFileSync(path.join(workspaceDir, 'packages.txt'), `${packages.join('\n')}\n`, 'utf8');
+      } else {
+        for (const env of environments) {
+          const envName = safeEnvName(env.name || 'default');
+          const reqFilename = `requirements-${envName}.txt`;
+          fs.writeFileSync(path.join(workspaceDir, reqFilename), env.requirements_text || '', 'utf8');
+        }
+      }
+
+      await appendLog(id, `Building Docker image ${fullImageName}`);
+      await this.runCommand('docker', ['build', '-t', fullImageName, '.'], workspaceDir, id);
+
+      const progress = buildStatus.get(id);
+      if (progress?.status === 'cancelled') {
+        await this.updateImageStatus(id, 'cancelled', 'Build cancelled by user');
+        await appendLog(id, 'Build cancelled by user');
+        return;
+      }
+
+      buildStatus.get(id)!.status = 'pushing';
+      await this.updateImageStatus(id, 'pushing');
+
+      await appendLog(id, 'Logging into Docker registry...');
+      await this.runCommand(
+        'docker',
+        ['login', '-u', dockerUser, '--password-stdin'],
+        workspaceDir,
+        id,
+        dockerPass,
+        true,
+      );
+
+      const afterLogin = buildStatus.get(id);
+      if (afterLogin?.status === 'cancelled') {
+        await this.updateImageStatus(id, 'cancelled', 'Build cancelled by user');
+        await appendLog(id, 'Build cancelled by user');
+        return;
+      }
+
+      await appendLog(id, `Pushing image ${fullImageName}`);
+      await this.runCommand('docker', ['push', fullImageName], workspaceDir, id);
+
+      const afterPush = buildStatus.get(id);
+      if (afterPush?.status === 'cancelled') {
+        await this.updateImageStatus(id, 'cancelled', 'Build cancelled by user');
+        await appendLog(id, 'Build cancelled by user');
+        return;
+      }
+
+      buildStatus.get(id)!.status = 'completed';
+      await this.updateImageStatus(id, 'completed');
+      await appendLog(id, 'Image published successfully!');
+    } catch (err) {
+      const wasCancelled = buildStatus.get(id)?.status === 'cancelled';
+      const message =
+        wasCancelled ? 'Build cancelled by user' : err instanceof Error ? err.message : String(err);
+
+      if (wasCancelled) {
+        await this.updateImageStatus(id, 'cancelled', message);
+        await appendLog(id, message, 'info');
+      } else {
+        buildStatus.set(id, {
+          status: 'failed',
+          logs: [...(buildStatus.get(id)?.logs || []), `Error: ${message}`],
+        });
+
+        await this.updateImageStatus(id, 'failed', message);
+        await appendLog(id, `Error: ${message}`, 'error');
+      }
+    } finally {
+      activeProcesses.delete(id);
+
+      try {
+        if (fs.existsSync(workspaceDir)) {
+          fs.rmSync(workspaceDir, { recursive: true, force: true });
+        }
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+  }
+
+  private static runCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+    imageId: string,
+    stdin?: string,
+    maskStdinInLogs = false,
+    silent = false,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(command, args, { cwd });
+      activeProcesses.set(imageId, proc);
+
+      if (stdin) {
+        proc.stdin.write(stdin);
+        proc.stdin.end();
+      }
+
+      proc.stdout.on('data', async (data) => {
+        if (silent) return;
+        const text = data.toString();
+        await appendLog(imageId, text.trimEnd());
+      });
+
+      proc.stderr.on('data', async (data) => {
+        if (silent) return;
+        const text = data.toString();
+        await appendLog(imageId, text.trimEnd(), 'error');
+      });
+
+      proc.on('error', (err) => {
+        activeProcesses.delete(imageId);
+        reject(err);
+      });
+
+      proc.on('close', async (code) => {
+        activeProcesses.delete(imageId);
+
+        const renderedArgs =
+          stdin && maskStdinInLogs
+            ? `${command} ${args.join(' ')} [stdin hidden]`
+            : `${command} ${args.join(' ')}`;
+
+        if (code === 0) {
+          if (!silent) await appendLog(imageId, `Command succeeded: ${renderedArgs}`);
+          resolve();
+        } else if (code === null) {
+          reject(new Error(`${command} was terminated`));
+        } else {
+          reject(new Error(`${command} exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  private static createOrUpdateBuildRecord(
+    options: BuildOptions,
+    fullImageName: string,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `
+        INSERT INTO bootstrap_images (
+          id, name, base_image, tag, dockerfile_text, environments_json, execution_language,
+          runtime_resources_json, sdk_version, full_image_name, status, error, build_started_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          base_image = excluded.base_image,
+          tag = excluded.tag,
+          dockerfile_text = excluded.dockerfile_text,
+          environments_json = excluded.environments_json,
+          execution_language = excluded.execution_language,
+          runtime_resources_json = excluded.runtime_resources_json,
+          sdk_version = excluded.sdk_version,
+          full_image_name = excluded.full_image_name,
+          status = excluded.status,
+          error = NULL,
+          build_started_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        `,
+        [
+          options.id,
+          options.name,
+          options.baseImage,
+          options.tag,
+          options.dockerfileText,
+          JSON.stringify(options.environments || []),
+          options.executionLanguage,
+          JSON.stringify(options.runtimeResources || {}),
+          '1',
+          fullImageName,
+          'building',
+        ],
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+  }
+
+  private static updateImageStatus(
+    id: string,
+    status: 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled',
+    error?: string,
+  ): Promise<void> {
+    const finishedAt = ['completed', 'failed', 'cancelled'].includes(status)
+      ? 'CURRENT_TIMESTAMP'
+      : 'NULL';
+
+    return new Promise((resolve, reject) => {
+      db.run(
+        `
+        UPDATE bootstrap_images
+        SET
+          status = ?,
+          error = ?,
+          build_finished_at = ${finishedAt},
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `,
+        [status, error || null, id],
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+  }
+}
+
+
+path: /src/services/dashboard.service.ts
+----------------------------------------
+import db from '../db/index';
+import { Run } from '../models/job';
+import { JobService } from './job.service';
+
+const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
+  new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve((rows as T[]) || []);
+    });
+  });
+
+const getAsync = <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
+  new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) return reject(err);
+      resolve((row as T) || null);
+    });
+  });
+
+const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+export class DashboardService {
+  static async getSummary() {
+    const stats = await getAsync<any>(`
+      SELECT
+        (SELECT COUNT(*) FROM jobs) as total_jobs,
+        (SELECT COUNT(*) FROM bootstrap_images WHERE status = 'completed') as ready_images,
+        (SELECT COUNT(*) FROM runs) as total_runs,
+        (SELECT COUNT(*) FROM runs WHERE status = 'created') as created_runs,
+        (SELECT COUNT(*) FROM runs WHERE status = 'running') as running_runs,
+        (SELECT COUNT(*) FROM runs WHERE status = 'finished') as finished_runs,
+        (SELECT COUNT(*) FROM runs WHERE status = 'failed') as failed_runs,
+        (SELECT COUNT(*) FROM runs WHERE status = 'cancelled') as cancelled_runs,
+        (SELECT COUNT(*) FROM runs WHERE status = 'lost') as lost_runs
+    `);
+
+    const workers = await JobService.listWorkers();
+
+    return {
+      jobs_total: stats?.total_jobs ?? 0,
+      bootstrap_images_ready: stats?.ready_images ?? 0,
+      runs_total: stats?.total_runs ?? 0,
+      runs_by_status: {
+        created: stats?.created_runs ?? 0,
+        running: stats?.running_runs ?? 0,
+        finished: stats?.finished_runs ?? 0,
+        failed: stats?.failed_runs ?? 0,
+        cancelled: stats?.cancelled_runs ?? 0,
+        lost: stats?.lost_runs ?? 0,
+      },
+      workers_online: workers.filter((worker) => worker.status !== 'offline').length,
+      workers_total: workers.length,
+    };
+  }
+
+  static async getActiveRuns(): Promise<Array<Run & { job_title: string }>> {
+    const rows = await allAsync<any>(`
+      SELECT
+        r.*,
+        j.title as job_title
+      FROM runs r
+      JOIN jobs j ON r.job_id = j.id
+      WHERE r.status IN ('created', 'running')
+      ORDER BY datetime(r.created_at) DESC
+    `);
+
+    return rows.map((row) => ({
+      id: row.id,
+      job_id: row.job_id,
+      share_token_id: row.share_token_id,
+      bootstrap_image_id: row.bootstrap_image_id,
+      worker_id: row.worker_id ?? null,
+      worker_name: row.worker_name ?? null,
+      status: row.status,
+      stage: row.stage ?? null,
+      progress: row.progress ?? null,
+      status_message: row.status_message ?? null,
+      result: row.result ?? null,
+      metrics: parseJson(row.metrics, null),
+      run_manifest: parseJson(row.run_manifest, {
+        run_id: row.id,
+        job_id: row.job_id,
+        bootstrap_image: {
+          id: row.bootstrap_image_id,
+          full_image_name: '',
+          name: '',
+        },
+        workspace: {
+          root: '/workspace',
+          artifacts_dir: '/workspace/artifacts',
+          tmp_dir: '/workspace/tmp',
+        },
+        environment_variables: {},
+        entrypoint: '',
+        entrypoint_args: [],
+        working_dir: '/workspace',
+        files: [],
+        control: {
+          start_url: '',
+          heartbeat_url: '',
+          logs_url: '',
+          progress_url: '',
+          finish_url: '',
+          cancel_url: '',
+        },
+        artifacts: {
+          upload_url: '',
+        },
+      }),
+      started_at: row.started_at ?? null,
+      finished_at: row.finished_at ?? null,
+      last_heartbeat_at: row.last_heartbeat_at ?? null,
+      cancel_requested_at: row.cancel_requested_at ?? null,
+      cancel_reason: row.cancel_reason ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      job_title: row.job_title,
+    }));
+  }
+
+  static async getActiveWorkers() {
+    const workers = await JobService.listWorkers();
+    return workers.filter((worker) => worker.status !== 'offline');
+  }
+
+  static async getRecentEvents() {
+    const rows = await allAsync<any>(`
+      SELECT
+        r.id as run_id,
+        r.job_id,
+        j.title as job_title,
+        r.status,
+        r.stage,
+        r.updated_at as created_at
+      FROM runs r
+      JOIN jobs j ON r.job_id = j.id
+      WHERE r.status NOT IN ('created', 'running')
+      ORDER BY datetime(r.updated_at) DESC
+      LIMIT 20
+    `);
+
+    return rows.map((row) => ({
+      id: row.run_id,
+      type: 'run_status',
+      status: row.status,
+      message: `${row.job_title} · ${row.status}`,
+      details: row.stage ? `Run ${row.run_id} · ${row.stage}` : `Run ${row.run_id}`,
+      created_at: row.created_at,
+    }));
+  }
+}
+
+
+path: /src/services/job.service.ts
+----------------------------------------
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  BootstrapImageLogModel,
+  BootstrapImageModel,
+  JobFileModel,
+  JobModel,
+  LogModel,
+  RunArtifactModel,
+  RunEventModel,
+  RunModel,
+  ShareTokenModel,
+  WorkerModel,
+} from '../models';
+import {
+  ExecutionLanguage,
+  Job,
+  JobFile,
+  LogLevel,
+  RunManifest,
+  RunManifestFile,
+  RunStatus,
+  ShareToken,
+  Worker,
+  WorkspaceLayout,
+} from '../models/job';
+import { config } from '../utils/config';
+import {
+  assertValidCreateJobPayload,
+  assertValidRelativePath,
+  CreateJobPayload,
+} from '../utils/job-validation';
+
+const WORKSPACE: WorkspaceLayout = {
+  root: '/workspace',
+  artifacts_dir: '/workspace/artifacts',
+  tmp_dir: '/workspace/tmp',
+};
+
+const makeId = (prefix: string): string => `${prefix}_${uuidv4().replace(/-/g, '')}`;
+
+const normalizePath = (value: string): string =>
+  path.posix.normalize(value.replace(/\\/g, '/')).replace(/^\/+/, '');
+
+const asString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+};
+
+const asNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const asBoolean = (value: unknown, fallback = false): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off', ''].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
+const isTokenExpired = (token: ShareToken): boolean => {
+  if (!token.expires_at) return false;
+  return new Date(token.expires_at).getTime() <= Date.now();
+};
+
+const isTokenExhausted = (token: ShareToken): boolean => {
+  if (token.max_claims == null) return false;
+  return token.claim_count >= token.max_claims;
+};
+
+const isRunTerminal = (status: RunStatus): boolean =>
+  ['finished', 'failed', 'cancelled', 'lost'].includes(status);
+
+const normalizeWorkerStatus = (worker: Worker): Worker => {
+  if (!worker.last_seen_at) {
+    return { ...worker, status: 'offline' };
+  }
+
+  const lastSeenMs = new Date(worker.last_seen_at).getTime();
+  if (Number.isNaN(lastSeenMs)) {
+    return { ...worker, status: 'offline' };
+  }
+
+  const ageSeconds = (Date.now() - lastSeenMs) / 1000;
+
+  if (ageSeconds > config.workerOfflineTimeoutSeconds) {
+    return { ...worker, status: 'offline' };
+  }
+
+  if (worker.current_run_id) {
+    return { ...worker, status: 'busy' };
+  }
+
+  return { ...worker, status: 'online' };
+};
+
+const buildDockerCommand = (job: Job, token: string, baseUrl: string, image: string): string => {
+  const parts: string[] = ['docker run --pull always --rm'];
+
+  if (job.resources?.gpus) {
+    parts.push(`--gpus ${job.resources.gpus}`);
+  }
+  if (job.resources?.shm_size) {
+    parts.push(`--shm-size ${job.resources.shm_size}`);
+  }
+  if (job.resources?.memory_limit) {
+    parts.push(`--memory ${job.resources.memory_limit}`);
+  }
+  if (job.resources?.cpu_limit) {
+    parts.push(`--cpus ${job.resources.cpu_limit}`);
+  }
+
+  parts.push(`-e JOB_CONFIG_URL="${baseUrl}/api/run-config?token=${token}"`);
+  parts.push(image);
+
+  return parts.join(' \\\n  ');
+};
+
+export class JobService {
+  static toCreateJobData = (payload: CreateJobPayload, id: string) => ({
+    id,
+    title: payload.title,
+    description: payload.description ?? null,
+    owner_id: payload.owner_id ?? null,
+    bootstrap_image_id: payload.bootstrap_image_id,
+    execution_language: payload.execution_language,
+    environment_variables: payload.environment_variables ?? {},
+    resources: payload.resources ?? null,
+    entrypoint: payload.entrypoint,
+    entrypoint_args: payload.entrypoint_args ?? [],
+    working_dir: payload.working_dir ?? '/workspace',
+  });
+
+  static async createJob(payload: unknown) {
+    const normalized = assertValidCreateJobPayload(payload);
+    const bootstrapImage = await BootstrapImageModel.findById(normalized.bootstrap_image_id);
+
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    const id = makeId('job');
+    await JobModel.create(this.toCreateJobData(normalized, id));
+
+    const created = await JobModel.findById(id);
+    if (!created) {
+      throw new Error('Failed to load created job');
+    }
+
+    return created;
+  }
+
+  static async listJobs(filters: {
+    search?: string;
+    status?: RunStatus;
+    limit?: number;
+    offset?: number;
+  }) {
+    return JobModel.list(filters);
+  }
+
+  static async getJob(jobId: string) {
+    return JobModel.findById(jobId);
+  }
+
+  static async getJobDetails(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) return null;
+
+    const [bootstrapImage, files, shareTokens, totalRuns, activeRunsCount] = await Promise.all([
+      BootstrapImageModel.findById(job.bootstrap_image_id),
+      JobFileModel.listByJobId(jobId),
+      ShareTokenModel.listByJobId(jobId),
+      RunModel.countByJobId(jobId),
+      RunModel.countActiveByJobId(jobId),
+    ]);
+
+    return {
+      job,
+      bootstrap_image: bootstrapImage,
+      files,
+      share_tokens: shareTokens.map((t: ShareToken) => this.normalizeShareToken(t)),
+      stats: {
+        total_runs: totalRuns,
+        active_runs: activeRunsCount,
+      },
+    };
+  }
+
+  static async updateJob(jobId: string, payload: Partial<Job>) {
+    const existing = await JobModel.findById(jobId);
+    if (!existing) throw new Error('Job not found');
+
+    const merged = {
+      ...existing,
+      ...payload,
+      id: jobId,
+    };
+
+    const normalized = assertValidCreateJobPayload(merged);
+    const bootstrapImage = await BootstrapImageModel.findById(normalized.bootstrap_image_id);
+
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    await JobModel.update(jobId, normalized as Partial<Job>);
+
+    const updated = await JobModel.findById(jobId);
+    if (!updated) {
+      throw new Error('Failed to load updated job');
+    }
+
+    return updated;
+  }
+
+  static async deleteJob(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const activeRuns = await RunModel.countActiveByJobId(jobId);
+    if (activeRuns > 0) {
+      throw new Error('Cannot delete job with active runs');
+    }
+
+    await JobFileModel.deleteByJobId(jobId);
+    await JobModel.delete(jobId);
+  }
+
+  static async cloneJob(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const files = await JobFileModel.listByJobId(jobId);
+    const newId = makeId('job');
+
+    await JobModel.create({
+      ...job,
+      id: newId,
+      title: `${job.title} (copy)`,
+    });
+
+    for (const file of files) {
+      const fileId = makeId('jf');
+      if (file.source_type === 'inline') {
+        await JobFileModel.upsertInline({
+          id: fileId,
+          job_id: newId,
+          relative_path: file.relative_path,
+          filename: file.filename,
+          inline_content: file.inline_content || '',
+          mime_type: file.mime_type,
+          is_executable: file.is_executable,
+        });
+      } else {
+        await JobFileModel.upsertUploaded({
+          id: fileId,
+          job_id: newId,
+          relative_path: file.relative_path,
+          filename: file.filename,
+          storage_key: file.storage_key || '',
+          mime_type: file.mime_type,
+          size_bytes: file.size_bytes,
+          is_executable: file.is_executable,
+        });
+      }
+    }
+
+    const cloned = await JobModel.findById(newId);
+    if (!cloned) {
+      throw new Error('Failed to load cloned job');
+    }
+
+    return cloned;
+  }
+
+  static async listJobRuns(jobId: string, limit = 10, offset = 0) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const runs = await RunModel.listByJobIdPaginated(jobId, limit, offset);
+    const total = await RunModel.countByJobId(jobId);
+    return {
+      items: runs,
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  static async listJobShareTokens(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const tokens = await ShareTokenModel.listByJobId(jobId);
+    return tokens.map((token: ShareToken) => this.normalizeShareToken(token));
+  }
+
+  static async listJobFiles(jobId: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    return JobFileModel.listByJobId(jobId);
+  }
+
+  static async saveInlineJobFile(data: {
+    job_id: string;
+    relative_path: string;
+    content: string;
+    mime_type?: string;
+    is_executable?: boolean;
+  }) {
+    const job = await JobModel.findById(data.job_id);
+    if (!job) throw new Error('Job not found');
+
+    const relativePath = assertValidRelativePath(data.relative_path);
+    const filename = path.posix.basename(relativePath);
+
+    await JobFileModel.upsertInline({
+      id: makeId('jf'),
+      job_id: data.job_id,
+      relative_path: relativePath,
+      filename,
+      inline_content: data.content,
+      mime_type: data.mime_type || 'text/plain; charset=utf-8',
+      is_executable: Boolean(data.is_executable),
+    });
+
+    const saved = await JobFileModel.findByJobIdAndPath(data.job_id, relativePath);
+    if (!saved) {
+      throw new Error('Failed to save job file');
+    }
+
+    return saved;
+  }
+
+  static async registerUploadedJobFile(data: {
+    job_id: string;
+    relative_path: string;
+    filename: string;
+    storage_key: string;
+    mime_type: string;
+    size_bytes: number;
+    is_executable?: boolean;
+  }) {
+    const job = await JobModel.findById(data.job_id);
+    if (!job) throw new Error('Job not found');
+
+    const relativePath = assertValidRelativePath(data.relative_path);
+
+    await JobFileModel.upsertUploaded({
+      id: makeId('jf'),
+      job_id: data.job_id,
+      relative_path: relativePath,
+      filename: data.filename,
+      storage_key: data.storage_key,
+      mime_type: data.mime_type,
+      size_bytes: data.size_bytes,
+      is_executable: Boolean(data.is_executable),
+    });
+
+    const saved = await JobFileModel.findByJobIdAndPath(data.job_id, relativePath);
+    if (!saved) {
+      throw new Error('Failed to register uploaded job file');
+    }
+
+    return saved;
+  }
+
+  static async getJobFile(jobId: string, relativePath: string): Promise<JobFile> {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = assertValidRelativePath(relativePath);
+    const file = await JobFileModel.findByJobIdAndPath(jobId, normalized);
+    if (!file) {
+      throw new Error('Job file not found');
+    }
+
+    return file;
+  }
+
+  static async deleteJobFile(jobId: string, relativePath: string) {
+    await this.getJobFile(jobId, relativePath);
+    await JobFileModel.deleteByJobIdAndPath(jobId, assertValidRelativePath(relativePath));
+  }
+
+  static async getRunJobFile(runId: string, relativePath: string): Promise<JobFile> {
+    const run = await RunModel.findById(runId);
+    if (!run) throw new Error('Run not found');
+    return this.getJobFile(run.job_id, relativePath);
+  }
+
+  static async getShareToken(tokenId: string, baseUrl: string) {
+    const token = await ShareTokenModel.findById(tokenId);
+    if (!token) return null;
+
+    const job = await JobModel.findById(token.job_id);
+    if (!job) return null;
+
+    const bootstrapImage = await BootstrapImageModel.findById(job.bootstrap_image_id);
+    if (!bootstrapImage) return null;
+
+    const dockerCommand = buildDockerCommand(
+      job,
+      token.token,
+      baseUrl,
+      bootstrapImage.full_image_name,
+    );
+
+    return {
+      ...this.normalizeShareToken(token),
+      base_url: baseUrl,
+      claim_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      share_url: `${baseUrl}/api/run-config?token=${token.token}`,
+      docker_image: bootstrapImage.full_image_name,
+      docker_command: dockerCommand,
+      worker_command: dockerCommand,
+    };
+  }
+
+  private static normalizeShareToken(token: ShareToken) {
+    return {
+      ...token,
+      remaining_claims:
+        token.max_claims != null ? Math.max(0, token.max_claims - token.claim_count) : null,
+    };
+  }
+
+  static async revokeShareToken(tokenId: string) {
+    const token = await ShareTokenModel.findById(tokenId);
+    if (!token) throw new Error('Share token not found');
+
+    await ShareTokenModel.revoke(tokenId);
+  }
+
+  static async createShareToken(
+    jobId: string,
+    options: {
+      expiresInSeconds?: number;
+      expiresAt?: string | null;
+      maxClaims?: number;
+    },
+    baseUrl: string,
+  ) {
+    const job = await JobModel.findById(jobId);
+    if (!job) {
+      throw new Error('Job not found');
+    }
+
+    const bootstrapImage = await BootstrapImageModel.findById(job.bootstrap_image_id);
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    const shareTokenId = makeId('st');
+    const token = `cf_${uuidv4().replace(/-/g, '')}`;
+
+    let expiresAt: string | null = null;
+
+    if (options.expiresAt) {
+      const parsed = new Date(options.expiresAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiresAt = parsed.toISOString();
+      }
+    } else if (options.expiresInSeconds && options.expiresInSeconds > 0) {
+      expiresAt = new Date(Date.now() + options.expiresInSeconds * 1000).toISOString();
+    }
+
+    await ShareTokenModel.create({
+      id: shareTokenId,
+      job_id: jobId,
+      token,
+      expires_at: expiresAt,
+      max_claims: options.maxClaims ?? null,
+    });
+
+    const created = await this.getShareToken(shareTokenId, baseUrl);
+    if (!created) {
+      throw new Error('Failed to create share token');
+    }
+
+    return created;
+  }
+
+  static async claimRunByToken(token: string, baseUrl: string) {
+    const shareToken = await ShareTokenModel.findByToken(token);
+    if (!shareToken) {
+      throw new Error('Share token not found');
+    }
+
+    if (shareToken.revoked) {
+      throw new Error('Share token revoked');
+    }
+
+    if (isTokenExpired(shareToken)) {
+      throw new Error('Share token expired');
+    }
+
+    if (isTokenExhausted(shareToken)) {
+      throw new Error('Share token exhausted');
+    }
+
+    const job = await JobModel.findById(shareToken.job_id);
+    if (!job) {
+      throw new Error('Job not found for share token');
+    }
+
+    const bootstrapImage = await BootstrapImageModel.findById(job.bootstrap_image_id);
+    if (!bootstrapImage || bootstrapImage.status !== 'completed') {
+      throw new Error('Bootstrap image not found or not ready');
+    }
+
+    const jobFiles = await JobFileModel.listByJobId(job.id);
+    const runId = makeId('run');
+
+    const manifestFiles: RunManifestFile[] = jobFiles.map((file): RunManifestFile => {
+      const relativePath = asString(
+        (file as { relative_path?: unknown }).relative_path,
+        asString((file as { filename?: unknown }).filename, 'file'),
+      ).trim();
+
+      const filename =
+        asString((file as { filename?: unknown }).filename).trim() ||
+        relativePath.split('/').filter(Boolean).pop() ||
+        'file';
+
+      const sourceTypeRaw = asString((file as { source_type?: unknown }).source_type, 'upload');
+      const sourceType: RunManifestFile['source_type'] =
+        sourceTypeRaw === 'inline' ? 'inline' : 'upload';
+
+      return {
+        relative_path: relativePath,
+        filename,
+        size_bytes: asNumber((file as { size_bytes?: unknown }).size_bytes, 0),
+        mime_type: asString(
+          (file as { mime_type?: unknown }).mime_type,
+          'application/octet-stream',
+        ),
+        is_executable: asBoolean((file as { is_executable?: unknown }).is_executable, false),
+        source_type: sourceType,
+        download_url:
+          `${baseUrl}/api/runs/${runId}/job-files/content?relativePath=` +
+          encodeURIComponent(relativePath),
+      };
+    });
+
+    const executionLanguage =
+      (job.execution_language ||
+        bootstrapImage.execution_language ||
+        'python') as ExecutionLanguage;
+
+    const runManifest: RunManifest = {
+      run_id: runId,
+      job_id: job.id,
+      execution_language: executionLanguage,
+      bootstrap_image: {
+        id: bootstrapImage.id,
+        full_image_name: bootstrapImage.full_image_name,
+        name: bootstrapImage.name,
+      },
+      workspace: WORKSPACE,
+      environment_variables: job.environment_variables,
+      entrypoint: job.entrypoint,
+      entrypoint_args: job.entrypoint_args || [],
+      working_dir: job.working_dir || WORKSPACE.root,
+      files: manifestFiles,
+      control: {
+        start_url: `${baseUrl}/api/runs/start`,
+        heartbeat_url: `${baseUrl}/api/runs/heartbeat`,
+        logs_url: `${baseUrl}/api/runs/logs`,
+        progress_url: `${baseUrl}/api/runs/progress`,
+        finish_url: `${baseUrl}/api/runs/finish`,
+        cancel_url: `${baseUrl}/api/runs/${runId}/cancel`,
+      },
+      artifacts: {
+        upload_url: `${baseUrl}/artifacts/upload-run?runId=${runId}`,
+      },
+    };
+
+    await RunModel.create({
+      id: runId,
+      job_id: job.id,
+      share_token_id: shareToken.id,
+      bootstrap_image_id: bootstrapImage.id,
+      run_manifest: runManifest,
+    });
+
+    await ShareTokenModel.incrementClaim(shareToken.id);
+
+    return {
+      run_id: runId,
+      job_id: job.id,
+      config: runManifest,
+    };
+  }
+
+  static async markRunStarted(
+    runId: string,
+    worker: {
+      id: string;
+      name: string;
+      host?: string | null;
+      capabilities?: Record<string, unknown> | null;
+    },
+  ) {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    if (isRunTerminal(run.status)) {
+      throw new Error(`Run already ${run.status}`);
+    }
+
+    await WorkerModel.upsertHeartbeat({
+      id: worker.id,
+      name: worker.name,
+      host: worker.host ?? null,
+      current_run_id: runId,
+      capabilities: worker.capabilities ?? null,
+      status: 'busy',
+    });
+
+    await RunModel.markRunning(runId, worker.id, worker.name);
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'status',
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+      message: 'Run started',
+      payload: {
+        worker_id: worker.id,
+        worker_name: worker.name,
+      },
+    });
+  }
+
+  static async heartbeatRun(
+    runId: string,
+    worker: {
+      id: string;
+      name: string;
+      host?: string | null;
+      capabilities?: Record<string, unknown> | null;
+    },
+  ): Promise<{ should_stop: boolean; stop_reason?: string }> {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    await WorkerModel.upsertHeartbeat({
+      id: worker.id,
+      name: worker.name,
+      host: worker.host ?? null,
+      current_run_id: runId,
+      capabilities: worker.capabilities ?? null,
+      status: 'busy',
+    });
+
+    if (!isRunTerminal(run.status)) {
+      await RunModel.touchHeartbeat(runId);
+    }
+
+    if (run.status === 'cancelled') {
+      return {
+        should_stop: true,
+        stop_reason: run.cancel_reason || 'Run cancelled',
+      };
+    }
+
+    if (run.status === 'lost') {
+      return {
+        should_stop: true,
+        stop_reason: 'Run marked as lost by orchestrator',
+      };
+    }
+
+    if (run.cancel_requested_at) {
+      return {
+        should_stop: true,
+        stop_reason: run.cancel_reason || 'Run cancellation requested',
+      };
+    }
+
+    if (run.status === 'finished' || run.status === 'failed') {
+      return {
+        should_stop: true,
+        stop_reason: `Run already ${run.status}`,
+      };
+    }
+
+    return { should_stop: false };
+  }
+
+  static async addRunLog(runId: string, message: string, level: LogLevel = 'info') {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    await LogModel.add(runId, message, level);
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'log',
+      level,
+      message,
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+    });
+  }
+
+  static async addRunProgress(data: {
+    run_id: string;
+    stage?: string | null;
+    progress?: number | null;
+    message?: string | null;
+    extra?: Record<string, unknown> | null;
+  }) {
+    const run = await RunModel.findById(data.run_id);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    const normalizedProgress =
+      data.progress == null ? null : Math.max(0, Math.min(100, Number(data.progress)));
+
+    await RunModel.updateProgress({
+      id: data.run_id,
+      stage: data.stage ?? run.stage ?? null,
+      progress: normalizedProgress,
+      status_message: data.message ?? run.status_message ?? null,
+      metrics: data.extra ?? undefined,
+    });
+
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: data.run_id,
+      type: 'progress',
+      stage: data.stage ?? run.stage ?? null,
+      progress: normalizedProgress,
+      message: data.message ?? null,
+      payload: data.extra ?? null,
+    });
+  }
+
+  static async cancelRun(runId: string, reason?: string) {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    if (run.status === 'cancelled') {
+      return {
+        run_id: runId,
+        status: 'cancelled' as const,
+        final: true,
+      };
+    }
+
+    if (run.status === 'finished' || run.status === 'failed' || run.status === 'lost') {
+      throw new Error(`Cannot cancel run in terminal status: ${run.status}`);
+    }
+
+    if (run.status === 'created') {
+      await this.finishRun(runId, 'cancelled', reason || 'Run cancelled before start');
+      return {
+        run_id: runId,
+        status: 'cancelled' as const,
+        final: true,
+      };
+    }
+
+    await RunModel.requestCancel(runId, reason || 'Run cancelled by user');
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'status',
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+      message: reason || 'Run cancellation requested',
+      payload: {
+        cancel_requested: true,
+      },
+    });
+
+    return {
+      run_id: runId,
+      status: run.status,
+      cancel_requested: true,
+      final: false,
+    };
+  }
+
+  static async finishRun(
+    runId: string,
+    status: Extract<RunStatus, 'finished' | 'failed' | 'cancelled' | 'lost'>,
+    result?: string,
+    metrics?: unknown,
+  ) {
+    const run = await RunModel.findById(runId);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    if (isRunTerminal(run.status)) {
+      return;
+    }
+
+    await RunModel.finish(runId, status, result, metrics);
+    await RunEventModel.create({
+      id: makeId('evt'),
+      run_id: runId,
+      type: 'status',
+      stage: run.stage ?? null,
+      progress: run.progress ?? null,
+      message: result || `Run ${status}`,
+      payload: {
+        status,
+        metrics: metrics ?? null,
+      },
+    });
+
+    if (run.worker_id) {
+      await WorkerModel.release(run.worker_id);
+    }
+  }
+
+  static async markStaleRunsLost() {
+    const cutoff = new Date(Date.now() - config.workerOfflineTimeoutSeconds * 1000).toISOString();
+    const staleRuns = await RunModel.listStaleRuns(cutoff);
+
+    const lostRunIds: string[] = [];
+
+    for (const run of staleRuns) {
+      if (isRunTerminal(run.status)) {
+        continue;
+      }
+
+      await this.finishRun(run.id, 'lost', 'Worker heartbeat timed out', {
+        reason: 'heartbeat_timeout',
+        cutoff,
+        last_heartbeat_at: run.last_heartbeat_at,
+      });
+
+      lostRunIds.push(run.id);
+    }
+
+    return lostRunIds;
+  }
+
+  static async registerRunArtifact(data: {
+    run_id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    storage_key: string;
+    mime_type: string;
+  }) {
+    const run = await RunModel.findById(data.run_id);
+    if (!run) {
+      throw new Error('Run not found');
+    }
+
+    const artifactId = makeId('ra');
+
+    await RunArtifactModel.create({
+      id: artifactId,
+      run_id: data.run_id,
+      filename: data.filename,
+      relative_path: normalizePath(data.relative_path),
+      size_bytes: data.size_bytes,
+      storage_key: data.storage_key,
+      mime_type: data.mime_type,
+    });
+
+    return {
+      id: artifactId,
+      run_id: data.run_id,
+      filename: data.filename,
+      relative_path: normalizePath(data.relative_path),
+      size_bytes: data.size_bytes,
+      storage_key: data.storage_key,
+      mime_type: data.mime_type,
+    };
+  }
+
+  static async getRun(runId: string) {
+    const run = await RunModel.findById(runId);
+    if (!run) return null;
+
+    const [logs, events, artifacts, worker] = await Promise.all([
+      LogModel.listByRunId(runId),
+      RunEventModel.listByRunId(runId),
+      RunArtifactModel.listByRunId(runId),
+      run.worker_id ? WorkerModel.findById(run.worker_id) : Promise.resolve(null),
+    ]);
+
+    return {
+      ...run,
+      worker_id: run.worker_id ?? worker?.id ?? null,
+      worker_name: run.worker_name ?? worker?.name ?? null,
+      logs,
+      events,
+      artifacts: artifacts.map((artifact) => {
+        const storageKey = asString((artifact as { storage_key?: unknown }).storage_key, '');
+
+        return {
+          ...artifact,
+          download_path: `/artifacts/download?key=${encodeURIComponent(storageKey)}`,
+          content_path: `/artifacts/content?key=${encodeURIComponent(storageKey)}`,
+        };
+      }),
+    };
+  }
+
+  static async listRunEvents(runId: string) {
+    const run = await RunModel.findById(runId);
+    if (!run) throw new Error('Run not found');
+    return RunEventModel.listByRunId(runId);
+  }
+
+  static async listWorkers() {
+    const workers = await WorkerModel.list();
+    return workers.map(normalizeWorkerStatus);
+  }
+
+  static async getWorker(workerId: string) {
+    const worker = await WorkerModel.findById(workerId);
+    if (!worker) return null;
+    return normalizeWorkerStatus(worker);
+  }
+
+  static async listBootstrapImages(options?: {
+    status?: 'draft' | 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled';
+  }) {
+    return BootstrapImageModel.list(options);
+  }
+
+  static async getBootstrapImage(imageId: string) {
+    return BootstrapImageModel.findById(imageId);
+  }
+
+  static async listBootstrapImageLogs(imageId: string) {
+    const image = await BootstrapImageModel.findById(imageId);
+    if (!image) {
+      throw new Error('Bootstrap image not found');
+    }
+
+    return BootstrapImageLogModel.listByImageId(imageId);
+  }
+}
+
+
+path: /src/services/queue.service.ts
+----------------------------------------
+import { Queue, Worker, Job } from 'bullmq';
+import IORedis from 'ioredis';
+import { config } from '../utils/config';
+
+let connection: IORedis | null = null;
+let jobQueue: Queue | null = null;
+
+export const getQueue = () => {
+  if (!jobQueue) {
+    if (!connection) {
+      connection = new IORedis(config.redisUrl, {
+        maxRetriesPerRequest: null,
+        lazyConnect: true,
+      });
+    }
+    jobQueue = new Queue('job-queue', { connection });
+  }
+  return jobQueue;
+};
+
+export const initWorker = () => {
+  if (!connection) {
+    connection = new IORedis(config.redisUrl, {
+      maxRetriesPerRequest: null,
+      lazyConnect: true,
+    });
+  }
+  const worker = new Worker(
+    'job-queue',
+    async (job: Job) => {
+      console.log(`Processing job ${job.id}: ${job.data.command}`);
+    },
+    { connection },
+  );
+
+  worker.on('completed', (job) => {
+    console.log(`Job ${job.id} completed`);
+  });
+
+  worker.on('failed', (job, err) => {
+    console.error(`Job ${job?.id} failed with ${err.message}`);
+  });
+
+  return worker;
+};
+
+export class QueueService {
+  static async addJob(jobId: string, command: string) {
+    const queue = getQueue();
+    await queue.add('execute-command', { jobId, command }, { jobId });
+  }
+}
+
+
+path: /src/services/run-watchdog.service.ts
+----------------------------------------
+import { JobService } from './job.service';
+
+export class RunWatchdogService {
+  static async sweep(): Promise<string[]> {
+    return JobService.markStaleRunsLost();
+  }
+}
+
+
+path: /src/utils/config.ts
+----------------------------------------
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const normalizeBaseUrl = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  return value.replace(/\/+$/, '');
+};
+
+export const config = {
+  port: parseInt(process.env.PORT || '3000', 10),
+  databaseUrl: process.env.DATABASE_URL || 'data/db.sqlite',
+  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  minioEndpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
+  minioAccessKey: process.env.MINIO_ACCESS_KEY || 'cloudforge',
+  minioSecretKey: process.env.MINIO_SECRET_KEY || 'cloudforge123',
+  minioBucket: process.env.MINIO_BUCKET || 'cloud-forge',
+  publicBaseUrl: normalizeBaseUrl(process.env.PUBLIC_BASE_URL),
+  workerHeartbeatIntervalSeconds: parseInt(
+    process.env.WORKER_HEARTBEAT_INTERVAL_SECONDS || '10',
+    10,
+  ),
+  workerOfflineTimeoutSeconds: parseInt(process.env.WORKER_OFFLINE_TIMEOUT_SECONDS || '45', 10),
+  runWatchdogIntervalSeconds: parseInt(process.env.RUN_WATCHDOG_INTERVAL_SECONDS || '10', 10),
+  publishedWorkerImage: process.env.PUBLISHED_WORKER_IMAGE || 'xproger/cloud-forge-worker',
+  publishedWorkerTag: process.env.PUBLISHED_WORKER_TAG || '0.1.0',
+};
+
+
+path: /src/utils/job-validation.ts
+----------------------------------------
+import path from 'path';
+import { ExecutionLanguage, RuntimeResources } from '../models/job';
+
+export interface CreateJobPayload {
+  title: string;
+  description?: string | null;
+  owner_id?: string | null;
+  bootstrap_image_id: string;
+  execution_language: ExecutionLanguage;
+  environment_variables: Record<string, string>;
+  resources?: RuntimeResources | null;
+  entrypoint: string;
+  entrypoint_args: string[];
+  working_dir?: string | null;
+}
+
+export interface JobValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  normalized?: CreateJobPayload;
+}
+
+export class JobValidationError extends Error {
+  details: string[];
+
+  constructor(message: string, details: string[]) {
+    super(message);
+    this.name = 'JobValidationError';
+    this.details = details;
+  }
+}
+
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const GPU_VALUE_RE = /^(all|\d+(,\d+)*)$/;
+const SIZE_RE = /^\d+(b|kb|mb|gb|tb|k|m|g|t)$/i;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const asString = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+};
+
+const normalizeRelativePath = (value: string): string => {
+  const normalized = path.posix.normalize(value.replace(/\\/g, '/')).replace(/^\/+/, '');
+  if (
+    !normalized ||
+    normalized === '.' ||
+    normalized.startsWith('../') ||
+    normalized.includes('/../')
+  ) {
+    throw new Error(`invalid relative path "${value}"`);
+  }
+  return normalized;
+};
+
+const normalizeWorkingDir = (value: string): string => {
+  const normalized = value.replace(/\\/g, '/').trim();
+  if (!normalized) {
+    throw new Error('working_dir must not be empty');
+  }
+
+  if (normalized.startsWith('/')) {
+    if (!normalized.startsWith('/workspace')) {
+      throw new Error('working_dir absolute path must stay under /workspace');
+    }
+    return normalized.replace(/\/+$/, '') || '/workspace';
+  }
+
+  return `/workspace/${normalizeRelativePath(normalized)}`;
+};
+
+const normalizeResources = (
+  resourcesValue: unknown,
+  errors: string[],
+): RuntimeResources | null | undefined => {
+  if (resourcesValue == null) return undefined;
+  if (!isPlainObject(resourcesValue)) {
+    errors.push('resources must be an object');
+    return undefined;
+  }
+
+  const gpus = resourcesValue.gpus == null ? undefined : String(resourcesValue.gpus).trim();
+  const shmSize =
+    resourcesValue.shm_size == null ? undefined : String(resourcesValue.shm_size).trim();
+  const cpuLimit = resourcesValue.cpu_limit == null ? undefined : Number(resourcesValue.cpu_limit);
+  const memoryLimit =
+    resourcesValue.memory_limit == null ? undefined : String(resourcesValue.memory_limit).trim();
+
+  if (gpus && !GPU_VALUE_RE.test(gpus)) {
+    errors.push('resources.gpus must be "all" or comma-separated ids');
+  }
+
+  if (shmSize && !SIZE_RE.test(shmSize)) {
+    errors.push('resources.shm_size has invalid size format');
+  }
+
+  if (memoryLimit && !SIZE_RE.test(memoryLimit)) {
+    errors.push('resources.memory_limit has invalid size format');
+  }
+
+  if (cpuLimit != null && (!Number.isFinite(cpuLimit) || cpuLimit <= 0)) {
+    errors.push('resources.cpu_limit must be a positive number');
+  }
+
+  return {
+    gpus,
+    shm_size: shmSize,
+    cpu_limit: cpuLimit,
+    memory_limit: memoryLimit,
+  };
+};
+
+const inferExecutionLanguage = (rawValue: string | null, entrypointRaw: string | null): ExecutionLanguage => {
+  if (rawValue === 'python' || rawValue === 'javascript') {
+    return rawValue;
+  }
+
+  const lowerEntrypoint = (entrypointRaw || '').toLowerCase();
+  if (
+    lowerEntrypoint.endsWith('.js') ||
+    lowerEntrypoint.endsWith('.mjs') ||
+    lowerEntrypoint.endsWith('.cjs')
+  ) {
+    return 'javascript';
+  }
+
+  return 'python';
+};
+
+export const validateCreateJobPayload = (payload: unknown): JobValidationResult => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!isPlainObject(payload)) {
+    return {
+      valid: false,
+      errors: ['payload must be an object'],
+      warnings,
+    };
+  }
+
+  const title = asString(payload.title);
+  const description = payload.description == null ? null : asString(payload.description);
+  const ownerId = payload.owner_id == null ? null : asString(payload.owner_id);
+  const bootstrapImageId = asString(payload.bootstrap_image_id);
+  const entrypointRaw = asString(payload.entrypoint);
+  const workingDirRaw = payload.working_dir == null ? null : asString(payload.working_dir);
+  const executionLanguageRaw = asString(payload.execution_language);
+  const resources = normalizeResources(payload.resources, errors);
+
+  if (!title) {
+    errors.push('title is required');
+  } else if (title.length > 200) {
+    errors.push('title must be at most 200 characters');
+  }
+
+  if (!bootstrapImageId) {
+    errors.push('bootstrap_image_id is required');
+  }
+
+  if (
+    executionLanguageRaw != null &&
+    executionLanguageRaw !== 'python' &&
+    executionLanguageRaw !== 'javascript'
+  ) {
+    errors.push('execution_language must be "python" or "javascript"');
+  }
+
+  let entrypoint: string | null = null;
+  if (!entrypointRaw) {
+    errors.push('entrypoint is required');
+  } else {
+    try {
+      entrypoint = normalizeRelativePath(entrypointRaw);
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'entrypoint is invalid');
+    }
+  }
+
+  const entrypointArgsRaw = payload.entrypoint_args;
+  const entrypointArgs: string[] = [];
+
+  if (entrypointArgsRaw != null) {
+    if (!Array.isArray(entrypointArgsRaw)) {
+      errors.push('entrypoint_args must be an array of strings');
+    } else {
+      for (const [index, arg] of entrypointArgsRaw.entries()) {
+        if (typeof arg !== 'string') {
+          errors.push(`entrypoint_args[${index}] must be a string`);
+          continue;
+        }
+        entrypointArgs.push(arg);
+      }
+    }
+  }
+
+  let workingDir: string | null = '/workspace';
+  if (workingDirRaw) {
+    try {
+      workingDir = normalizeWorkingDir(workingDirRaw);
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'working_dir is invalid');
+    }
+  }
+
+  const environmentVariablesRaw = payload.environment_variables;
+  const environmentVariables: Record<string, string> = {};
+
+  if (environmentVariablesRaw != null) {
+    if (!isPlainObject(environmentVariablesRaw)) {
+      errors.push('environment_variables must be an object');
+    } else {
+      for (const [key, value] of Object.entries(environmentVariablesRaw)) {
+        if (!ENV_KEY_RE.test(key)) {
+          errors.push(`environment_variables.${key} has invalid key format`);
+          continue;
+        }
+        if (value == null) {
+          errors.push(`environment_variables.${key} must not be null`);
+          continue;
+        }
+        environmentVariables[key] = String(value);
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+
+  return {
+    valid: true,
+    errors,
+    warnings,
+    normalized: {
+      title: title!,
+      description,
+      owner_id: ownerId,
+      bootstrap_image_id: bootstrapImageId!,
+      execution_language: inferExecutionLanguage(executionLanguageRaw, entrypointRaw),
+      environment_variables: environmentVariables,
+      resources: resources ?? null,
+      entrypoint: entrypoint!,
+      entrypoint_args: entrypointArgs,
+      working_dir: workingDir,
+    },
+  };
+};
+
+export const assertValidCreateJobPayload = (payload: unknown): CreateJobPayload => {
+  const result = validateCreateJobPayload(payload);
+
+  if (!result.valid || !result.normalized) {
+    throw new JobValidationError('Job payload validation failed', result.errors);
+  }
+
+  return result.normalized;
+};
+
+export const assertValidRelativePath = (value: unknown, fieldName = 'relative_path'): string => {
+  const raw = asString(value);
+
+  if (!raw) {
+    throw new JobValidationError('File path validation failed', [`${fieldName} is required`]);
+  }
+
+  try {
+    return normalizeRelativePath(raw);
+  } catch (err) {
+    throw new JobValidationError('File path validation failed', [
+      err instanceof Error ? err.message : `${fieldName} is invalid`,
+    ]);
+  }
+};
+
+
+path: /src/utils/logger.ts
+----------------------------------------
+import pino from 'pino';
+
+export const logger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
+
+
+path: /tests/e2e/smoke-flow.test.ts
+----------------------------------------
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import Fastify, { FastifyInstance } from 'fastify';
+import fastifyMultipart from '@fastify/multipart';
+import { initDb } from '../../src/db/index';
+import db from '../../src/db/index';
+import jobsRoutes from '../../src/routes/jobs';
+import workerRoutes from '../../src/routes/worker';
+import artifactsRoutes from '../../src/routes/artifacts';
+
+// Mock ArtifactService to avoid real MinIO calls in this e2e test
+vi.mock('../../src/services/artifact.service', () => ({
+  ArtifactService: {
+    ensureBucket: vi.fn().mockResolvedValue(undefined),
+    uploadRunArtifact: vi.fn().mockResolvedValue({
+      id: 'mock_artifact_id',
+      filename: 'output.txt',
+      relative_path: 'output.txt',
+      size_bytes: 14,
+      storage_key: 'runs/run_id/artifacts/mock_artifact_id/output.txt',
+    }),
+    getDownloadUrl: vi.fn().mockResolvedValue('http://mock-minio/download'),
+    uploadJobFile: vi.fn(),
+  },
+}));
+
+describe('Smoke E2E: Full Job & Run Lifecycle', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = Fastify({ logger: false });
+    await initDb();
+
+    await app.register(fastifyMultipart);
+    await app.register(jobsRoutes);
+    await app.register(workerRoutes);
+    await app.register(artifactsRoutes);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => {
+      db.serialize(() => {
+        db.run('DELETE FROM jobs', () => {});
+        db.run('DELETE FROM share_tokens', () => {});
+        db.run('DELETE FROM runs', () => {});
+        db.run('DELETE FROM logs', () => {});
+        db.run('DELETE FROM run_artifacts', () => {});
+        db.run('DELETE FROM workers', () => resolve());
+      });
+    });
+  });
+
+  it('should complete the full happy path flow', async () => {
+    // 1. Setup a dummy bootstrap image
+    const bootstrap_id = 'img_smoke_test';
+    await new Promise<void>((resolve, reject) => {
+      db.run(
+        `INSERT INTO bootstrap_images (id, name, base_image, tag, full_image_name, dockerfile_text, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [bootstrap_id, 'Smoke Image', 'node:20-slim', 'latest', 'node:20-slim', 'FROM node:20-slim', 'completed'],
+        (err) => (err ? reject(err) : resolve()),
+      );
+    });
+
+    const validateRes = await app.inject({
+      method: 'POST',
+      url: '/jobs/validate',
+      payload: {
+        title: 'Smoke Test Job',
+        bootstrap_image_id: bootstrap_id,
+        entrypoint: 'main.js',
+      },
+    });
+
+    expect(validateRes.statusCode).toBe(200);
+    expect(validateRes.json().valid).toBe(true);
+
+    const createJobRes = await app.inject({
+      method: 'POST',
+      url: '/jobs',
+      payload: {
+        title: 'Smoke Test Job',
+        bootstrap_image_id: bootstrap_id,
+        entrypoint: 'main.js',
+      },
+    });
+
+    expect(createJobRes.statusCode).toBe(201);
+    const { id: job_id } = createJobRes.json() as { id: string };
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/jobs/${job_id}`,
+      payload: {
+        description: 'Updated description',
+      },
+    });
+
+    expect(patchRes.statusCode).toBe(200);
+
+    const cloneRes = await app.inject({
+      method: 'POST',
+      url: `/jobs/${job_id}/clone`,
+    });
+
+    expect(cloneRes.statusCode).toBe(201);
+    const { id: cloned_job_id } = cloneRes.json() as { id: string };
+    expect(cloned_job_id).not.toBe(job_id);
+
+    const createTokenRes = await app.inject({
+      method: 'POST',
+      url: `/jobs/${job_id}/share-tokens`,
+      payload: {
+        expires_in_seconds: 3600,
+        max_claims: 1,
+      },
+    });
+
+    expect(createTokenRes.statusCode).toBe(201);
+
+    const {
+      token,
+      docker_image,
+      docker_command,
+    } = createTokenRes.json() as {
+      token: string;
+      docker_image: string;
+      docker_command: string;
+    };
+
+    expect(docker_image).toBe('node:20-slim');
+    expect(docker_command).toContain('node:20-slim');
+    expect(docker_command).toContain(token);
+
+    const claimRes = await app.inject({
+      method: 'GET',
+      url: '/api/run-config',
+      query: { token },
+    });
+
+    expect(claimRes.statusCode).toBe(200);
+    const { run_id } = claimRes.json() as { run_id: string };
+
+    const startRes = await app.inject({
+      method: 'POST',
+      url: '/api/runs/start',
+      payload: {
+        run_id,
+        worker_id: 'smoke_worker_1',
+        worker_name: 'Smoke Worker',
+      },
+    });
+
+    expect(startRes.statusCode).toBe(200);
+
+    const logRes = await app.inject({
+      method: 'POST',
+      url: '/api/runs/logs',
+      payload: {
+        run_id,
+        message: 'Job started',
+        level: 'info',
+      },
+    });
+
+    expect(logRes.statusCode).toBe(200);
+
+    const hbRes = await app.inject({
+      method: 'POST',
+      url: '/api/runs/heartbeat',
+      payload: {
+        run_id,
+        worker_id: 'smoke_worker_1',
+        worker_name: 'Smoke Worker',
+      },
+    });
+
+    expect(hbRes.statusCode).toBe(200);
+    expect(hbRes.json().should_stop).toBe(false);
+
+    const artifactRes = await app.inject({
+      method: 'POST',
+      url: '/artifacts/upload-run',
+      query: { runId: run_id, relativePath: 'output.txt' },
+      headers: { 'content-type': 'multipart/form-data; boundary=bound' },
+      payload:
+        '--bound\r\n' +
+        'Content-Disposition: form-data; name="file"; filename="output.txt"\r\n' +
+        'Content-Type: text/plain\r\n\r\n' +
+        'hello artifact\r\n' +
+        '--bound--\r\n',
+    });
+
+    expect(artifactRes.statusCode).toBe(200);
+
+    const finishRes = await app.inject({
+      method: 'POST',
+      url: '/api/runs/finish',
+      payload: {
+        run_id,
+        status: 'finished',
+        result: 'Success',
+        metrics: { duration_ms: 500 },
+      },
+    });
+
+    expect(finishRes.statusCode).toBe(200);
+
+    const runDetailsRes = await app.inject({
+      method: 'GET',
+      url: `/api/runs/${run_id}`,
+    });
+
+    expect(runDetailsRes.statusCode).toBe(200);
+    const runDetails = runDetailsRes.json() as {
+      status: string;
+      logs: Array<{ message: string }>;
+      artifacts: Array<{ filename: string }>;
+    };
+
+    expect(runDetails.status).toBe('finished');
+    expect(runDetails.logs.length).toBeGreaterThan(0);
+    expect(runDetails.logs[0].message).toBe('Job started');
+    expect(runDetails.artifacts.length).toBeGreaterThan(0);
+    expect(runDetails.artifacts[0].filename).toBe('output.txt');
+
+    const activeTokenRes = await app.inject({
+      method: 'POST',
+      url: `/jobs/${job_id}/share-tokens`,
+      payload: { max_claims: 1 },
+    });
+
+    const activeToken = (activeTokenRes.json() as { token: string }).token;
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/run-config',
+      query: { token: activeToken },
+    });
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: `/jobs/${job_id}`,
+    });
+
+    expect(deleteRes.statusCode).toBe(400);
+    expect(deleteRes.json().error).toContain('active runs');
+  });
+});
+
+
+path: /tsconfig.json
+----------------------------------------
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "rootDir": "src",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "exclude": ["node_modules", "dist", "tests", "vitest.config.ts", "web"]
+}
+
+
+path: /vitest.config.ts
+----------------------------------------
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+  },
+});
+
+
+=== SUMMARY ===
+included: 36
+skipped(binary): 1
+skipped(size): 0
+skipped(ext): 0
+totalBytes(approx): 183759
