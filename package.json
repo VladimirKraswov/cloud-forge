@@ -1,65 +1,17 @@
 {
-  "name": "cloud-forge",
-  "version": "0.1.0",
-  "type": "commonjs",
+  "name": "cloud-forge-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "ts-node src/server.ts",
-    "dev:full": "docker compose up -d redis minio && npm run dev",
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "start:prod": "npm run build && node dist/server.js",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f orchestrator",
-    "worker:build": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker build --build-arg VERSION=$WORKER_TAG -t \"$WORKER_IMAGE:$WORKER_TAG\" -t \"$WORKER_IMAGE:latest\" -f worker/Dockerfile worker",
-    "worker:publish": "WORKER_IMAGE=${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}; WORKER_TAG=${PUBLISHED_WORKER_TAG:-0.1.0}; docker push \"$WORKER_IMAGE:$WORKER_TAG\" && docker push \"$WORKER_IMAGE:latest\"",
-    "lint": "eslint 'src/**/*.ts'",
-    "test": "vitest",
-    "test:e2e": "vitest run tests/e2e",
-    "test:watch": "vitest"
-  },
-  "lint-staged": {
-    "src/**/*.ts": [
-      "eslint --fix",
-      "prettier --write"
-    ]
-  },
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.600.0",
-    "@aws-sdk/s3-request-presigner": "^3.600.0",
-    "@fastify/cors": "^11.2.0",
-    "@fastify/multipart": "^9.4.0",
-    "@fastify/swagger": "^9.7.0",
-    "@fastify/swagger-ui": "^5.2.5",
-    "@fastify/websocket": "^11.2.0",
-    "bullmq": "^5.71.1",
-    "dotenv": "^16.6.1",
-    "fastify": "^5.8.4",
-    "ioredis": "^5.10.1",
-    "pino": "^9.14.0",
-    "pino-pretty": "^13.1.3",
-    "sqlite3": "^5.1.7",
-    "uuid": "^11.1.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^20.19.37",
-    "@types/supertest": "^6.0.3",
-    "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "@vitest/coverage-v8": "^4.1.1",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^9.1.2",
-    "eslint-plugin-prettier": "^5.5.5",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.8.1",
-    "supertest": "^7.2.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.2",
-    "uuid": "^11.1.0",
-    "vitest": "^4.1.1"
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:worker": "npm run worker:build --workspace=apps/backend",
+    "test:backend": "npm run test --workspace=apps/backend",
+    "lint:backend": "npm run lint --workspace=apps/backend",
+    "lint:web": "npm run lint --workspace=apps/web"
   }
 }

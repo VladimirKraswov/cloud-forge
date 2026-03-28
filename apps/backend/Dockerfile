@@ -2,6 +2,7 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
+# Using root-level package.json for workspaces if needed, but here we can just build the backend
 COPY package*.json ./
 RUN npm install
 
@@ -26,9 +27,12 @@ RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
-# Нужны BootstrapBuilderService
-COPY worker/runner.py ./worker/runner.py
-COPY worker/sdk ./worker/sdk
+# Optional: if worker assets are provided during build, they can be included.
+# But for a cleaner separation, we can mount them or download them.
+# The code now supports WORKER_ASSETS_PATH.
+# By default, we expect them in /app/worker if we want them inside the image.
+# COPY worker/runner.py ./worker/runner.py
+# COPY worker/sdk ./worker/sdk
 
 RUN mkdir -p /app/data
 

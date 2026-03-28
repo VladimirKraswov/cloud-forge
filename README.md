@@ -2,157 +2,117 @@
 
 Distributed Task Orchestration System built with Node.js, Fastify, TypeScript, SQLite, Redis, and MinIO.
 
+## Project Structure
+
+The project is organized as a monorepo using NPM workspaces:
+
+- `apps/backend`: Fastify orchestrator API and business logic.
+- `apps/web`: React/Vite frontend application.
+- `apps/worker`: Standalone Python-based job runner.
+- `infra/compose`: Docker Compose configurations for development and production.
+- `infra/deploy`: Helper scripts for deployment.
+
 ## Architecture
 
-Cloud Forge consists of two main components:
+Cloud Forge consists of three main deployable units:
 
-1. **Orchestrator Stack**  
-   Central control plane: Fastify backend, SQLite, Redis, MinIO, REST API, WebSocket API.
+1. **Backend (Orchestrator)**
+   Central control plane: API, job management, run tracking, and bootstrap image building.
+2. **Web (Frontend)**
+   User interface for managing jobs, runs, and workers.
+3. **Worker Runtime**
+   A standalone Docker image that executes jobs on remote machines.
 
-2. **Worker Image**  
-   A standalone publishable Docker image that executes jobs on remote machines.
+## Getting Started
 
-## Current execution model
+### Local Development
 
-### MVP mode
-In the current MVP phase, user code executes **directly inside the published worker container**.
-
-That means:
-- the orchestrator stores job configuration and creates runs;
-- the worker downloads run config from the orchestrator;
-- the worker executes Python or JavaScript code inside itself;
-- logs, heartbeats, cancellation, and artifacts are sent back to the orchestrator.
-
-### Future mode
-Job definitions can already contain multiple containers, but **remote multi-container orchestration is not implemented yet**.  
-Those presets are marked in the catalog as `future`.
-
-## Features
-
-- UI-ready REST API
-- Job CRUD with validation
-- Share-token based remote execution
-- Live logs and run status via WebSocket
-- Run artifacts in S3-compatible storage
-- Dashboard endpoints
-- Health checks for deployment
-- Publishable worker Docker image
-
-## Getting started
-
-### Requirements
-- Node.js 20+
-- Docker & Docker Compose
-
-### Local development
-
-1. Install dependencies:
+1. Install dependencies at the root:
    ```bash
    npm install
-````
+   ```
 
-2. Start infrastructure:
-
+2. Start infrastructure (Redis, MinIO) and the backend/web in development mode:
    ```bash
-   docker compose up -d redis minio
+   # Start Redis and MinIO
+   docker compose -f infra/compose/docker-compose.dev.yml up -d redis minio
+
+   # Start backend (defaults to http://localhost:3000)
+   npm run dev:backend
+
+   # Start web (defaults to http://localhost:5173)
+   npm run dev:web
    ```
 
-3. Start orchestrator:
+3. Open the web interface at `http://localhost:5173`.
+4. API documentation is available at `http://localhost:3000/docs`.
 
-   ```bash
-   npm run dev
-   ```
+### Building Services
 
-4. Open API docs:
-
-   ```text
-   http://localhost:3000/docs
-   ```
-
-## API overview
-
-### Jobs
-
-* `POST /jobs` — create job template
-* `GET /jobs` — list jobs with pagination/filtering
-* `GET /jobs/:id` — get job details and stats
-* `PATCH /jobs/:id` — update job
-* `DELETE /jobs/:id` — delete job if it has no active runs
-* `POST /jobs/:id/clone` — clone job
-* `POST /jobs/validate` — validate job payload
-* `GET /jobs/:id/runs` — paginated runs list for job
-
-### Share tokens
-
-* `POST /jobs/:id/share-tokens` — create remote execution token
-* `GET /jobs/:id/share-tokens` — list share tokens for a job
-* `GET /share-tokens/:id` — get share token details
-* `POST /share-tokens/:id/revoke` — revoke token
-
-### Dashboard
-
-* `GET /dashboard/summary`
-* `GET /dashboard/active-runs`
-* `GET /dashboard/active-workers`
-* `GET /dashboard/recent-events`
-
-### Worker API
-
-* `GET /api/run-config?token=...`
-* `POST /api/runs/start`
-* `POST /api/runs/heartbeat`
-* `POST /api/runs/logs`
-* `POST /api/runs/finish`
-* `POST /api/runs/:id/cancel`
-* `GET /api/runs/:id`
-
-### WebSocket
-
-* `WS /ws/runs/:run_id`
-
-### Health
-
-* `GET /health/live`
-* `GET /health/ready`
-
-## Deployment
-
-### Orchestrator stack
-
-Run the orchestrator stack with Docker Compose:
-
+#### Backend
 ```bash
-docker compose up -d
+npm run build:backend
+# Or via Docker
+docker build -t cloud-forge-backend -f apps/backend/Dockerfile apps/backend
 ```
 
-### Worker image
-
-The worker image should be published with a **fixed version tag**.
-
-Example:
-
+#### Web
 ```bash
-xproger/cloud-forge-worker:0.1.0
+npm run build:web
+# Or via Docker
+docker build -t cloud-forge-web -f apps/web/Dockerfile apps/web
 ```
 
-Build locally:
-
+#### Worker
 ```bash
-npm run worker:build
+# Using the root script
+npm run build:worker
+# Or via the dedicated publish script in the worker app
+./apps/worker/scripts/publish-worker.sh --version 0.1.0 --single-platform
 ```
 
-Publish:
+## Production Deployment
+
+This project is designed to be deployed on a single server using **Docker Compose** and **Nginx Proxy Manager** (NPM) as a reverse proxy.
+
+### 1. Preparation
+
+Copy the `.env.example` files to `.env` in `apps/backend` and `apps/web` and configure them for your production environment.
+
+Key environment variables for production:
+- `PUBLIC_BASE_URL=https://api.cloud-forge.ru` (Backend)
+- `VITE_API_BASE_URL=https://api.cloud-forge.ru` (Web)
+
+### 2. Deployment with Docker Compose
+
+Use the production compose file:
 
 ```bash
-npm run worker:publish
+docker compose -f infra/compose/docker-compose.prod.yml up -d
 ```
 
-## Example remote execution command
+### 3. Nginx Proxy Manager Setup
 
-The orchestrator should return a command like:
+Configure two Proxy Hosts in Nginx Proxy Manager:
 
-```bash
-docker run --rm \
-  -e JOB_CONFIG_URL="https://your-domain/api/run-config?token=cf_xxx" \
-  xproger/cloud-forge-worker:0.1.0
-```
+1. **cloud-forge.ru**
+   - Forward Hostname: `web`
+   - Forward Port: `80`
+   - Enable SSL (Let's Encrypt)
+   - Enable Websockets Support
+
+2. **api.cloud-forge.ru**
+   - Forward Hostname: `backend`
+   - Forward Port: `3000`
+   - Enable SSL (Let's Encrypt)
+   - Enable Websockets Support (required for live logs)
+
+### 4. Database
+
+Currently, the system uses SQLite stored in `infra/compose/sqlite-data`. For high-availability production, a migration to Postgres is recommended in the future.
+
+## CI/CD
+
+GitHub Actions are configured in `.github/workflows/` for:
+- Publishing the Worker image to Docker Hub.
+- (Recommended) Add workflows for Backend and Web image builds.

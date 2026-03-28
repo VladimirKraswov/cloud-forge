@@ -1,0 +1,64 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-cloud-forge-backend:latest}
+    environment:
+      PORT: 3000
+      PUBLIC_BASE_URL: https://api.cloud-forge.ru
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-cloud-forge}
+      PUBLISHED_WORKER_IMAGE: ${PUBLISHED_WORKER_IMAGE:-xproger/cloud-forge-worker}
+      PUBLISHED_WORKER_TAG: ${PUBLISHED_WORKER_TAG:-latest}
+      # Worker assets can be mounted as a volume or built into the image
+      WORKER_ASSETS_PATH: /app/worker
+    volumes:
+      - sqlite-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./worker-assets:/app/worker:ro
+    networks:
+      - internal
+      - npm-network
+    restart: unless-stopped
+
+  web:
+    image: ${WEB_IMAGE:-cloud-forge-web:latest}
+    environment:
+      VITE_API_BASE_URL: https://api.cloud-forge.ru
+    networks:
+      - internal
+      - npm-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    networks:
+      - internal
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  minio-data:
+  sqlite-data:
+  redis-data:
+
+networks:
+  internal:
+  npm-network:
+    external: true
+    name: ${NPM_NETWORK:-nginx-proxy-manager_default}

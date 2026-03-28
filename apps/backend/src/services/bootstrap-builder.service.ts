@@ -181,10 +181,13 @@ ENTRYPOINT ["python3", "/opt/cloudforge/runner.py"]
 
   private static resolveRuntimeAssetsRoot(): string {
     const candidates = [
+      process.env.WORKER_ASSETS_PATH,
       path.resolve(process.cwd(), 'worker'),
+      path.resolve(process.cwd(), '../worker'),
       path.resolve(__dirname, '../../worker'),
+      path.resolve(__dirname, '../../../../apps/worker'),
       '/app/worker',
-    ];
+    ].filter((c): c is string => !!c);
 
     for (const candidate of candidates) {
       const runnerPath = path.join(candidate, 'runner.py');
