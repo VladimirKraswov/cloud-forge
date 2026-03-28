@@ -12,6 +12,7 @@ import { StatCard } from '@/shared/components/app/stat-card';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { formatRelative } from '@/shared/utils/format';
+import { useI18n } from '@/shared/lib/i18n';
 
 const chartColors: Record<RunStatus, string> = {
   created: '#f59e0b',
@@ -23,6 +24,8 @@ const chartColors: Record<RunStatus, string> = {
 };
 
 export function DashboardPage() {
+  const { t } = useI18n();
+
   const summaryQuery = useQuery({
     queryKey: ['dashboard', 'summary'],
     queryFn: dashboardApi.getSummary,
@@ -57,39 +60,39 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Operations overview"
-        title="Dashboard"
-        description="Live view across bootstrap images, jobs, runs and worker activity."
+        eyebrow={t.dashboard.overview}
+        title={t.navigation.dashboard}
+        description={t.dashboard.description}
         actions={
           <Button asChild>
-            <Link to="/jobs/create">Create job</Link>
+            <Link to="/jobs/create">{t.dashboard.createJob}</Link>
           </Button>
         }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Jobs"
+          title={t.dashboard.stats.jobs}
           value={summaryQuery.data?.jobs_total ?? '—'}
-          subtitle="Registered jobs"
+          subtitle={t.dashboard.stats.jobsSubtitle}
           icon={Layers}
         />
         <StatCard
-          title="Runs"
+          title={t.dashboard.stats.runs}
           value={summaryQuery.data?.runs_total ?? '—'}
-          subtitle="Historical executions"
+          subtitle={t.dashboard.stats.runsSubtitle}
           icon={Activity}
         />
         <StatCard
-          title="Workers online"
+          title={t.dashboard.stats.workers}
           value={`${summaryQuery.data?.workers_online ?? 0}/${summaryQuery.data?.workers_total ?? 0}`}
-          subtitle="Cluster availability"
+          subtitle={t.dashboard.stats.workersSubtitle}
           icon={Server}
         />
         <StatCard
-          title="Active runs"
+          title={t.dashboard.stats.activeRuns}
           value={activeRunsQuery.data?.length ?? 0}
-          subtitle="Created or running"
+          subtitle={t.dashboard.stats.activeRunsSubtitle}
           icon={Play}
         />
       </div>
@@ -97,8 +100,8 @@ export function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Run status distribution</CardTitle>
-            <CardDescription>Snapshot of run states across the platform.</CardDescription>
+            <CardTitle>{t.dashboard.charts.statusDistribution}</CardTitle>
+            <CardDescription>{t.dashboard.charts.statusDescription}</CardDescription>
           </CardHeader>
 
           <CardContent className="h-[320px]">
@@ -116,8 +119,8 @@ export function DashboardPage() {
             ) : (
               <EmptyState
                 icon={Activity}
-                title="No run data yet"
-                description="The chart will populate after remote workers start executing jobs."
+                title={t.dashboard.empty.noRunData}
+                description={t.dashboard.empty.noRunDataDesc}
               />
             )}
           </CardContent>
@@ -125,8 +128,8 @@ export function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Active workers</CardTitle>
-            <CardDescription>Workers currently online or busy.</CardDescription>
+            <CardTitle>{t.dashboard.charts.activeWorkers}</CardTitle>
+            <CardDescription>{t.dashboard.charts.activeWorkersDescription}</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-3">
@@ -146,8 +149,8 @@ export function DashboardPage() {
             ) : (
               <EmptyState
                 icon={Server}
-                title="No active workers"
-                description="Workers will appear here after they start sending heartbeats."
+                title={t.dashboard.empty.noActiveWorkers}
+                description={t.dashboard.empty.noActiveWorkersDesc}
               />
             )}
           </CardContent>
@@ -157,8 +160,8 @@ export function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Active runs</CardTitle>
-            <CardDescription>Recently created or currently executing runs.</CardDescription>
+            <CardTitle>{t.dashboard.charts.activeRuns}</CardTitle>
+            <CardDescription>{t.dashboard.charts.activeRunsDescription}</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-3">
@@ -177,7 +180,7 @@ export function DashboardPage() {
                       </p>
                       <p className="text-xs text-muted-foreground">{run.id}</p>
                       <p className="text-xs text-muted-foreground">
-                        {run.stage || 'idle'}
+                        {run.stage || t.common.idle}
                         {typeof run.progress === 'number' ? ` · ${run.progress}%` : ''}
                       </p>
                     </div>
@@ -188,8 +191,8 @@ export function DashboardPage() {
             ) : (
               <EmptyState
                 icon={Play}
-                title="Nothing is running"
-                description="Once a worker claims a share token, active runs will show here."
+                title={t.dashboard.empty.nothingRunning}
+                description={t.dashboard.empty.nothingRunningDesc}
               />
             )}
           </CardContent>
@@ -197,8 +200,8 @@ export function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Recent events</CardTitle>
-            <CardDescription>Latest terminal state changes across the platform.</CardDescription>
+            <CardTitle>{t.dashboard.charts.recentEvents}</CardTitle>
+            <CardDescription>{t.dashboard.charts.recentEventsDescription}</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-3">
@@ -226,8 +229,8 @@ export function DashboardPage() {
             ) : (
               <EmptyState
                 icon={Activity}
-                title="No recent events"
-                description="Terminal run events will show here once execution starts."
+                title={t.dashboard.empty.noRecentEvents}
+                description={t.dashboard.empty.noRecentEventsDesc}
               />
             )}
           </CardContent>

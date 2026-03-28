@@ -1,12 +1,13 @@
 import { Card, CardContent } from '@/shared/components/ui/card';
+import { useI18n } from '@/shared/lib/i18n';
 
 export function AttachedFilesField() {
+  const { t } = useI18n();
+
   return (
     <Card className="border-dashed shadow-none">
       <CardContent className="p-6 text-sm text-muted-foreground">
-        Attached files were replaced by the workspace file editor. Use the
-        <span className="mx-1 font-medium">Workspace files</span>
-        tab in the new job builder.
+        {t.forms.job.attachedFilesNote}
       </CardContent>
     </Card>
   );

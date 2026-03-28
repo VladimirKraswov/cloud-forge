@@ -8,9 +8,11 @@ import { PageHeader } from '@/shared/components/app/page-header';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table';
+import { useI18n } from '@/shared/lib/i18n';
 import { formatDateTime, formatRelative } from '@/shared/utils/format';
 
 export function JobRunsPage() {
+  const { t } = useI18n();
   const { jobId } = useParams({ from: '/jobs/$jobId/runs' });
 
   const runsQuery = useQuery({
@@ -22,14 +24,14 @@ export function JobRunsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Job runs"
-        title="Run history"
-        description="Inspect execution history for the selected job."
+        eyebrow={t.runs.details.jobRuns}
+        title={t.runs.details.history}
+        description={t.runs.details.historyDesc}
         actions={
           <Button variant="outline" asChild>
             <Link to="/jobs/$jobId" params={{ jobId }}>
               <ArrowLeft className="h-4 w-4" />
-              Job details
+              {t.navigation.backToJobs}
             </Link>
           </Button>
         }
@@ -41,12 +43,12 @@ export function JobRunsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Run</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Worker</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Finished</TableHead>
+                  <TableHead>{t.runs.details.table.run}</TableHead>
+                  <TableHead>{t.common.status}</TableHead>
+                  <TableHead>{t.runs.details.table.stage}</TableHead>
+                  <TableHead>{t.runs.details.table.worker}</TableHead>
+                  <TableHead>{t.runs.details.table.started}</TableHead>
+                  <TableHead>{t.runs.details.table.finished}</TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -91,8 +93,8 @@ export function JobRunsPage() {
             <div className="p-6">
               <EmptyState
                 icon={History}
-                title="No runs yet"
-                description="Runs will appear here once a worker claims a share token and starts execution."
+                title={t.jobs.table.noRuns}
+                description={t.dashboard.empty.nothingRunningDesc}
               />
             </div>
           )}

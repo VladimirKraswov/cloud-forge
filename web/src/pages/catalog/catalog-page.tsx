@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { useI18n } from '@/shared/lib/i18n';
 import { Boxes, Cpu, Sparkles } from 'lucide-react';
 import { catalogApi } from '@/api/catalog';
 import type { BootstrapImage } from '@/api/types';
@@ -25,6 +26,7 @@ function StatusBadge({ status }: { status: BootstrapImage['status'] }) {
 }
 
 export function CatalogPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const bootstrapImagesQuery = useQuery({
@@ -56,9 +58,9 @@ export function CatalogPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Catalog"
-        title="Bootstrap images"
-        description="Start by building or selecting a bootstrap image. Jobs now target a prepared bootstrap image instead of defining raw containers in the job form."
+        eyebrow={t.navigation.catalog}
+        title={t.catalog.title}
+        description={t.catalog.description}
         actions={
           <BootstrapBuilderDialog
             onSuccess={() => {
@@ -70,10 +72,8 @@ export function CatalogPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Ready to use</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Completed bootstrap images can be selected directly from the job builder.
-          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{t.catalog.readyToUse}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t.catalog.readyToUseDesc}</p>
         </div>
 
         {completedImages.length ? (
@@ -92,10 +92,18 @@ export function CatalogPage() {
                 </CardHeader>
 
                 <CardContent className="space-y-3 text-sm">
-                  <div>Base image: {image.base_image}</div>
-                  <div>Tag: {image.tag}</div>
-                  <div>Environments: {image.environments.length}</div>
-                  <div>Updated: {formatRelative(image.updated_at)}</div>
+                  <div>
+                    {t.catalog.baseImageLabel}: {image.base_image}
+                  </div>
+                  <div>
+                    {t.catalog.tag}: {image.tag}
+                  </div>
+                  <div>
+                    {t.navigation.catalog}: {image.environments.length}
+                  </div>
+                  <div>
+                    {t.common.updated}: {formatRelative(image.updated_at)}
+                  </div>
 
                   <div className="flex flex-wrap gap-1.5">
                     {image.environments.map((env) => (
@@ -117,7 +125,7 @@ export function CatalogPage() {
                         })
                       }
                     >
-                      Create job from image
+                      {t.catalog.createJobFromImage}
                     </Button>
                   </div>
                 </CardContent>
@@ -127,8 +135,8 @@ export function CatalogPage() {
         ) : (
           <EmptyState
             icon={Cpu}
-            title="No completed bootstrap images"
-            description="Build your first bootstrap image to unlock the new job workflow."
+            title={t.catalog.noCompletedImages}
+            description={t.catalog.noCompletedImagesDesc}
           />
         )}
       </section>
@@ -136,10 +144,8 @@ export function CatalogPage() {
       {buildingImages.length ? (
         <section className="space-y-4">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">Builds in progress</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Refresh or reopen the builder dialog to watch live build logs.
-            </p>
+            <h2 className="text-xl font-semibold tracking-tight">{t.catalog.buildsInProgress}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t.catalog.buildsInProgressDesc}</p>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -154,8 +160,12 @@ export function CatalogPage() {
                 </CardHeader>
 
                 <CardContent className="space-y-2 text-sm">
-                  <div>Base image: {image.base_image}</div>
-                  <div>Updated: {formatRelative(image.updated_at)}</div>
+                  <div>
+                    {t.catalog.baseImageLabel}: {image.base_image}
+                  </div>
+                  <div>
+                    {t.common.updated}: {formatRelative(image.updated_at)}
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -165,10 +175,8 @@ export function CatalogPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Optional starter templates</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The new flow is bootstrap-image first, but these legacy catalog items can still serve as examples and inspiration.
-          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{t.catalog.starterTemplates}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t.catalog.starterTemplatesDesc}</p>
         </div>
 
         {templatesQuery.data?.items.length ? (
@@ -200,9 +208,7 @@ export function CatalogPage() {
                     ))}
                   </div>
 
-                  <div className="text-muted-foreground">
-                    These templates are not auto-applied by the new form anymore, but they remain useful as examples.
-                  </div>
+                  <div className="text-muted-foreground">{t.catalog.starterTemplatesNote}</div>
                 </CardContent>
               </Card>
             ))}
@@ -210,8 +216,8 @@ export function CatalogPage() {
         ) : (
           <EmptyState
             icon={Boxes}
-            title="No templates"
-            description="The backend did not return any job templates."
+            title={t.catalog.noTemplates}
+            description={t.catalog.noTemplatesDesc}
           />
         )}
       </section>

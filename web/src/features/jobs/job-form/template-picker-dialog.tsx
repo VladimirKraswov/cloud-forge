@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
+import { useI18n } from '@/shared/lib/i18n';
 import { catalogApi } from '@/api/catalog';
 import type { ContainerPreset, JobTemplate } from '@/api/types';
 import {
@@ -37,6 +38,7 @@ export function TemplatePickerDialog({
   onApplyTemplate: (template: JobTemplate) => void;
   onApplyContainerPreset: (preset: ContainerPreset) => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
   const templatesQuery = useQuery({
@@ -54,22 +56,22 @@ export function TemplatePickerDialog({
       <DialogTrigger asChild>
         <Button type="button" variant="outline">
           <Sparkles className="h-4 w-4" />
-          Templates & presets
+          {t.catalog.templatesAndPresets}
         </Button>
       </DialogTrigger>
 
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Catalog</DialogTitle>
+          <DialogTitle>{t.catalog.dialogTitle}</DialogTitle>
           <DialogDescription>
-            Start from a backend template or reuse a container preset from the catalog.
+            {t.catalog.dialogDesc}
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="templates">
           <TabsList>
-            <TabsTrigger value="templates">Job templates</TabsTrigger>
-            <TabsTrigger value="containers">Container presets</TabsTrigger>
+            <TabsTrigger value="templates">{t.catalog.tabsTemplates}</TabsTrigger>
+            <TabsTrigger value="containers">{t.catalog.tabsContainers}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="templates">
@@ -101,8 +103,7 @@ export function TemplatePickerDialog({
                         </div>
 
                         <div className="text-xs text-muted-foreground">
-                          {template.draft.execution_language} · {template.draft.containers.length}{' '}
-                          container(s)
+                          {template.draft.execution_language} · {t.catalog.containersCount.replace('{count}', String(template.draft.containers.length))}
                         </div>
 
                         <div className="flex justify-end">
@@ -113,7 +114,7 @@ export function TemplatePickerDialog({
                               setOpen(false);
                             }}
                           >
-                            Apply
+                            {t.catalog.apply}
                           </Button>
                         </div>
                       </CardContent>
@@ -162,7 +163,7 @@ export function TemplatePickerDialog({
                               setOpen(false);
                             }}
                           >
-                            Add
+                            {t.catalog.add}
                           </Button>
                         </div>
                       </CardContent>

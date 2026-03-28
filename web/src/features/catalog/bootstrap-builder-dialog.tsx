@@ -747,11 +747,9 @@ datasets>=3.6.0`}
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Heads up for model-heavy base images</AlertTitle>
+              <AlertTitle>{t.catalog.headsUpTitle}</AlertTitle>
               <AlertDescription>
-                Choosing a base image with embedded weights is convenient, but the
-                initial pull can be very large. The builder will now show stages like
-                base image pull, large layer download, build, and push.
+                {t.catalog.headsUpDesc}
               </AlertDescription>
             </Alert>
 
@@ -768,7 +766,7 @@ datasets>=3.6.0`}
           <div className="space-y-5 py-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Dockerfile preview</CardTitle>
+                <CardTitle className="text-base">{t.catalog.dockerfilePreview}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto whitespace-pre rounded-2xl bg-muted p-4 font-mono text-xs">
@@ -779,10 +777,9 @@ datasets>=3.6.0`}
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Docker Hub credentials</AlertTitle>
+              <AlertTitle>{t.help.dockerHubCredsTitle}</AlertTitle>
               <AlertDescription>
-                These credentials are used only to push the final bootstrap image to
-                your Docker Hub repository.
+                {t.help.dockerHubCredsDesc}
               </AlertDescription>
             </Alert>
 
@@ -886,8 +883,8 @@ datasets>=3.6.0`}
                     {STAGE_META.map((stage, index) => (
                       <StageRow
                         key={stage.id}
-                        title={t.catalog.stages[stage.id].title}
-                        description={t.catalog.stages[stage.id].description}
+                        title={t.catalog.stages[stage.id as Exclude<BuildStageId, 'completed' | 'failed'>].title}
+                        description={t.catalog.stages[stage.id as Exclude<BuildStageId, 'completed' | 'failed'>].description}
                         icon={stage.icon}
                         state={renderStageState(index)}
                       />
@@ -898,7 +895,7 @@ datasets>=3.6.0`}
                 {insights.largeLayers.length > 0 ? (
                   <Alert variant={hasHugeLayers ? 'warning' : 'default'}>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Large base-image layers detected</AlertTitle>
+                    <AlertTitle>{t.catalog.largeLayersTitle}</AlertTitle>
                     <AlertDescription>
                       {hasHugeLayers ? (
                         <div className="space-y-2">
@@ -936,18 +933,18 @@ datasets>=3.6.0`}
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div>
-                      <span className="text-muted-foreground">Target image:</span>{' '}
+                      <span className="text-muted-foreground">{t.catalog.targetImage}:</span>{' '}
                       <span className="font-medium">
                         {formData.dockerUser}/{formData.name}:{formData.tag}
                       </span>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Base image:</span>{' '}
+                      <span className="text-muted-foreground">{t.catalog.baseImageLabel}:</span>{' '}
                       <span className="break-all font-medium">{formData.baseImage}</span>
                     </div>
                     {insights.lastMeaningfulLine ? (
                       <div>
-                        <span className="text-muted-foreground">Last log line:</span>{' '}
+                        <span className="text-muted-foreground">{t.catalog.lastLogLine}:</span>{' '}
                         <span className="break-all font-medium">
                           {insights.lastMeaningfulLine}
                         </span>

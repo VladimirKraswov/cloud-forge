@@ -17,12 +17,14 @@ import { Input } from '@/shared/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table';
+import { useI18n } from '@/shared/lib/i18n';
 import { getApiErrorMessage } from '@/shared/lib/api-error';
 import { formatRelative } from '@/shared/utils/format';
 
 const pageSize = 10;
 
 export function JobsListPage() {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | RunStatus>('all');
   const [page, setPage] = useState(1);
@@ -43,7 +45,7 @@ export function JobsListPage() {
     mutationFn: (jobId: string) => jobsApi.clone(jobId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Job cloned');
+      toast.success(t.errors.cloned);
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -54,7 +56,7 @@ export function JobsListPage() {
     mutationFn: (jobId: string) => jobsApi.delete(jobId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Job deleted');
+      toast.success(t.errors.deleted);
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -66,14 +68,14 @@ export function JobsListPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Jobs"
-        title="Jobs"
-        description="Search, filter, paginate, clone, and delete bootstrap-image jobs from a single control surface."
+        eyebrow={t.jobs.title}
+        title={t.jobs.title}
+        description={t.jobs.description}
         actions={
           <Button asChild>
             <Link to="/jobs/create">
               <Plus className="h-4 w-4" />
-              New job
+              {t.jobs.newJob}
             </Link>
           </Button>
         }
@@ -90,7 +92,7 @@ export function JobsListPage() {
                   setSearch(event.target.value);
                   setPage(1);
                 }}
-                placeholder="Search by title or description"
+                placeholder={t.jobs.searchPlaceholder}
                 className="pl-10"
               />
             </div>
@@ -104,16 +106,16 @@ export function JobsListPage() {
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Filter by run status" />
+                  <SelectValue placeholder={t.jobs.filterStatus} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="created">Created</SelectItem>
-                  <SelectItem value="running">Running</SelectItem>
-                  <SelectItem value="finished">Finished</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                  <SelectItem value="lost">Lost</SelectItem>
+                  <SelectItem value="all">{t.status.all}</SelectItem>
+                  <SelectItem value="created">{t.status.created}</SelectItem>
+                  <SelectItem value="running">{t.status.running}</SelectItem>
+                  <SelectItem value="finished">{t.status.finished}</SelectItem>
+                  <SelectItem value="failed">{t.status.failed}</SelectItem>
+                  <SelectItem value="cancelled">{t.status.cancelled}</SelectItem>
+                  <SelectItem value="lost">{t.status.lost}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -130,12 +132,12 @@ export function JobsListPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Job</TableHead>
-                    <TableHead>Bootstrap image</TableHead>
-                    <TableHead>Entrypoint</TableHead>
-                    <TableHead>Latest run</TableHead>
-                    <TableHead>Runs</TableHead>
-                    <TableHead>Updated</TableHead>
+                    <TableHead>{t.jobs.table.job}</TableHead>
+                    <TableHead>{t.jobs.table.bootstrapImage}</TableHead>
+                    <TableHead>{t.jobs.table.entrypoint}</TableHead>
+                    <TableHead>{t.jobs.table.latestRun}</TableHead>
+                    <TableHead>{t.jobs.table.runs}</TableHead>
+                    <TableHead>{t.jobs.table.updated}</TableHead>
                     <TableHead className="w-16" />
                   </TableRow>
                 </TableHeader>
@@ -153,7 +155,7 @@ export function JobsListPage() {
                             {job.title}
                           </Link>
                           <p className="max-w-xl truncate text-sm text-muted-foreground">
-                            {job.description || 'No description'}
+                            {job.description || t.jobs.details.noDescription}
                           </p>
                         </div>
                       </TableCell>
@@ -175,7 +177,7 @@ export function JobsListPage() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-sm text-muted-foreground">No runs yet</span>
+                          <span className="text-sm text-muted-foreground">{t.jobs.table.noRuns}</span>
                         )}
                       </TableCell>
 
@@ -184,7 +186,7 @@ export function JobsListPage() {
                           {job.runs_count ?? 0}
                           {job.active_runs_count ? (
                             <span className="ml-2 text-xs text-primary">
-                              ({job.active_runs_count} active)
+                              ({t.jobs.table.activeCount.replace('{count}', job.active_runs_count.toString())})
                             </span>
                           ) : null}
                         </div>
@@ -206,13 +208,13 @@ export function JobsListPage() {
                             <DropdownMenuItem asChild>
                               <Link to="/jobs/$jobId/edit" params={{ jobId: job.id }}>
                                 <Pencil className="mr-2 h-4 w-4" />
-                                Edit
+                                {t.common.edit}
                               </Link>
                             </DropdownMenuItem>
 
                             <DropdownMenuItem onClick={() => cloneMutation.mutate(job.id)}>
                               <Copy className="mr-2 h-4 w-4" />
-                              Clone
+                              {t.common.clone}
                             </DropdownMenuItem>
 
                             <AlertDialog>
@@ -222,22 +224,22 @@ export function JobsListPage() {
                                   onSelect={(event) => event.preventDefault()}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
+                                  {t.common.delete}
                                 </DropdownMenuItem>
                               </AlertDialogTrigger>
 
                               <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete job?</AlertDialogTitle>
+                                  <AlertDialogTitle>{t.jobs.deleteDialog.title}</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    This removes the job, its files, runs, logs, artifacts, and share tokens.
+                                    {t.jobs.deleteDialog.description}
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
 
                                 <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
                                   <AlertDialogAction onClick={() => deleteMutation.mutate(job.id)}>
-                                    Delete job
+                                    {t.jobs.deleteDialog.confirm}
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
@@ -264,7 +266,7 @@ export function JobsListPage() {
               description="Try adjusting filters or create the first job for this workspace."
               action={
                 <Button asChild>
-                  <Link to="/jobs/create">Create job</Link>
+                  <Link to="/jobs/create">{t.dashboard.createJob}</Link>
                 </Button>
               }
             />

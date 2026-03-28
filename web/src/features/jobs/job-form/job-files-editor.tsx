@@ -13,6 +13,7 @@ import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
 import { Checkbox } from '@/shared/components/ui/checkbox';
+import { useI18n } from '@/shared/lib/i18n';
 import { cn } from '@/shared/utils/cn';
 import { formatFileSize } from '@/shared/utils/format';
 
@@ -89,6 +90,7 @@ export function JobFilesEditor({
   onUpdateFile: (localId: string, patch: Partial<EditableJobFile>) => void;
   onDeleteFile: (localId: string) => void;
 }) {
+  const { t } = useI18n();
   const visibleFiles = files
     .filter((file) => file.status !== 'deleted')
     .sort((left, right) => left.relative_path.localeCompare(right.relative_path));
@@ -103,11 +105,9 @@ export function JobFilesEditor({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-base">Workspace files</CardTitle>
+            <CardTitle className="text-base">{t.forms.job.files}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Keep your scripts, configs and datasets under relative paths like
-              <span className="font-mono"> scripts/train.sh</span> or
-              <span className="font-mono"> src/train.py</span>.
+              {t.help.workspaceFiles}
             </p>
           </div>
         </CardHeader>
@@ -116,12 +116,12 @@ export function JobFilesEditor({
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={onAddInlineFile}>
               <Plus className="h-4 w-4" />
-              New inline file
+              {t.forms.files.newInline}
             </Button>
 
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent">
               <Upload className="h-4 w-4" />
-              Upload files
+              {t.forms.files.upload}
               <input
                 className="hidden"
                 type="file"
@@ -138,7 +138,7 @@ export function JobFilesEditor({
             {visibleFiles.length === 0 ? (
               <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
                 <FolderTree className="h-5 w-5" />
-                Add at least one file to the job workspace.
+                {t.jobs.details.noFiles}
               </div>
             ) : null}
 
@@ -177,19 +177,19 @@ export function JobFilesEditor({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">File inspector</CardTitle>
+          <CardTitle className="text-base">{t.forms.files.inspector}</CardTitle>
         </CardHeader>
 
         <CardContent className="space-y-4">
           {!selectedFile ? (
             <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
-              No file selected.
+              {t.forms.files.notSelected}
             </div>
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
                 <div className="space-y-2">
-                  <Label>Relative path</Label>
+                  <Label>{t.forms.files.path}</Label>
                   <Input
                     value={selectedFile.relative_path}
                     onChange={(event) =>
@@ -204,7 +204,7 @@ export function JobFilesEditor({
                 </div>
 
                 <div className="space-y-2">
-                  <Label>MIME type</Label>
+                  <Label>{t.forms.files.mime}</Label>
                   <Input
                     value={selectedFile.mime_type}
                     onChange={(event) =>
@@ -227,7 +227,7 @@ export function JobFilesEditor({
                       })
                     }
                   />
-                  Mark as executable
+                  {t.forms.files.executable}
                 </label>
 
                 <Button
@@ -237,13 +237,13 @@ export function JobFilesEditor({
                   onClick={() => onDeleteFile(selectedFile.local_id)}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
-                  Remove file
+                  {t.forms.files.remove}
                 </Button>
               </div>
 
               {editable ? (
                 <div className="space-y-2">
-                  <Label>Content</Label>
+                  <Label>{t.forms.files.content}</Label>
                   <Textarea
                     className="min-h-[460px] font-mono text-sm"
                     value={selectedFile.inline_content}
@@ -257,14 +257,12 @@ export function JobFilesEditor({
                     placeholder="Write code, shell script, config, or text content here."
                   />
                   {loadingContent ? (
-                    <p className="text-xs text-muted-foreground">Loading file content…</p>
+                    <p className="text-xs text-muted-foreground">{t.common.loading}</p>
                   ) : null}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
-                  This file looks binary or non-textual, so the inline editor is disabled.
-                  You can still keep it in the workspace and reference its path from your
-                  entrypoint script.
+                  {t.forms.files.binaryWarning}
                 </div>
               )}
             </>

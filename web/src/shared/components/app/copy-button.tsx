@@ -1,14 +1,18 @@
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/shared/components/ui/button';
+import { useI18n } from '@/shared/lib/i18n';
 
 export function CopyButton({
   value,
-  label = 'Copied to clipboard',
+  label,
 }: {
   value: string;
   label?: string;
 }) {
+  const { t } = useI18n();
+  const successLabel = label || t.common.copied;
+
   return (
     <Button
       type="button"
@@ -17,10 +21,9 @@ export function CopyButton({
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);
-          toast.success(label);
+          toast.success(successLabel);
         } catch (error) {
           console.error('Failed to copy to clipboard', error);
-          toast.error('Failed to copy to clipboard');
         }
       }}
     >

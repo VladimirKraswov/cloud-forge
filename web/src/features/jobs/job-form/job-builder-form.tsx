@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from '@tanstack/react-router';
+import { useI18n } from '@/shared/lib/i18n';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { catalogApi } from '@/api/catalog';
@@ -115,6 +116,7 @@ export function JobBuilderForm({
   initialBootstrapImageId?: string | null;
   onSaved: (job: Job) => Promise<void> | void;
 }) {
+  const { t } = useI18n();
   const isEditMode = Boolean(jobId);
   const [tab, setTab] = useState<'general' | 'files'>('general');
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -224,7 +226,7 @@ export function JobBuilderForm({
       }
     } catch (error) {
       console.error(error);
-      toast.error('Failed to load file content');
+      toast.error(t.errors.loadContentFailed);
     } finally {
       setLoadingContentFileId(null);
     }
@@ -324,7 +326,7 @@ export function JobBuilderForm({
 
         await syncFiles(savedJob.id);
 
-        toast.success(isEditMode ? 'Job updated' : 'Job created');
+        toast.success(isEditMode ? t.errors.updated : t.errors.created);
         await onSaved(savedJob);
       } catch (error) {
         const message = getApiErrorMessage(error);
@@ -333,8 +335,8 @@ export function JobBuilderForm({
       }
     },
     () => {
-      setSubmitError('Please fix validation errors before saving');
-      toast.error('Please fix validation errors before saving');
+      setSubmitError(t.forms.job.validation.fixErrors);
+      toast.error(t.forms.job.validation.fixErrors);
       setTab('general');
     },
   );
@@ -344,8 +346,8 @@ export function JobBuilderForm({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={(value) => setTab(value as 'general' | 'files')}>
           <TabsList>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="files">Workspace files</TabsTrigger>
+            <TabsTrigger value="general">{t.forms.job.general}</TabsTrigger>
+            <TabsTrigger value="files">{t.forms.job.files}</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -356,10 +358,10 @@ export function JobBuilderForm({
             }}
           />
           <Button variant="outline" asChild>
-            <Link to="/catalog">Open catalog</Link>
+            <Link to="/catalog">{t.catalog.title}</Link>
           </Button>
           <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? 'Saving…' : 'Save job'}
+            {form.formState.isSubmitting ? t.common.saving : t.common.save}
           </Button>
         </div>
       </div>
@@ -375,13 +377,13 @@ export function JobBuilderForm({
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Job runtime</CardTitle>
+                <CardTitle>{t.forms.job.runtime}</CardTitle>
               </CardHeader>
 
               <CardContent className="grid gap-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="job-title">Title</Label>
+                    <Label htmlFor="job-title">{t.forms.job.fields.title}</Label>
                     <Input id="job-title" {...form.register('title')} />
                     {form.formState.errors.title ? (
                       <p className="text-xs text-destructive">
@@ -391,7 +393,7 @@ export function JobBuilderForm({
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Bootstrap image</Label>
+                    <Label>{t.forms.job.fields.bootstrapImage}</Label>
                     <Select
                       value={form.watch('bootstrap_image_id')}
                       onValueChange={(value) =>
@@ -403,7 +405,7 @@ export function JobBuilderForm({
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Choose bootstrap image" />
+                        <SelectValue placeholder={t.forms.job.chooseBootstrap} />
                       </SelectTrigger>
                       <SelectContent>
                         {activeBootstrapImages.map((image) => (
@@ -422,13 +424,13 @@ export function JobBuilderForm({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="job-description">Description</Label>
+                  <Label htmlFor="job-description">{t.forms.job.fields.description}</Label>
                   <Textarea id="job-description" {...form.register('description')} />
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="job-entrypoint">Entrypoint</Label>
+                    <Label htmlFor="job-entrypoint">{t.forms.job.fields.entrypoint}</Label>
                     <Input
                       id="job-entrypoint"
                       {...form.register('entrypoint')}
@@ -442,7 +444,7 @@ export function JobBuilderForm({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="job-entrypoint-args">Entrypoint args</Label>
+                    <Label htmlFor="job-entrypoint-args">{t.forms.job.fields.entrypointArgs}</Label>
                     <Input
                       id="job-entrypoint-args"
                       {...form.register('entrypoint_args_text')}
@@ -451,7 +453,7 @@ export function JobBuilderForm({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="job-working-dir">Working directory</Label>
+                    <Label htmlFor="job-working-dir">{t.forms.job.fields.workingDir}</Label>
                     <Input
                       id="job-working-dir"
                       {...form.register('working_dir')}
@@ -470,7 +472,7 @@ export function JobBuilderForm({
                       if (!selected) {
                         return (
                           <span className="text-muted-foreground">
-                            Selected bootstrap image details are not loaded yet.
+                            {t.forms.job.bootstrapLoading}
                           </span>
                         );
                       }
@@ -479,21 +481,21 @@ export function JobBuilderForm({
                         <div className="grid gap-2 md:grid-cols-2">
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              Docker image
+                              {t.jobs.tokens.details.dockerImage}
                             </div>
                             <div className="mt-1 font-medium">{selected.full_image_name}</div>
                           </div>
 
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              Base image
+                              {t.catalog.baseImageLabel}
                             </div>
                             <div className="mt-1 font-medium">{selected.base_image}</div>
                           </div>
 
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              Environments
+                              {t.navigation.catalog}
                             </div>
                             <div className="mt-1 font-medium">
                               {selected.environments.length}
@@ -502,7 +504,7 @@ export function JobBuilderForm({
 
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                              Status
+                              {t.common.status}
                             </div>
                             <div className="mt-1 font-medium capitalize">
                               {selected.status}
@@ -518,7 +520,7 @@ export function JobBuilderForm({
 
             <Card>
               <CardHeader>
-                <CardTitle>Environment variables</CardTitle>
+                <CardTitle>{t.forms.job.envVars}</CardTitle>
               </CardHeader>
 
               <CardContent>
@@ -528,27 +530,27 @@ export function JobBuilderForm({
 
             <Card>
               <CardHeader>
-                <CardTitle>Runtime resource hints</CardTitle>
+                <CardTitle>{t.forms.job.resources}</CardTitle>
               </CardHeader>
 
               <CardContent className="grid gap-4 md:grid-cols-4">
                 <div className="space-y-2">
-                  <Label>GPUs</Label>
+                  <Label>{t.forms.job.fields.gpus}</Label>
                   <Input {...form.register('resources.gpus')} placeholder="all" />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Shared memory</Label>
+                  <Label>{t.forms.job.fields.shmSize}</Label>
                   <Input {...form.register('resources.shm_size')} placeholder="16g" />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Memory limit</Label>
+                  <Label>{t.forms.job.fields.memoryLimit}</Label>
                   <Input {...form.register('resources.memory_limit')} placeholder="64g" />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>CPU limit</Label>
+                  <Label>{t.forms.job.fields.cpuLimit}</Label>
                   <Input {...form.register('resources.cpu_limit')} placeholder="8" />
                 </div>
               </CardContent>
