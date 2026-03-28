@@ -80,7 +80,8 @@ export class ArtifactService {
 
     const fileId = uuidv4();
     const safeFilename = sanitizeFilename(filename);
-    const normalizedRelativePath = normalizeRelativePath(relativePath || safeFilename) || safeFilename;
+    const normalizedRelativePath =
+      normalizeRelativePath(relativePath || safeFilename) || safeFilename;
     const storageKey = `jobs/${jobId}/files/${fileId}/${normalizedRelativePath}`;
 
     await s3Client.send(
@@ -118,7 +119,8 @@ export class ArtifactService {
 
     const artifactId = uuidv4();
     const safeFilename = sanitizeFilename(filename);
-    const normalizedRelativePath = normalizeRelativePath(relativePath || safeFilename) || safeFilename;
+    const normalizedRelativePath =
+      normalizeRelativePath(relativePath || safeFilename) || safeFilename;
     const storageKey = `runs/${runId}/artifacts/${artifactId}/${normalizedRelativePath}`;
 
     await s3Client.send(

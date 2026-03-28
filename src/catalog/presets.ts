@@ -12,7 +12,8 @@ export const containerPresets: ContainerPreset[] = [
     id: 'bootstrap-python',
     name: 'Cloud Forge Bootstrap (Python)',
     category: 'bootstrap',
-    description: 'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK.',
+    description:
+      'Официальный bootstrap-контейнер Cloud Forge для Python job с предустановленным SDK.',
     recommended_for: ['python', 'remote-run', 'sdk', 'hello-world'],
     support_level: 'supported',
     container: {

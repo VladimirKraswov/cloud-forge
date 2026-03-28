@@ -175,11 +175,7 @@ export default async function jobsRoutes(app: FastifyInstance) {
         const limit = req.query.limit ?? 20;
         const offset = req.query.offset ?? 0;
 
-        const result = await JobService.listJobRuns(
-          req.params.id,
-          Number(limit),
-          Number(offset),
-        );
+        const result = await JobService.listJobRuns(req.params.id, Number(limit), Number(offset));
 
         return reply.send(result);
       } catch (err) {

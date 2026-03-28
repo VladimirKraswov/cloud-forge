@@ -103,12 +103,7 @@ const normalizeWorkerStatus = (worker: Worker): Worker => {
   return { ...worker, status: 'online' };
 };
 
-const buildDockerCommand = (
-  job: Job,
-  token: string,
-  baseUrl: string,
-  image: string,
-): string => {
+const buildDockerCommand = (job: Job, token: string, baseUrl: string, image: string): string => {
   const parts: string[] = ['docker run --pull always --rm'];
 
   if (job.resources?.gpus) {
@@ -527,41 +522,36 @@ export class JobService {
     const jobFiles = await JobFileModel.listByJobId(job.id);
     const runId = makeId('run');
 
-    const manifestFiles: RunManifestFile[] = jobFiles.map(
-      (file): RunManifestFile => {
-        const relativePath = asString(
-          (file as { relative_path?: unknown }).relative_path,
-          asString((file as { filename?: unknown }).filename, 'file'),
-        ).trim();
+    const manifestFiles: RunManifestFile[] = jobFiles.map((file): RunManifestFile => {
+      const relativePath = asString(
+        (file as { relative_path?: unknown }).relative_path,
+        asString((file as { filename?: unknown }).filename, 'file'),
+      ).trim();
 
-        const filename =
-          asString((file as { filename?: unknown }).filename).trim() ||
-          relativePath.split('/').filter(Boolean).pop() ||
-          'file';
+      const filename =
+        asString((file as { filename?: unknown }).filename).trim() ||
+        relativePath.split('/').filter(Boolean).pop() ||
+        'file';
 
-        const sourceTypeRaw = asString((file as { source_type?: unknown }).source_type, 'upload');
-        const sourceType: RunManifestFile['source_type'] =
-          sourceTypeRaw === 'inline' ? 'inline' : 'upload';
+      const sourceTypeRaw = asString((file as { source_type?: unknown }).source_type, 'upload');
+      const sourceType: RunManifestFile['source_type'] =
+        sourceTypeRaw === 'inline' ? 'inline' : 'upload';
 
-        return {
-          relative_path: relativePath,
-          filename,
-          size_bytes: asNumber((file as { size_bytes?: unknown }).size_bytes, 0),
-          mime_type: asString(
-            (file as { mime_type?: unknown }).mime_type,
-            'application/octet-stream',
-          ),
-          is_executable: asBoolean(
-            (file as { is_executable?: unknown }).is_executable,
-            false,
-          ),
-          source_type: sourceType,
-          download_url:
-            `${baseUrl}/api/runs/${runId}/job-files/content?relativePath=` +
-            encodeURIComponent(relativePath),
-        };
-      },
-    );
+      return {
+        relative_path: relativePath,
+        filename,
+        size_bytes: asNumber((file as { size_bytes?: unknown }).size_bytes, 0),
+        mime_type: asString(
+          (file as { mime_type?: unknown }).mime_type,
+          'application/octet-stream',
+        ),
+        is_executable: asBoolean((file as { is_executable?: unknown }).is_executable, false),
+        source_type: sourceType,
+        download_url:
+          `${baseUrl}/api/runs/${runId}/job-files/content?relativePath=` +
+          encodeURIComponent(relativePath),
+      };
+    });
 
     const runManifest: RunManifest = {
       run_id: runId,
@@ -918,10 +908,7 @@ export class JobService {
       logs,
       events,
       artifacts: artifacts.map((artifact) => {
-        const storageKey = asString(
-          (artifact as { storage_key?: unknown }).storage_key,
-          '',
-        );
+        const storageKey = asString((artifact as { storage_key?: unknown }).storage_key, '');
 
         return {
           ...artifact,

@@ -39,10 +39,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
 
   app.get(
     '/catalog/job-templates/:id',
-    async (
-      req: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const template = jobTemplates.find((item) => item.id === req.params.id);
 
       if (!template) {

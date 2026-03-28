@@ -317,24 +317,23 @@ export class BootstrapImageModel {
 }
 
 export class BootstrapImageLogModel {
-  static async add(
-    imageId: string,
-    message: string,
-    level: LogLevel = 'info',
-  ): Promise<void> {
-    await runAsync(
-      `INSERT INTO bootstrap_image_logs (image_id, level, message) VALUES (?, ?, ?)`,
-      [imageId, level, message],
-    );
+  static async add(imageId: string, message: string, level: LogLevel = 'info'): Promise<void> {
+    await runAsync(`INSERT INTO bootstrap_image_logs (image_id, level, message) VALUES (?, ?, ?)`, [
+      imageId,
+      level,
+      message,
+    ]);
   }
 
-  static async listByImageId(imageId: string): Promise<Array<{
-    id: number;
-    image_id: string;
-    level: LogLevel;
-    message: string;
-    created_at: string;
-  }>> {
+  static async listByImageId(imageId: string): Promise<
+    Array<{
+      id: number;
+      image_id: string;
+      level: LogLevel;
+      message: string;
+      created_at: string;
+    }>
+  > {
     return allAsync(
       `SELECT id, image_id, level, message, created_at FROM bootstrap_image_logs WHERE image_id = ? ORDER BY id ASC`,
       [imageId],
@@ -843,10 +842,11 @@ export class RunModel {
 
 export class LogModel {
   static async add(runId: string, message: string, level: LogLevel = 'info'): Promise<void> {
-    await runAsync(
-      `INSERT INTO logs (run_id, level, message) VALUES (?, ?, ?)`,
-      [runId, level, message],
-    );
+    await runAsync(`INSERT INTO logs (run_id, level, message) VALUES (?, ?, ?)`, [
+      runId,
+      level,
+      message,
+    ]);
   }
 
   static async listByRunId(runId: string): Promise<LogEntry[]> {

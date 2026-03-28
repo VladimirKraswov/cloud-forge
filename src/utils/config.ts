@@ -20,15 +20,8 @@ export const config = {
     process.env.WORKER_HEARTBEAT_INTERVAL_SECONDS || '10',
     10,
   ),
-  workerOfflineTimeoutSeconds: parseInt(
-    process.env.WORKER_OFFLINE_TIMEOUT_SECONDS || '45',
-    10,
-  ),
-  runWatchdogIntervalSeconds: parseInt(
-    process.env.RUN_WATCHDOG_INTERVAL_SECONDS || '10',
-    10,
-  ),
-  publishedWorkerImage:
-    process.env.PUBLISHED_WORKER_IMAGE || 'xproger/cloud-forge-worker',
+  workerOfflineTimeoutSeconds: parseInt(process.env.WORKER_OFFLINE_TIMEOUT_SECONDS || '45', 10),
+  runWatchdogIntervalSeconds: parseInt(process.env.RUN_WATCHDOG_INTERVAL_SECONDS || '10', 10),
+  publishedWorkerImage: process.env.PUBLISHED_WORKER_IMAGE || 'xproger/cloud-forge-worker',
   publishedWorkerTag: process.env.PUBLISHED_WORKER_TAG || '0.1.0',
 };

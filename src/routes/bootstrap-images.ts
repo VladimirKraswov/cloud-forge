@@ -53,10 +53,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (
-      req: FastifyRequest<{ Body: PreviewBootstrapImageBody }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Body: PreviewBootstrapImageBody }>, reply: FastifyReply) => {
       try {
         const dockerfile = BootstrapBuilderService.generateDockerfile(
           req.body.baseImage,
@@ -114,10 +111,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (
-      req: FastifyRequest<{ Body: BuildBootstrapImageBody }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Body: BuildBootstrapImageBody }>, reply: FastifyReply) => {
       try {
         const id = `img_${uuidv4().replace(/-/g, '')}`;
 
@@ -159,10 +153,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (
-      req: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
         await BootstrapBuilderService.cancelBuild(req.params.id);
         return reply.send({ success: true });
@@ -188,10 +179,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (
-      req: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const progress = BootstrapBuilderService.getProgress(req.params.id);
 
       if (!progress) {
@@ -250,10 +238,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (
-      req: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const image = await JobService.getBootstrapImage(req.params.id);
 
       if (!image) {
@@ -278,10 +263,7 @@ export default async function bootstrapImageRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (
-      req: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
         const items = await JobService.listBootstrapImageLogs(req.params.id);
         return reply.send({

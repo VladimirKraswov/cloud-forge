@@ -59,7 +59,6 @@ export const broadcastRunProgress = (
 };
 
 export default async function wsRoutes(app: FastifyInstance) {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
   app.get('/ws/runs/:run_id', { websocket: true } as any, (connection: any, req: any) => {
     const runId = req.params.run_id as string;
 

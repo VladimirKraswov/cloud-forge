@@ -25,10 +25,7 @@ type WorkerPayload = {
 export default async function workerRoutes(app: FastifyInstance) {
   app.get(
     '/api/run-config',
-    async (
-      req: FastifyRequest<{ Querystring: { token: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Querystring: { token: string } }>, reply: FastifyReply) => {
       try {
         const baseUrl = config.publicBaseUrl || `${req.protocol}://${req.headers.host}`;
         const result = await JobService.claimRunByToken(req.query.token, baseUrl);

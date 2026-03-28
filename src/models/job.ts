@@ -1,10 +1,4 @@
-export type RunStatus =
-  | 'created'
-  | 'running'
-  | 'finished'
-  | 'failed'
-  | 'cancelled'
-  | 'lost';
+export type RunStatus = 'created' | 'running' | 'finished' | 'failed' | 'cancelled' | 'lost';
 
 export type LogLevel = 'info' | 'warn' | 'error';
 export type WorkerStatus = 'online' | 'busy' | 'offline';

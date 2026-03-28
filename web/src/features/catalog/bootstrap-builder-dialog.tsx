@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Download,
   Hammer,
+  HelpCircle,
   Loader2,
   Package,
   Terminal,
@@ -29,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui
 import { Badge } from '@/shared/components/ui/badge';
 import { cn } from '@/shared/utils/cn';
 import { z } from 'zod';
+import { useI18n } from '@/shared/lib/i18n';
 import {
   OPEN_BUILD_DIALOG_EVENT,
   useBootstrapBuildTracker,
@@ -256,6 +258,31 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
   };
 }
 
+function LabelWithHelp({
+  label,
+  help,
+  htmlFor,
+  className,
+}: {
+  label: string;
+  help: string;
+  htmlFor?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex items-center gap-1.5', className)}>
+      <Label htmlFor={htmlFor}>{label}</Label>
+      <div className="group relative">
+        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 transition-colors hover:text-muted-foreground" />
+        <div className="absolute bottom-full left-1/2 mb-2 hidden w-48 -translate-x-1/2 rounded-lg border bg-popover p-2 text-[10px] leading-tight text-popover-foreground shadow-md group-hover:block z-50">
+          {help}
+          <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-border" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StageRow({
   title,
   description,
@@ -317,6 +344,7 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   const [step, setStep] = useState<BuilderStep>('form');
   const [loading, setLoading] = useState(false);
   const { build, startTracking, clearTracking } = useBootstrapBuildTracker();
+  const { t, lang } = useI18n();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -551,26 +579,46 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
       <DialogTrigger asChild>
         <Button variant="outline">
           <Hammer className="mr-2 h-4 w-4" />
-          Create Bootstrap Image
+          {t.catalog.createBootstrap}
         </Button>
       </DialogTrigger>
 
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Bootstrap Image Builder</DialogTitle>
-          <DialogDescription>
-            Build a self-contained worker image with one or more isolated Python
-            environments, the Cloud Forge SDK, and an editable Dockerfile preview.
-          </DialogDescription>
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <DialogTitle>{t.catalog.builderTitle}</DialogTitle>
+            <DialogDescription>{t.catalog.builderDescription}</DialogDescription>
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border bg-muted p-0.5 mr-6">
+            <Button
+              variant={lang === 'en' ? 'secondary' : 'ghost'}
+              size="xs"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => setLang('en')}
+            >
+              EN
+            </Button>
+            <Button
+              variant={lang === 'ru' ? 'secondary' : 'ghost'}
+              size="xs"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => setLang('ru')}
+            >
+              RU
+            </Button>
+          </div>
         </DialogHeader>
 
         {step === 'form' && (
           <div className="space-y-5 py-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="name" className={cn(formErrors.name && 'text-destructive')}>
-                  Image name
-                </Label>
+                <LabelWithHelp
+                  label={t.catalog.imageName}
+                  help={t.catalog.imageNameHelp}
+                  htmlFor="name"
+                  className={cn(formErrors.name && 'text-destructive')}
+                />
                 <Input
                   id="name"
                   placeholder="qwen-7b-train"
@@ -586,9 +634,12 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tag" className={cn(formErrors.tag && 'text-destructive')}>
-                  Tag / Version
-                </Label>
+                <LabelWithHelp
+                  label={t.catalog.tag}
+                  help={t.catalog.tagHelp}
+                  htmlFor="tag"
+                  className={cn(formErrors.tag && 'text-destructive')}
+                />
                 <Input
                   id="tag"
                   placeholder="0.1.0"
@@ -605,12 +656,12 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
             </div>
 
             <div className="space-y-2">
-              <Label
+              <LabelWithHelp
+                label={t.catalog.baseImage}
+                help={t.catalog.baseImageHelp}
                 htmlFor="baseImage"
                 className={cn(formErrors.baseImage && 'text-destructive')}
-              >
-                Base Docker image
-              </Label>
+              />
               <Input
                 id="baseImage"
                 placeholder="igortet/model-qwen-7b"
@@ -630,7 +681,11 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="packages">Extra pip packages (one per line)</Label>
+              <LabelWithHelp
+                label={t.catalog.extraPackages}
+                help={t.catalog.extraPackagesHelp}
+                htmlFor="packages"
+              />
               <Textarea
                 id="packages"
                 rows={8}
@@ -660,7 +715,7 @@ datasets>=3.6.0`}
             <div className="flex justify-end pt-2">
               <Button onClick={handlePreview} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Next: Preview Dockerfile
+                {t.catalog.nextPreview}
               </Button>
             </div>
           </div>
@@ -690,12 +745,12 @@ datasets>=3.6.0`}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label
+                <LabelWithHelp
+                  label={t.catalog.dockerHubUser}
+                  help={t.catalog.dockerHubUserHelp}
                   htmlFor="dockerUser"
                   className={cn(formErrors.dockerUser && 'text-destructive')}
-                >
-                  Username
-                </Label>
+                />
                 <Input
                   id="dockerUser"
                   placeholder="username"
@@ -711,12 +766,12 @@ datasets>=3.6.0`}
               </div>
 
               <div className="space-y-2">
-                <Label
+                <LabelWithHelp
+                  label={t.catalog.dockerHubPass}
+                  help={t.catalog.dockerHubPassHelp}
                   htmlFor="dockerPass"
                   className={cn(formErrors.dockerPass && 'text-destructive')}
-                >
-                  Password / Access token
-                </Label>
+                />
                 <Input
                   id="dockerPass"
                   type="password"
@@ -735,12 +790,12 @@ datasets>=3.6.0`}
 
             <div className="flex justify-between pt-2">
               <Button variant="ghost" onClick={() => setStep('form')}>
-                Back
+                {t.catalog.back}
               </Button>
 
               <Button onClick={handleStartBuild} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Build & Publish
+                {t.catalog.buildAndPublish}
               </Button>
             </div>
           </div>
@@ -760,19 +815,20 @@ datasets>=3.6.0`}
               <div>
                 <p className="font-medium">
                   {progress?.status === 'completed'
-                    ? 'Bootstrap image completed'
+                    ? t.catalog.completed
                     : progress?.status === 'failed'
-                      ? 'Bootstrap image failed'
-                      : 'The backend is building and pushing your bootstrap image'}
+                      ? t.catalog.failed
+                      : t.catalog.building}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Current stage:{' '}
+                  {t.catalog.currentStage}:{' '}
                   <span className="font-medium">
                     {insights.stageId === 'failed'
                       ? 'failed'
                       : insights.stageId === 'completed'
                         ? 'completed'
-                        : STAGE_META.find((item) => item.id === insights.stageId)?.title ?? 'Queued'}
+                        : STAGE_META.find((item) => item.id === insights.stageId)?.title ??
+                          'Queued'}
                   </span>
                 </p>
               </div>
@@ -782,18 +838,22 @@ datasets>=3.6.0`}
               <div className="space-y-4">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Build stages</CardTitle>
+                    <CardTitle className="text-base">{t.catalog.buildStages}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {STAGE_META.map((stage, index) => (
-                      <StageRow
-                        key={stage.id}
-                        title={stage.title}
-                        description={stage.description}
-                        icon={stage.icon}
-                        state={renderStageState(index)}
-                      />
-                    ))}
+                    {STAGE_META.map((stage, index) => {
+                      const title = lang === 'ru' ? translations.ru.catalog.stages[stage.id].title : stage.title;
+                      const description = lang === 'ru' ? translations.ru.catalog.stages[stage.id].description : stage.description;
+                      return (
+                        <StageRow
+                          key={stage.id}
+                          title={title}
+                          description={description}
+                          icon={stage.icon}
+                          state={renderStageState(index)}
+                        />
+                      );
+                    })}
                   </CardContent>
                 </Card>
 
@@ -844,7 +904,7 @@ datasets>=3.6.0`}
 
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Summary</CardTitle>
+                    <CardTitle className="text-base">{t.catalog.summary}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div>
@@ -871,7 +931,7 @@ datasets>=3.6.0`}
                 <CardHeader className="flex flex-row items-center justify-between space-y-0">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Terminal className="h-4 w-4" />
-                    Raw build logs
+                    {t.catalog.rawLogs}
                   </CardTitle>
                   {!autoScroll && progress?.status === 'building' && (
                     <Button
@@ -880,7 +940,7 @@ datasets>=3.6.0`}
                       className="h-7 px-2 text-[10px]"
                       onClick={() => setAutoScroll(true)}
                     >
-                      Resume auto-scroll
+                      {t.catalog.resumeAutoScroll}
                     </Button>
                   )}
                 </CardHeader>
@@ -891,12 +951,15 @@ datasets>=3.6.0`}
                   >
                     {progress?.logs.length ? (
                       progress.logs.map((log, index) => (
-                        <div key={`${index}-${log.slice(0, 20)}`} className="mb-1 break-all leading-tight">
+                        <div
+                          key={`${index}-${log.slice(0, 20)}`}
+                          className="mb-1 break-all leading-tight"
+                        >
                           {log}
                         </div>
                       ))
                     ) : (
-                      <div className="text-slate-400">Waiting for build logs...</div>
+                      <div className="text-slate-400">{t.catalog.waitingLogs}</div>
                     )}
                     <div ref={logEndRef} />
                   </div>
@@ -906,9 +969,11 @@ datasets>=3.6.0`}
 
             <div className="flex justify-between items-center pt-1">
               <div>
-                {progress?.status === 'completed' || progress?.status === 'failed' || progress?.status === 'cancelled' ? (
+                {progress?.status === 'completed' ||
+                progress?.status === 'failed' ||
+                progress?.status === 'cancelled' ? (
                   <Button variant="ghost" size="sm" onClick={clearTracking}>
-                    Clear build status
+                    {t.catalog.clearStatus}
                   </Button>
                 ) : (
                   <Button
@@ -921,10 +986,10 @@ datasets>=3.6.0`}
                     {cancelling ? (
                       <>
                         <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Cancelling...
+                        {t.catalog.cancelling}
                       </>
                     ) : (
-                      'Cancel build'
+                      t.catalog.cancelBuild
                     )}
                   </Button>
                 )}
@@ -938,8 +1003,8 @@ datasets>=3.6.0`}
                 onClick={() => setOpen(false)}
               >
                 {progress?.status === 'completed' || progress?.status === 'failed'
-                  ? 'Close'
-                  : 'Hide'}
+                  ? t.catalog.close
+                  : t.catalog.hide}
               </Button>
             </div>
           </div>

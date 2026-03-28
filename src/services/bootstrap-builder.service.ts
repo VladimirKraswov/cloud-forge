@@ -30,11 +30,7 @@ export interface BuildProgress {
 const buildStatus = new Map<string, BuildProgress>();
 const activeProcesses = new Map<string, ChildProcess>();
 
-const appendLog = async (
-  imageId: string,
-  message: string,
-  level: 'info' | 'error' = 'info',
-) => {
+const appendLog = async (imageId: string, message: string, level: 'info' | 'error' = 'info') => {
   const progress = buildStatus.get(imageId);
   if (progress) {
     progress.logs.push(message);
@@ -84,7 +80,10 @@ const quoteForShell = (value: string): string =>
   `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 const safeEnvName = (value: string): string =>
-  value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-');
 
 const buildEnvInstallBlock = (env: BootstrapEnvironmentInput): string => {
   const envName = safeEnvName(env.name || 'env');
@@ -150,9 +149,7 @@ export class BootstrapBuilderService {
       return dockerfileOverride;
     }
 
-    const envBlocks = environments
-      .map((env) => buildEnvInstallBlock(env))
-      .join('\n\n');
+    const envBlocks = environments.map((env) => buildEnvInstallBlock(env)).join('\n\n');
 
     return `
 FROM ${baseImage}
@@ -264,11 +261,7 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
       for (const env of environments) {
         const envName = safeEnvName(env.name || 'env');
         const reqFilename = `requirements-${envName}.txt`;
-        fs.writeFileSync(
-          path.join(workspaceDir, reqFilename),
-          env.requirements_text || '',
-          'utf8',
-        );
+        fs.writeFileSync(path.join(workspaceDir, reqFilename), env.requirements_text || '', 'utf8');
       }
 
       await appendLog(id, `Building Docker image ${fullImageName}`);
@@ -419,8 +412,9 @@ exec "/opt/cloudforge/envs/${'$'}{ENV_NAME}/bin/python" "$@"
     status: 'building' | 'pushing' | 'completed' | 'failed' | 'cancelled',
     error?: string,
   ): Promise<void> {
-    const finishedAt =
-      ['completed', 'failed', 'cancelled'].includes(status) ? 'CURRENT_TIMESTAMP' : 'NULL';
+    const finishedAt = ['completed', 'failed', 'cancelled'].includes(status)
+      ? 'CURRENT_TIMESTAMP'
+      : 'NULL';
 
     return new Promise((resolve, reject) => {
       db.run(

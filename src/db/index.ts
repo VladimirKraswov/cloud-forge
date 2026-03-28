@@ -108,7 +108,11 @@ export const initDb = async (): Promise<void> => {
   // Migrate older jobs table
   await renameColumn('jobs', 'resources', 'resources_json');
   await ensureColumn('jobs', 'bootstrap_image_id', 'bootstrap_image_id TEXT');
-  await ensureColumn('jobs', 'environment_variables', `environment_variables TEXT NOT NULL DEFAULT '{}'`);
+  await ensureColumn(
+    'jobs',
+    'environment_variables',
+    `environment_variables TEXT NOT NULL DEFAULT '{}'`,
+  );
   await ensureColumn('jobs', 'resources_json', 'resources_json TEXT');
   await ensureColumn('jobs', 'entrypoint', `entrypoint TEXT NOT NULL DEFAULT 'main.py'`);
   await ensureColumn('jobs', 'entrypoint_args', `entrypoint_args TEXT NOT NULL DEFAULT '[]'`);
@@ -283,7 +287,9 @@ export const initDb = async (): Promise<void> => {
   `);
 
   // Indexes
-  await runAsync(`CREATE INDEX IF NOT EXISTS idx_jobs_bootstrap_image_id ON jobs(bootstrap_image_id)`);
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_jobs_bootstrap_image_id ON jobs(bootstrap_image_id)`,
+  );
 
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_job_id ON share_tokens(job_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_share_tokens_token ON share_tokens(token)`);
@@ -292,17 +298,25 @@ export const initDb = async (): Promise<void> => {
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_share_token_id ON runs(share_token_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_worker_id ON runs(worker_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)`);
-  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_last_heartbeat_at ON runs(last_heartbeat_at)`);
-  await runAsync(`CREATE INDEX IF NOT EXISTS idx_runs_bootstrap_image_id ON runs(bootstrap_image_id)`);
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_runs_last_heartbeat_at ON runs(last_heartbeat_at)`,
+  );
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_runs_bootstrap_image_id ON runs(bootstrap_image_id)`,
+  );
 
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_workers_last_seen_at ON workers(last_seen_at)`);
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_id ON run_artifacts(run_id)`);
 
-  await runAsync(`CREATE INDEX IF NOT EXISTS idx_bootstrap_image_logs_image_id ON bootstrap_image_logs(image_id)`);
+  await runAsync(
+    `CREATE INDEX IF NOT EXISTS idx_bootstrap_image_logs_image_id ON bootstrap_image_logs(image_id)`,
+  );
 
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_job_files_job_id ON job_files(job_id)`);
-  await runAsync(`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_files_job_path ON job_files(job_id, relative_path)`);
+  await runAsync(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_job_files_job_path ON job_files(job_id, relative_path)`,
+  );
 
   await runAsync(`CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id)`);
 

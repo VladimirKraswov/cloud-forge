@@ -5,6 +5,7 @@ import { catalogApi } from '@/api/catalog';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
+import { useI18n } from '@/shared/lib/i18n';
 import {
   requestOpenBootstrapBuildDialog,
   useBootstrapBuildTracker,
@@ -26,6 +27,7 @@ function getStatusLabel(status?: string) {
 export function BootstrapBuildFloating() {
   const { build, isActive, isFinished, clearTracking } = useBootstrapBuildTracker();
   const [cancelling, setCancelling] = useState(false);
+  const { t } = useI18n();
 
   if (!build) return null;
 
@@ -68,10 +70,10 @@ export function BootstrapBuildFloating() {
 
               <p className="mt-1 text-sm text-muted-foreground">
                 {isActive
-                  ? 'Сборка всё ещё идёт. Можно снова открыть окно с логами.'
+                  ? t.floating.buildInProgress
                   : build.status === 'completed'
-                    ? 'Сборка завершена.'
-                    : 'Сборка завершилась ошибкой.'}
+                    ? t.floating.buildCompleted
+                    : t.floating.buildFailed}
               </p>
 
               {build.logs?.length ? (
@@ -82,12 +84,12 @@ export function BootstrapBuildFloating() {
 
               <div className="mt-3 flex items-center gap-2">
                 <Button size="sm" onClick={() => requestOpenBootstrapBuildDialog()}>
-                  Открыть
+                  {t.floating.openMonitor}
                 </Button>
 
                 {isFinished ? (
                   <Button size="sm" variant="ghost" onClick={clearTracking}>
-                    Скрыть
+                    {t.floating.dismiss}
                   </Button>
                 ) : (
                   <Button

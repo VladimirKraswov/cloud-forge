@@ -45,7 +45,12 @@ const asString = (value: unknown): string | null => {
 
 const normalizeRelativePath = (value: string): string => {
   const normalized = path.posix.normalize(value.replace(/\\/g, '/')).replace(/^\/+/, '');
-  if (!normalized || normalized === '.' || normalized.startsWith('../') || normalized.includes('/../')) {
+  if (
+    !normalized ||
+    normalized === '.' ||
+    normalized.startsWith('../') ||
+    normalized.includes('/../')
+  ) {
     throw new Error(`invalid relative path "${value}"`);
   }
   return normalized;
@@ -78,7 +83,8 @@ const normalizeResources = (
   }
 
   const gpus = resourcesValue.gpus == null ? undefined : String(resourcesValue.gpus).trim();
-  const shmSize = resourcesValue.shm_size == null ? undefined : String(resourcesValue.shm_size).trim();
+  const shmSize =
+    resourcesValue.shm_size == null ? undefined : String(resourcesValue.shm_size).trim();
   const cpuLimit = resourcesValue.cpu_limit == null ? undefined : Number(resourcesValue.cpu_limit);
   const memoryLimit =
     resourcesValue.memory_limit == null ? undefined : String(resourcesValue.memory_limit).trim();
