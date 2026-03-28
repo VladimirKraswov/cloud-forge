@@ -13,6 +13,7 @@ import { JobDetailsPage } from '@/pages/jobs/job-details-page';
 import { JobEditorPage } from '@/pages/jobs/job-editor-page';
 import { JobRunsPage } from '@/pages/jobs/job-runs-page';
 import { JobTokensPage } from '@/pages/jobs/job-tokens-page';
+import { RunsListPage } from '@/pages/runs/runs-list-page';
 import { RunDetailsPage } from '@/pages/runs/run-details-page';
 import { WorkersListPage } from '@/pages/workers/workers-list-page';
 import { CatalogPage } from '@/pages/catalog/catalog-page';
@@ -87,6 +88,12 @@ const jobTokensRoute = createRoute({
   component: JobTokensPage,
 });
 
+const runsListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/runs',
+  component: RunsListPage,
+});
+
 const runDetailsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/runs/$runId',
@@ -113,6 +120,7 @@ const routeTree = rootRoute.addChildren([
   editJobRoute,
   jobRunsRoute,
   jobTokensRoute,
+  runsListRoute,
   runDetailsRoute,
   workersRoute,
   catalogRoute,

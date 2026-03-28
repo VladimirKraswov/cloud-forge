@@ -63,7 +63,7 @@ export function JobsListPage() {
     },
   });
 
-  const rows = useMemo(() => query.data?.jobs ?? [], [query.data?.jobs]);
+  const rows = useMemo(() => query.data?.items ?? [], [query.data?.items]);
 
   return (
     <div className="space-y-6">

@@ -33,6 +33,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const navigation = [
     { to: '/', label: t.navigation.dashboard },
     { to: '/jobs', label: t.navigation.jobs },
+    { to: '/runs', label: t.runs.title },
     { to: '/workers', label: t.navigation.workers },
     { to: '/catalog', label: t.navigation.catalog },
   ];

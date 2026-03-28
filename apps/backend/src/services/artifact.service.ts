@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -163,6 +164,17 @@ export class ArtifactService {
     );
 
     return response;
+  }
+
+  static async deleteObject(storageKey: string): Promise<void> {
+    await ArtifactService.ensureBucket();
+
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+      }),
+    );
   }
 
   static async readTextObject(storageKey: string): Promise<string> {

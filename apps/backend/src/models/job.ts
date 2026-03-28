@@ -135,6 +135,7 @@ export interface Run {
   bootstrap_image_id: string;
   worker_id?: string | null;
   worker_name?: string | null;
+  job_title?: string | null;
   status: RunStatus;
   stage?: string | null;
   progress?: number | null;

@@ -319,6 +319,11 @@ export interface PaginatedResponse<T> {
 }
 
 export interface JobsListResponse {
-  jobs: JobListItem[];
+  items: JobListItem[];
+  total: number;
+}
+
+export interface RunsListResponse {
+  items: Run[];
   total: number;
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Download, FileText, Terminal, Workflow } from 'lucide-react';
+import { ArrowLeft, Ban, Download, FileText, Terminal, Trash2, Workflow } from 'lucide-react';
+import { useI18n } from '@/shared/lib/i18n';
 import { toast } from 'sonner';
 import { apiBaseUrl, buildArtifactContentUrl } from '@/api/client';
 import { runsApi } from '@/api/runs';
@@ -18,6 +19,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/shared/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import { getApiErrorMessage } from '@/shared/lib/api-error';
 import { formatDateTime, formatFileSize, formatRelative } from '@/shared/utils/format';
@@ -90,6 +102,7 @@ function EventBadge({ event }: { event: RunEvent }) {
 
 export function RunDetailsPage() {
   const { runId } = useParams({ from: '/runs/$runId' });
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]);
@@ -113,6 +126,18 @@ export function RunDetailsPage() {
     onSuccess: () => {
       toast.success('Run cancellation requested');
       queryClient.invalidateQueries({ queryKey: ['run', runId] });
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => runsApi.delete(runId),
+    onSuccess: () => {
+      toast.success(t.common.deleted);
+      queryClient.invalidateQueries({ queryKey: ['runs'] });
+      window.history.back();
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -245,7 +270,36 @@ export function RunDetailsPage() {
                 <Ban className="h-4 w-4" />
                 {cancelMutation.isPending ? 'Cancelling…' : 'Cancel run'}
               </Button>
-            ) : null}
+            ) : (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {deleteMutation.isPending ? 'Deleting…' : t.common.delete}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t.runs.deleteDialog.title}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t.runs.deleteDialog.description}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => deleteMutation.mutate()}
+                    >
+                      {t.common.delete}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </>
         }
       />

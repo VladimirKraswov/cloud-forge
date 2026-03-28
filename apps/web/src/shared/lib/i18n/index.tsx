@@ -175,6 +175,12 @@ export const translations = {
     },
     runs: {
       title: 'Runs',
+      listDescription: 'Global history of all executions across the platform. Search, filter and manage runs.',
+      deleteDialog: {
+        title: 'Delete run?',
+        description: 'This will permanently remove the run, its logs, events, and physical artifacts from storage.',
+        confirm: 'Delete run',
+      },
       details: {
         title: 'Run details',
         summary: 'Execution summary',
@@ -589,6 +595,12 @@ export const translations = {
     },
     runs: {
       title: 'Запуски',
+      listDescription: 'Глобальная история всех выполнений на платформе. Поиск, фильтрация и управление запусками.',
+      deleteDialog: {
+        title: 'Удалить запуск?',
+        description: 'Это безвозвратно удалит запуск, его логи, события и физические объекты артефактов из хранилища.',
+        confirm: 'Удалить запуск',
+      },
       details: {
         title: 'Детали запуска',
         summary: 'Сводка выполнения',

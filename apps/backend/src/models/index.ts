@@ -108,6 +108,7 @@ const mapRunRow = (row: any): Run => ({
   bootstrap_image_id: row.bootstrap_image_id,
   worker_id: row.worker_id ?? null,
   worker_name: row.worker_name ?? null,
+  job_title: row.job_title ?? null,
   status: row.status,
   stage: row.stage ?? null,
   progress: row.progress ?? null,
@@ -400,7 +401,7 @@ export class JobModel {
     status?: RunStatus;
     limit?: number;
     offset?: number;
-  }): Promise<{ jobs: JobListItem[]; total: number }> {
+  }): Promise<{ items: JobListItem[]; total: number }> {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -472,7 +473,7 @@ export class JobModel {
     }));
 
     return {
-      jobs,
+      items: jobs,
       total: countRow?.total ?? 0,
     };
   }
@@ -805,12 +806,13 @@ export class RunModel {
     share_token_id: string;
     bootstrap_image_id: string;
     run_manifest: RunManifest;
+    job_title?: string;
   }): Promise<void> {
     await runAsync(
       `
       INSERT INTO runs (
-        id, job_id, share_token_id, bootstrap_image_id, status, run_manifest
-      ) VALUES (?, ?, ?, ?, 'created', ?)
+        id, job_id, share_token_id, bootstrap_image_id, status, run_manifest, job_title
+      ) VALUES (?, ?, ?, ?, 'created', ?, ?)
       `,
       [
         data.id,
@@ -818,6 +820,7 @@ export class RunModel {
         data.share_token_id,
         data.bootstrap_image_id,
         JSON.stringify(data.run_manifest),
+        data.job_title ?? null,
       ],
     );
   }
@@ -841,6 +844,61 @@ export class RunModel {
       [jobId, limit, offset],
     );
     return rows.map(mapRunRow);
+  }
+
+  static async listGlobal(filters: {
+    search?: string;
+    status?: RunStatus;
+    sort_by?: string;
+    sort_dir?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: Run[]; total: number }> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.search) {
+      conditions.push('(job_title LIKE ? OR id LIKE ?)');
+      params.push(`%${filters.search}%`, `%${filters.search}%`);
+    }
+
+    if (filters.status) {
+      conditions.push('status = ?');
+      params.push(filters.status);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRow = await getAsync<{ total: number }>(
+      `SELECT COUNT(*) as total FROM runs ${whereClause}`,
+      params,
+    );
+
+    const sortField =
+      {
+        created_at: 'created_at',
+        started_at: 'started_at',
+        finished_at: 'finished_at',
+        title: 'job_title',
+        status: 'status',
+      }[filters.sort_by || 'created_at'] || 'created_at';
+
+    const sortDir = filters.sort_dir?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    const rows = await allAsync<any>(
+      `
+      SELECT * FROM runs
+      ${whereClause}
+      ORDER BY ${sortField} ${sortDir}, id DESC
+      LIMIT ? OFFSET ?
+      `,
+      [...params, filters.limit ?? 20, filters.offset ?? 0],
+    );
+
+    return {
+      items: rows.map(mapRunRow),
+      total: countRow?.total ?? 0,
+    };
   }
 
   static async countByJobId(jobId: string): Promise<number> {
@@ -963,6 +1021,10 @@ export class RunModel {
     );
     return rows.map(mapRunRow);
   }
+
+  static async delete(id: string): Promise<void> {
+    await runAsync('DELETE FROM runs WHERE id = ?', [id]);
+  }
 }
 
 export class LogModel {
@@ -976,6 +1038,10 @@ export class LogModel {
 
   static async listByRunId(runId: string): Promise<LogEntry[]> {
     return allAsync<LogEntry>(`SELECT * FROM logs WHERE run_id = ? ORDER BY id ASC`, [runId]);
+  }
+
+  static async deleteByRunId(runId: string): Promise<void> {
+    await runAsync('DELETE FROM logs WHERE run_id = ?', [runId]);
   }
 }
 
@@ -1015,6 +1081,10 @@ export class RunEventModel {
       [runId],
     );
     return rows.map(mapRunEventRow);
+  }
+
+  static async deleteByRunId(runId: string): Promise<void> {
+    await runAsync('DELETE FROM run_events WHERE run_id = ?', [runId]);
   }
 }
 
@@ -1113,5 +1183,9 @@ export class RunArtifactModel {
       [runId],
     );
     return rows.map(mapRunArtifactRow);
+  }
+
+  static async deleteByRunId(runId: string): Promise<void> {
+    await runAsync('DELETE FROM run_artifacts WHERE run_id = ?', [runId]);
   }
 }

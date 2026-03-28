@@ -359,16 +359,4 @@ export default async function workerRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get(
-    '/api/runs/:id',
-    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const result = await JobService.getRun(req.params.id);
-
-      if (!result) {
-        return reply.code(404).send({ error: 'Run not found' });
-      }
-
-      return result;
-    },
-  );
 }

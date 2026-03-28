@@ -766,6 +766,7 @@ export class JobService {
       share_token_id: shareToken.id,
       bootstrap_image_id: bootstrapImage.id,
       run_manifest: runManifest,
+      job_title: job.title,
     });
 
     await ShareTokenModel.incrementClaim(shareToken.id);
@@ -977,6 +978,17 @@ export class JobService {
     };
   }
 
+  static async listGlobalRuns(filters: {
+    search?: string;
+    status?: RunStatus;
+    sort_by?: string;
+    sort_dir?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  }) {
+    return RunModel.listGlobal(filters);
+  }
+
   static async finishRun(
     runId: string,
     status: Extract<RunStatus, 'finished' | 'failed' | 'cancelled' | 'lost'>,
@@ -1097,6 +1109,34 @@ export class JobService {
         };
       }),
     };
+  }
+
+  static async deleteRun(runId: string) {
+    const run = await RunModel.findById(runId);
+    if (!run) throw new Error('Run not found');
+
+    if (run.status === 'running') {
+      throw new Error('Cannot delete a running run');
+    }
+
+    const artifacts = await RunArtifactModel.listByRunId(runId);
+
+    // Physical deletion of artifacts
+    for (const artifact of artifacts) {
+      try {
+        await ArtifactService.deleteObject(artifact.storage_key);
+      } catch (err) {
+        console.error(`[JobService] Failed to delete artifact ${artifact.storage_key} from storage:`, err);
+      }
+    }
+
+    // Database deletion
+    await Promise.all([
+      LogModel.deleteByRunId(runId),
+      RunEventModel.deleteByRunId(runId),
+      RunArtifactModel.deleteByRunId(runId),
+      RunModel.delete(runId),
+    ]);
   }
 
   static async listRunEvents(runId: string) {

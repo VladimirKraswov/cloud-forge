@@ -16,6 +16,7 @@ import workersRoutes from './routes/workers';
 import tokensRoutes from './routes/tokens';
 import dashboardRoutes from './routes/dashboard';
 import catalogRoutes from './routes/catalog';
+import runsRoutes from './routes/runs';
 import healthRoutes from './routes/health';
 import bootstrapImageRoutes from './routes/bootstrap-images';
 import { ArtifactService } from './services/artifact.service';
@@ -122,6 +123,7 @@ const start = async () => {
     await app.register(workersRoutes);
     await app.register(tokensRoutes);
     await app.register(dashboardRoutes);
+    await app.register(runsRoutes, { prefix: '/api' });
     await app.register(artifactsRoutes);
 
     startWatchdog();

@@ -1726,6 +1726,24 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except Exception as exc:
+        log_line("error", "unhandled exception in runner main loop", component="BOOT", error=str(exc))
+
+        if CURRENT_RUN_ID:
+            try:
+                # Best-effort attempt to notify backend of failure if we have a run_id
+                CONTROL_WS.send(
+                    "run.finished",
+                    {
+                        "run_id": CURRENT_RUN_ID,
+                        "status": "failed",
+                        "result": f"Unhandled runner exception: {exc}",
+                    },
+                )
+            except Exception:
+                pass
+
+        sys.exit(1)
     finally:
         try:
             CONTROL_WS.close()

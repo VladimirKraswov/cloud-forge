@@ -180,12 +180,20 @@ export const initDb = async (): Promise<void> => {
       last_heartbeat_at DATETIME,
       cancel_requested_at DATETIME,
       cancel_reason TEXT,
+      job_title TEXT,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   // Migrate older runs table
+  await ensureColumn('runs', 'job_title', 'job_title TEXT');
+  await runAsync(`
+    UPDATE runs
+    SET job_title = (SELECT title FROM jobs WHERE jobs.id = runs.job_id)
+    WHERE job_title IS NULL
+  `);
+
   await ensureColumn('runs', 'bootstrap_image_id', 'bootstrap_image_id TEXT');
   await ensureColumn('runs', 'run_manifest', `run_manifest TEXT NOT NULL DEFAULT '{}'`);
   await ensureColumn('runs', 'stage', 'stage TEXT');

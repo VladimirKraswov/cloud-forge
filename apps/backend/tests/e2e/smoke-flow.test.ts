@@ -6,6 +6,7 @@ import db from '../../src/db/index';
 import jobsRoutes from '../../src/routes/jobs';
 import workerRoutes from '../../src/routes/worker';
 import artifactsRoutes from '../../src/routes/artifacts';
+import runsRoutes from '../../src/routes/runs';
 
 // Mock ArtifactService to avoid real MinIO calls in this e2e test
 vi.mock('../../src/services/artifact.service', () => ({
@@ -34,6 +35,7 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
     await app.register(jobsRoutes);
     await app.register(workerRoutes);
     await app.register(artifactsRoutes);
+    await app.register(runsRoutes, { prefix: '/api' });
   });
 
   afterEach(async () => {
