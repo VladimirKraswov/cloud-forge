@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { catalogApi } from '@/api/catalog';
+import { LanguageSwitcher } from '@/shared/components/app/language-switcher';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
@@ -375,7 +376,7 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   const [step, setStep] = useState<BuilderStep>('form');
   const [loading, setLoading] = useState(false);
   const { build, startTracking, clearTracking } = useBootstrapBuildTracker();
-  const { t, lang, setLang } = useI18n();
+  const { t } = useI18n();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -608,8 +609,9 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
         ? 'failed'
         : progress?.status === 'completed'
           ? 'completed'
-          : t.catalog.stages[insights.stageId as Exclude<BuildStageId, 'completed' | 'failed'>]
-              ?.title ?? 'Queued';
+          : t.catalog.stages[
+              insights.stageId as Exclude<BuildStageId, 'completed' | 'failed'>
+            ]?.title ?? 'Queued';
 
   return (
     <Dialog
@@ -645,24 +647,7 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
             <DialogDescription>{t.catalog.builderDescription}</DialogDescription>
           </div>
 
-          <div className="mr-6 flex items-center gap-1 rounded-lg border bg-muted p-0.5">
-            <Button
-              variant={lang === 'en' ? 'secondary' : 'ghost'}
-              size="xs"
-              className="h-6 px-2 text-[10px]"
-              onClick={() => setLang('en')}
-            >
-              EN
-            </Button>
-            <Button
-              variant={lang === 'ru' ? 'secondary' : 'ghost'}
-              size="xs"
-              className="h-6 px-2 text-[10px]"
-              onClick={() => setLang('ru')}
-            >
-              RU
-            </Button>
-          </div>
+          <LanguageSwitcher compact className="mr-6" />
         </DialogHeader>
 
         {step === 'form' && (
