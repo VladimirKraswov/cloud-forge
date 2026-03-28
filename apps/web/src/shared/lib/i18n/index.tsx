@@ -47,6 +47,7 @@ export const translations = {
       idle: 'idle',
       unknown: 'unknown',
       copied: 'Copied to clipboard',
+      deleted: 'Deleted',
     },
     navigation: {
       dashboard: 'Dashboard',
@@ -460,6 +461,7 @@ export const translations = {
       idle: 'ожидание',
       unknown: 'неизвестно',
       copied: 'Скопировано в буфер обмена',
+      deleted: 'Удалено',
     },
     navigation: {
       dashboard: 'Дашборд',

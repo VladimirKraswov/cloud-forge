@@ -54,6 +54,41 @@ export const jobsApi = {
   listFiles: (jobId: string) =>
     unwrap(api.get<PaginatedResponse<JobFile>>(`/jobs/${jobId}/files`)),
 
+  listTree: (jobId: string) =>
+    unwrap(api.get<import('./types').JobFileTreeNode[]>(`/jobs/${jobId}/files/tree`)),
+
+  mkdir: (jobId: string, relativePath: string) =>
+    unwrap(api.post<JobFile>(`/jobs/${jobId}/files/mkdir`, { relativePath })),
+
+  rename: (jobId: string, oldPath: string, newPath: string) =>
+    unwrap(api.post<void>(`/jobs/${jobId}/files/rename`, { oldPath, newPath })),
+
+  move: (jobId: string, oldPath: string, newPath: string) =>
+    unwrap(api.post<void>(`/jobs/${jobId}/files/move`, { oldPath, newPath })),
+
+  copy: (jobId: string, sourcePath: string, targetPath: string) =>
+    unwrap(api.post<void>(`/jobs/${jobId}/files/copy`, { sourcePath, targetPath })),
+
+  download: async (jobId: string, relativePath: string) => {
+    const response = await api.get(`/jobs/${jobId}/files/download`, {
+      params: { relativePath },
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const contentDisposition = response.headers['content-disposition'];
+    let fileName = relativePath.split('/').pop() || 'file';
+    if (contentDisposition) {
+      const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
+      if (fileNameMatch?.[1]) fileName = fileNameMatch[1];
+    }
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
+
   saveFileContent: (
     jobId: string,
     payload: {
@@ -71,6 +106,30 @@ export const jobsApi = {
         responseType: 'text',
       }),
     ),
+
+  uploadFiles: (
+    jobId: string,
+    files: File[],
+    isExecutable = false,
+  ) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      // Use webkitRelativePath if available, otherwise just name
+      const path = (file as any).webkitRelativePath || file.name;
+      formData.append('files', file, path);
+    });
+
+    return unwrap(
+      api.post<JobFile | { items: JobFile[] }>(`/jobs/${jobId}/files/upload`, formData, {
+        params: {
+          isExecutable: isExecutable ? 'true' : 'false',
+        },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }),
+    );
+  },
 
   uploadFile: (
     jobId: string,

@@ -1,4 +1,6 @@
 import path from 'path';
+import archiver from 'archiver';
+import { PassThrough } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import {
   BootstrapImageLogModel,
@@ -29,7 +31,9 @@ import {
   assertValidCreateJobPayload,
   assertValidRelativePath,
   CreateJobPayload,
+  normalizeDirectoryPath,
 } from '../utils/job-validation';
+import { ArtifactService } from './artifact.service';
 
 const WORKSPACE: WorkspaceLayout = {
   root: '/workspace',
@@ -390,9 +394,166 @@ export class JobService {
     return file;
   }
 
+  static async listFilesTree(jobId: string) {
+    const files = await JobFileModel.listByJobId(jobId);
+
+    const root: any[] = [];
+    const map = new Map<string, any>();
+
+    files.forEach((file) => {
+      const parts = file.relative_path.split('/');
+      let currentPath = '';
+
+      parts.forEach((part, index) => {
+        const isLast = index === parts.length - 1;
+        const parentPath = currentPath;
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+        if (!map.has(currentPath)) {
+          const node: any = {
+            name: part,
+            path: currentPath,
+            type: isLast && file.source_type !== 'directory' ? 'file' : 'directory',
+            children: [],
+          };
+
+          if (isLast && file.source_type !== 'directory') {
+            node.file = file;
+          }
+
+          map.set(currentPath, node);
+
+          if (parentPath) {
+            const parent = map.get(parentPath);
+            if (parent) {
+              parent.children.push(node);
+            }
+          } else {
+            root.push(node);
+          }
+        } else if (isLast && file.source_type !== 'directory') {
+          // If the node already exists as a directory (implied by children),
+          // but this record is an actual file, we prefer the file record
+          const node = map.get(currentPath);
+          node.type = 'file';
+          node.file = file;
+        }
+      });
+    });
+
+    return root;
+  }
+
+  static async mkdir(jobId: string, relativePath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = normalizeDirectoryPath(relativePath);
+    const filename = normalized.split('/').pop() || '';
+
+    await JobFileModel.upsertDirectory({
+      id: makeId('jf'),
+      job_id: jobId,
+      relative_path: normalized,
+      filename,
+    });
+
+    return JobFileModel.findByJobIdAndPath(jobId, normalized);
+  }
+
+  static async movePath(jobId: string, oldPath: string, newPath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalizedOld = normalizeDirectoryPath(oldPath);
+    const normalizedNew = normalizeDirectoryPath(newPath);
+
+    await JobFileModel.updatePrefix(jobId, normalizedOld, normalizedNew);
+  }
+
+  static async copyPath(jobId: string, sourcePath: string, targetPath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalizedSource = normalizeDirectoryPath(sourcePath);
+    const normalizedTarget = normalizeDirectoryPath(targetPath);
+
+    await JobFileModel.copyPrefix(jobId, normalizedSource, normalizedTarget);
+  }
+
+  static async renamePath(jobId: string, oldPath: string, newPath: string) {
+    return this.movePath(jobId, oldPath, newPath);
+  }
+
+  static async deletePath(jobId: string, relativePath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = normalizeDirectoryPath(relativePath);
+    await JobFileModel.deleteByPrefix(jobId, normalized);
+  }
+
+  static async downloadPath(jobId: string, relativePath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = normalizeDirectoryPath(relativePath);
+    const item = await JobFileModel.findByJobIdAndPath(jobId, normalized);
+
+    if (item && item.source_type !== 'directory') {
+      // Single file download
+      if (item.source_type === 'inline') {
+        const stream = new PassThrough();
+        stream.end(Buffer.from(item.inline_content || '', 'utf8'));
+        return {
+          stream,
+          filename: item.filename,
+          mimeType: item.mime_type,
+        };
+      } else {
+        if (!item.storage_key) throw new Error('File storage key not found');
+        const objectResponse = await ArtifactService.getObject(item.storage_key);
+        return {
+          stream: objectResponse.Body,
+          filename: item.filename,
+          mimeType: (objectResponse.ContentType as string) || item.mime_type,
+        };
+      }
+    }
+
+    // Directory download as ZIP
+    const files = await JobFileModel.listByPrefix(jobId, normalized);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const stream = new PassThrough();
+    archive.pipe(stream);
+
+    for (const file of files) {
+      if (file.source_type === 'directory') continue;
+
+      const innerPath =
+        file.relative_path === normalized
+          ? file.filename
+          : file.relative_path.substring(normalized.lastIndexOf('/') + 1);
+
+      if (file.source_type === 'inline') {
+        archive.append(file.inline_content || '', { name: innerPath });
+      } else if (file.storage_key) {
+        const objectResponse = await ArtifactService.getObject(file.storage_key);
+        archive.append(objectResponse.Body as any, { name: innerPath });
+      }
+    }
+
+    await archive.finalize();
+
+    return {
+      stream,
+      filename: `${normalized.split('/').pop() || 'workspace'}.zip`,
+      mimeType: 'application/zip',
+    };
+  }
+
   static async deleteJobFile(jobId: string, relativePath: string) {
-    await this.getJobFile(jobId, relativePath);
-    await JobFileModel.deleteByJobIdAndPath(jobId, assertValidRelativePath(relativePath));
+    await this.deletePath(jobId, relativePath);
   }
 
   static async getRunJobFile(runId: string, relativePath: string): Promise<JobFile> {

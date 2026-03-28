@@ -99,7 +99,7 @@ export interface JobFile {
   job_id: string;
   relative_path: string;
   filename: string;
-  source_type: 'upload' | 'inline';
+  source_type: 'upload' | 'inline' | 'directory';
   storage_key?: string | null;
   inline_content?: string | null;
   mime_type: string;
@@ -107,6 +107,14 @@ export interface JobFile {
   is_executable: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface JobFileTreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  file?: JobFile;
+  children: JobFileTreeNode[];
 }
 
 export interface JobDetailsResponse {

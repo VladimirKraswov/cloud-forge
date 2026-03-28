@@ -251,6 +251,150 @@ export default async function jobsRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/jobs/:id/files/tree',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const tree = await JobService.listFilesTree(req.params.id);
+        return reply.send(tree);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/files/tree',
+          'Failed to list job files tree',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/mkdir',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const directory = await JobService.mkdir(req.params.id, req.body.relativePath);
+        return reply.code(201).send(directory);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/mkdir',
+          'Failed to create directory',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/rename',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { oldPath: string; newPath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.renamePath(req.params.id, req.body.oldPath, req.body.newPath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/rename',
+          'Failed to rename file or directory',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/move',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { oldPath: string; newPath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.movePath(req.params.id, req.body.oldPath, req.body.newPath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/move',
+          'Failed to move file or directory',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/copy',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { sourcePath: string; targetPath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.copyPath(req.params.id, req.body.sourcePath, req.body.targetPath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/copy',
+          'Failed to copy file or directory',
+        );
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/files/download',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const { stream, filename, mimeType } = await JobService.downloadPath(
+          req.params.id,
+          req.query.relativePath,
+        );
+
+        reply.type(mimeType);
+        reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+        return reply.send(stream);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/files/download',
+          'Failed to download file or directory',
+        );
+      }
+    },
+  );
+
   app.post(
     '/jobs/:id/files/upload',
     async (
@@ -261,37 +405,47 @@ export default async function jobsRoutes(app: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const file = await req.file();
+        const parts = req.files();
+        const results = [];
 
-        if (!file) {
-          return reply.code(400).send({ error: 'No file uploaded' });
+        for await (const part of parts) {
+          if (part.type !== 'file') continue;
+
+          const buffer = await part.toBuffer();
+          // Use the path from the part if available (some clients put it in filename)
+          // For folder uploads, we expect the relative path in the part filename or we use the query param for a single file
+          const pathHint = part.filename;
+          const relativePath = assertValidRelativePath(
+            req.query.relativePath && results.length === 0 ? req.query.relativePath : pathHint,
+            'relativePath',
+          );
+
+          const uploaded = await ArtifactService.uploadJobFile(
+            buffer,
+            part.filename.split('/').pop() || part.filename,
+            req.params.id,
+            relativePath,
+            part.mimetype,
+          );
+
+          const registered = await JobService.registerUploadedJobFile({
+            job_id: req.params.id,
+            relative_path: uploaded.relative_path,
+            filename: uploaded.filename,
+            storage_key: uploaded.storage_key,
+            mime_type: part.mimetype,
+            size_bytes: uploaded.size_bytes,
+            is_executable: req.query.isExecutable === '1' || req.query.isExecutable === 'true',
+          });
+
+          results.push(registered);
         }
 
-        const buffer = await file.toBuffer();
-        const relativePath = assertValidRelativePath(
-          req.query.relativePath || file.filename,
-          'relativePath',
-        );
+        if (results.length === 0) {
+          return reply.code(400).send({ error: 'No files uploaded' });
+        }
 
-        const uploaded = await ArtifactService.uploadJobFile(
-          buffer,
-          file.filename,
-          req.params.id,
-          relativePath,
-          file.mimetype,
-        );
-
-        const registered = await JobService.registerUploadedJobFile({
-          job_id: req.params.id,
-          relative_path: uploaded.relative_path,
-          filename: uploaded.filename,
-          storage_key: uploaded.storage_key,
-          mime_type: file.mimetype,
-          size_bytes: uploaded.size_bytes,
-          is_executable: req.query.isExecutable === '1' || req.query.isExecutable === 'true',
-        });
-
-        return reply.code(201).send(registered);
+        return reply.code(201).send(results.length === 1 ? results[0] : { items: results });
       } catch (err) {
         return sendRouteError(
           req,

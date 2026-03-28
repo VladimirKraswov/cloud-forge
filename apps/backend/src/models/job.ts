@@ -74,7 +74,7 @@ export interface JobFile {
   job_id: string;
   relative_path: string;
   filename: string;
-  source_type: 'upload' | 'inline';
+  source_type: 'upload' | 'inline' | 'directory';
   storage_key?: string | null;
   inline_content?: string | null;
   mime_type: string;

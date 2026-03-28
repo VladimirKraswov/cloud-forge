@@ -280,3 +280,16 @@ export const assertValidRelativePath = (value: unknown, fieldName = 'relative_pa
     ]);
   }
 };
+
+export const normalizeDirectoryPath = (value: string): string => {
+  const normalized = path.posix.normalize(value.replace(/\\/g, '/')).replace(/^\/+/, '');
+  if (
+    !normalized ||
+    normalized === '.' ||
+    normalized.startsWith('../') ||
+    normalized.includes('/../')
+  ) {
+    throw new Error(`invalid directory path "${value}"`);
+  }
+  return normalized.replace(/\/+$/, '');
+};

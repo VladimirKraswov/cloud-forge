@@ -44,14 +44,16 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         db.run('DELETE FROM runs', () => {});
         db.run('DELETE FROM logs', () => {});
         db.run('DELETE FROM run_artifacts', () => {});
-        db.run('DELETE FROM workers', () => resolve());
+        db.run('DELETE FROM workers', () => {});
+        db.run('DELETE FROM bootstrap_images', () => {});
+        db.run('DELETE FROM bootstrap_image_logs', () => resolve());
       });
     });
   });
 
   it('should complete the full happy path flow', async () => {
     // 1. Setup a dummy bootstrap image
-    const bootstrap_id = 'img_smoke_test';
+    const bootstrap_id = `img_smoke_${Math.random().toString(36).slice(2, 10)}`;
     await new Promise<void>((resolve, reject) => {
       db.run(
         `INSERT INTO bootstrap_images (id, name, base_image, tag, full_image_name, dockerfile_text, status)

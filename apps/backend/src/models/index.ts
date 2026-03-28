@@ -602,6 +602,32 @@ export class JobFileModel {
     );
   }
 
+  static async upsertDirectory(data: {
+    id: string;
+    job_id: string;
+    relative_path: string;
+    filename: string;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO job_files (
+        id, job_id, relative_path, filename, source_type, storage_key, inline_content,
+        mime_type, size_bytes, is_executable
+      ) VALUES (?, ?, ?, ?, 'directory', NULL, NULL, 'inode/directory', 0, 0)
+      ON CONFLICT(job_id, relative_path) DO UPDATE SET
+        filename = excluded.filename,
+        source_type = 'directory',
+        storage_key = NULL,
+        inline_content = NULL,
+        mime_type = 'inode/directory',
+        size_bytes = 0,
+        is_executable = 0,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [data.id, data.job_id, data.relative_path, data.filename],
+    );
+  }
+
   static async findByJobIdAndPath(jobId: string, relativePath: string): Promise<JobFile | null> {
     const row = await getAsync<any>(
       `SELECT * FROM job_files WHERE job_id = ? AND relative_path = ?`,
@@ -618,11 +644,95 @@ export class JobFileModel {
     return rows.map(mapJobFileRow);
   }
 
+  static async listByPrefix(jobId: string, prefix: string): Promise<JobFile[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM job_files WHERE job_id = ? AND (relative_path = ? OR relative_path LIKE ?) ORDER BY relative_path ASC`,
+      [jobId, prefix, `${prefix}/%`],
+    );
+    return rows.map(mapJobFileRow);
+  }
+
+  static async updatePrefix(jobId: string, oldPrefix: string, newPrefix: string): Promise<void> {
+    // Update the exact path if it exists
+    await runAsync(
+      `
+      UPDATE job_files
+      SET relative_path = ?,
+          filename = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND relative_path = ?
+      `,
+      [newPrefix, newPrefix.split('/').pop() || '', jobId, oldPrefix],
+    );
+
+    // Update all children
+    await runAsync(
+      `
+      UPDATE job_files
+      SET relative_path = ? || SUBSTR(relative_path, ?),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND relative_path LIKE ?
+      `,
+      [newPrefix, oldPrefix.length + 1, jobId, `${oldPrefix}/%`],
+    );
+  }
+
+  static async deleteByPrefix(jobId: string, prefix: string): Promise<void> {
+    await runAsync(
+      `DELETE FROM job_files WHERE job_id = ? AND (relative_path = ? OR relative_path LIKE ?)`,
+      [jobId, prefix, `${prefix}/%`],
+    );
+  }
+
   static async deleteByJobIdAndPath(jobId: string, relativePath: string): Promise<void> {
     await runAsync(`DELETE FROM job_files WHERE job_id = ? AND relative_path = ?`, [
       jobId,
       relativePath,
     ]);
+  }
+
+  static async copyPrefix(jobId: string, oldPrefix: string, newPrefix: string): Promise<void> {
+    const items = await this.listByPrefix(jobId, oldPrefix);
+
+    for (const item of items) {
+      const relativePath = item.relative_path;
+      const targetPath = relativePath.startsWith(oldPrefix)
+        ? newPrefix + relativePath.substring(oldPrefix.length)
+        : relativePath;
+
+      const filename = targetPath.split('/').pop() || '';
+      const id = `jf_${uuidv4().replace(/-/g, '')}`;
+
+      if (item.source_type === 'inline') {
+        await this.upsertInline({
+          id,
+          job_id: jobId,
+          relative_path: targetPath,
+          filename,
+          inline_content: item.inline_content || '',
+          mime_type: item.mime_type,
+          is_executable: item.is_executable,
+        });
+      } else if (item.source_type === 'upload') {
+        await this.upsertUploaded({
+          id,
+          job_id: jobId,
+          relative_path: targetPath,
+          filename,
+          storage_key: item.storage_key || '',
+          mime_type: item.mime_type,
+          size_bytes: item.size_bytes,
+          is_executable: item.is_executable,
+        });
+      } else if (item.source_type === 'directory') {
+        await this.upsertDirectory({
+          id,
+          job_id: jobId,
+          relative_path: targetPath,
+          filename,
+        });
+      }
+    }
   }
 
   static async deleteByJobId(jobId: string): Promise<void> {
