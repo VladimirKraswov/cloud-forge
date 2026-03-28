@@ -60,7 +60,6 @@ class ANSI:
 USE_COLOR = sys.stdout.isatty() and not os.getenv("NO_COLOR") and os.getenv("TERM") != "dumb"
 DEBUG_WS = os.getenv("CLOUD_FORGE_DEBUG_WS", "").strip().lower() in {"1", "true", "yes", "on"}
 
-
 LEVEL_STYLES = {
     "debug": {"color": ANSI.BRIGHT_BLACK, "label": "DEBUG", "icon": "·"},
     "info": {"color": ANSI.BRIGHT_BLUE, "label": "INFO ", "icon": "ℹ"},
@@ -130,6 +129,11 @@ def log_line(level: str, message: str, component: str = "RUNNER", **fields: Any)
     print(f"{ts} {level_text} {icon_text} {component_text} {msg_text}{extra_text}", flush=True)
 
 
+def ws_debug(message: str, **fields: Any):
+    if DEBUG_WS:
+        log_line("debug", message, component="WS", **fields)
+
+
 def log_section(title: str, component: str = "RUNNER", **fields: Any):
     line = "─" * 24
     style = colorize(f"{line} {title} {line}", ANSI.BRIGHT_CYAN, bold=True)
@@ -145,12 +149,12 @@ def ws_message_summary(message: dict[str, Any]) -> dict[str, Any]:
         "request_id": message.get("request_id"),
     }
 
-    for key in ("run_id", "job_id", "worker_id", "status", "stage", "signal", "message"):
+    for key in ("run_id", "job_id", "worker_id", "status", "stage", "signal"):
         if key in payload:
-            value = payload.get(key)
-            if key == "message":
-                value = compact(value, 80)
-            summary[key] = value
+            summary[key] = payload.get(key)
+
+    if "message" in payload:
+        summary["payload_message"] = compact(payload.get("message"), 80)
 
     if "progress" in payload:
         summary["progress"] = payload.get("progress")
@@ -507,7 +511,7 @@ def download_attached_files(run_id: str, attached_files: list[dict], safe_log, s
 
         if not filename or not mount_path or not download_path:
             safe_log(
-                f"Skipping invalid attached file descriptor",
+                "Skipping invalid attached file descriptor",
                 "warn",
                 component="FILES",
                 descriptor=file_info,
@@ -524,7 +528,7 @@ def download_attached_files(run_id: str, attached_files: list[dict], safe_log, s
         )
 
         safe_log(
-            f"Downloading attached file",
+            "Downloading attached file",
             "step",
             component="FILES",
             index=f"{index}/{total}",
@@ -829,9 +833,7 @@ class WsControlClient:
                     continue
 
                 if DEBUG_WS:
-                    log_line("debug", "ws recv", component="WS", payload=message)
-                else:
-                    log_line("debug", "ws recv", component="WS", **ws_message_summary(message))
+                    ws_debug("ws recv", **ws_message_summary(message))
 
                 request_id = message.get("request_id")
 
@@ -867,9 +869,7 @@ class WsControlClient:
         }
 
         if DEBUG_WS:
-            log_line("debug", "ws send", component="WS", payload=message)
-        else:
-            log_line("debug", "ws send", component="WS", **ws_message_summary(message))
+            ws_debug("ws send", **ws_message_summary(message))
 
         encoded = json.dumps(message)
 
@@ -925,16 +925,19 @@ def request_with_retry(
 
     for attempt in range(1, attempts + 1):
         try:
-            log_line("step", "ws request attempt", component="WS", type=type_, attempt=f"{attempt}/{attempts}")
+            if DEBUG_WS:
+                log_line("step", "ws request attempt", component="WS", type=type_, attempt=f"{attempt}/{attempts}")
             return ws_client.request(type_, payload, timeout=timeout)
         except Exception as exc:
             last_error = exc
-            log_line("warn", "ws request failed", component="WS", type=type_, attempt=f"{attempt}/{attempts}", error=str(exc))
+            if DEBUG_WS:
+                log_line("warn", "ws request failed", component="WS", type=type_, attempt=f"{attempt}/{attempts}", error=str(exc))
             if attempt < attempts:
                 try:
                     ws_client.reconnect()
                 except Exception as reconnect_exc:
-                    log_line("warn", "ws reconnect failed", component="WS", error=str(reconnect_exc))
+                    if DEBUG_WS:
+                        log_line("warn", "ws reconnect failed", component="WS", error=str(reconnect_exc))
                 time.sleep(1)
 
     raise last_error if last_error else RuntimeError(f"Failed request: {type_}")
@@ -1299,6 +1302,7 @@ def main():
     os.environ["CLOUD_FORGE_RUNTIME_PATH"] = str(runtime_path)
     os.environ["CLOUD_FORGE_CONTROL_PATH"] = str(control_path)
     os.environ["CLOUD_FORGE_UPLOADED_ARTIFACTS_PATH"] = str(uploaded_artifacts_path)
+    os.environ.setdefault("TERM", "xterm")
 
     existing_pythonpath = os.environ.get("PYTHONPATH", "")
     existing_node_path = os.environ.get("NODE_PATH", "")
@@ -1540,7 +1544,8 @@ def main():
                         message=cancel_reason_holder["reason"],
                     )
             except Exception as exc:
-                safe_log("Heartbeat failed", "warn", component="WS", error=str(exc))
+                if DEBUG_WS:
+                    safe_log("Heartbeat failed", "warn", component="WS", error=str(exc))
 
             heartbeat_stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
 

@@ -412,8 +412,6 @@ export default async function jobsRoutes(app: FastifyInstance) {
           if (part.type !== 'file') continue;
 
           const buffer = await part.toBuffer();
-          // Use the path from the part if available (some clients put it in filename)
-          // For folder uploads, we expect the relative path in the part filename or we use the query param for a single file
           const pathHint = part.filename;
           const relativePath = assertValidRelativePath(
             req.query.relativePath && results.length === 0 ? req.query.relativePath : pathHint,
@@ -505,6 +503,12 @@ export default async function jobsRoutes(app: FastifyInstance) {
     ) => {
       try {
         const file = await JobService.getJobFile(req.params.id, req.query.relativePath);
+
+        if (file.source_type === 'directory' || file.mime_type === 'inode/directory') {
+          return reply.code(400).send({
+            error: 'Directories cannot be opened as file content',
+          });
+        }
 
         if (file.source_type === 'inline') {
           reply.type(file.mime_type || 'text/plain; charset=utf-8');

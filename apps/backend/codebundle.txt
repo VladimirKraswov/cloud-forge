@@ -1,7 +1,7 @@
 === CODE BUNDLE ===
 root: /Volumes/Extend/work/cloud-forge/apps/backend
 ignore: .codebundleignore
-generated: 2026-03-28T17:26:18.512Z
+generated: 2026-03-28T20:53:41.832Z
 
 
 
@@ -361,6 +361,7 @@ path: /package.json
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
     "@fastify/websocket": "^11.2.0",
+    "archiver": "^7.0.1",
     "bullmq": "^5.71.1",
     "dotenv": "^16.6.1",
     "fastify": "^5.8.4",
@@ -368,10 +369,12 @@ path: /package.json
     "pino": "^9.14.0",
     "pino-pretty": "^13.1.3",
     "sqlite3": "^5.1.7",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/archiver": "^7.0.0",
     "@types/node": "^20.19.37",
     "@types/supertest": "^6.0.3",
     "@types/ws": "^8.18.1",
@@ -1213,6 +1216,7 @@ import {
   Worker,
   WorkerStatus,
 } from './job';
+import { v4 as uuidv4 } from 'uuid';
 
 const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
   if (!value) return fallback;
@@ -1799,6 +1803,32 @@ export class JobFileModel {
     );
   }
 
+  static async upsertDirectory(data: {
+    id: string;
+    job_id: string;
+    relative_path: string;
+    filename: string;
+  }): Promise<void> {
+    await runAsync(
+      `
+      INSERT INTO job_files (
+        id, job_id, relative_path, filename, source_type, storage_key, inline_content,
+        mime_type, size_bytes, is_executable
+      ) VALUES (?, ?, ?, ?, 'directory', NULL, NULL, 'inode/directory', 0, 0)
+      ON CONFLICT(job_id, relative_path) DO UPDATE SET
+        filename = excluded.filename,
+        source_type = 'directory',
+        storage_key = NULL,
+        inline_content = NULL,
+        mime_type = 'inode/directory',
+        size_bytes = 0,
+        is_executable = 0,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [data.id, data.job_id, data.relative_path, data.filename],
+    );
+  }
+
   static async findByJobIdAndPath(jobId: string, relativePath: string): Promise<JobFile | null> {
     const row = await getAsync<any>(
       `SELECT * FROM job_files WHERE job_id = ? AND relative_path = ?`,
@@ -1815,11 +1845,95 @@ export class JobFileModel {
     return rows.map(mapJobFileRow);
   }
 
+  static async listByPrefix(jobId: string, prefix: string): Promise<JobFile[]> {
+    const rows = await allAsync<any>(
+      `SELECT * FROM job_files WHERE job_id = ? AND (relative_path = ? OR relative_path LIKE ?) ORDER BY relative_path ASC`,
+      [jobId, prefix, `${prefix}/%`],
+    );
+    return rows.map(mapJobFileRow);
+  }
+
+  static async updatePrefix(jobId: string, oldPrefix: string, newPrefix: string): Promise<void> {
+    // Update the exact path if it exists
+    await runAsync(
+      `
+      UPDATE job_files
+      SET relative_path = ?,
+          filename = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND relative_path = ?
+      `,
+      [newPrefix, newPrefix.split('/').pop() || '', jobId, oldPrefix],
+    );
+
+    // Update all children
+    await runAsync(
+      `
+      UPDATE job_files
+      SET relative_path = ? || SUBSTR(relative_path, ?),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE job_id = ? AND relative_path LIKE ?
+      `,
+      [newPrefix, oldPrefix.length + 1, jobId, `${oldPrefix}/%`],
+    );
+  }
+
+  static async deleteByPrefix(jobId: string, prefix: string): Promise<void> {
+    await runAsync(
+      `DELETE FROM job_files WHERE job_id = ? AND (relative_path = ? OR relative_path LIKE ?)`,
+      [jobId, prefix, `${prefix}/%`],
+    );
+  }
+
   static async deleteByJobIdAndPath(jobId: string, relativePath: string): Promise<void> {
     await runAsync(`DELETE FROM job_files WHERE job_id = ? AND relative_path = ?`, [
       jobId,
       relativePath,
     ]);
+  }
+
+  static async copyPrefix(jobId: string, oldPrefix: string, newPrefix: string): Promise<void> {
+    const items = await this.listByPrefix(jobId, oldPrefix);
+
+    for (const item of items) {
+      const relativePath = item.relative_path;
+      const targetPath = relativePath.startsWith(oldPrefix)
+        ? newPrefix + relativePath.substring(oldPrefix.length)
+        : relativePath;
+
+      const filename = targetPath.split('/').pop() || '';
+      const id = `jf_${uuidv4().replace(/-/g, '')}`;
+
+      if (item.source_type === 'inline') {
+        await this.upsertInline({
+          id,
+          job_id: jobId,
+          relative_path: targetPath,
+          filename,
+          inline_content: item.inline_content || '',
+          mime_type: item.mime_type,
+          is_executable: item.is_executable,
+        });
+      } else if (item.source_type === 'upload') {
+        await this.upsertUploaded({
+          id,
+          job_id: jobId,
+          relative_path: targetPath,
+          filename,
+          storage_key: item.storage_key || '',
+          mime_type: item.mime_type,
+          size_bytes: item.size_bytes,
+          is_executable: item.is_executable,
+        });
+      } else if (item.source_type === 'directory') {
+        await this.upsertDirectory({
+          id,
+          job_id: jobId,
+          relative_path: targetPath,
+          filename,
+        });
+      }
+    }
   }
 
   static async deleteByJobId(jobId: string): Promise<void> {
@@ -2281,7 +2395,7 @@ export interface JobFile {
   job_id: string;
   relative_path: string;
   filename: string;
-  source_type: 'upload' | 'inline';
+  source_type: 'upload' | 'inline' | 'directory';
   storage_key?: string | null;
   inline_content?: string | null;
   mime_type: string;
@@ -3278,6 +3392,150 @@ export default async function jobsRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/jobs/:id/files/tree',
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const tree = await JobService.listFilesTree(req.params.id);
+        return reply.send(tree);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/files/tree',
+          'Failed to list job files tree',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/mkdir',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const directory = await JobService.mkdir(req.params.id, req.body.relativePath);
+        return reply.code(201).send(directory);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/mkdir',
+          'Failed to create directory',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/rename',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { oldPath: string; newPath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.renamePath(req.params.id, req.body.oldPath, req.body.newPath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/rename',
+          'Failed to rename file or directory',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/move',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { oldPath: string; newPath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.movePath(req.params.id, req.body.oldPath, req.body.newPath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/move',
+          'Failed to move file or directory',
+        );
+      }
+    },
+  );
+
+  app.post(
+    '/jobs/:id/files/copy',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { sourcePath: string; targetPath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await JobService.copyPath(req.params.id, req.body.sourcePath, req.body.targetPath);
+        return reply.code(204).send();
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'POST /jobs/:id/files/copy',
+          'Failed to copy file or directory',
+        );
+      }
+    },
+  );
+
+  app.get(
+    '/jobs/:id/files/download',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { relativePath: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const { stream, filename, mimeType } = await JobService.downloadPath(
+          req.params.id,
+          req.query.relativePath,
+        );
+
+        reply.type(mimeType);
+        reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+        return reply.send(stream);
+      } catch (err) {
+        return sendRouteError(
+          req,
+          reply,
+          err,
+          'GET /jobs/:id/files/download',
+          'Failed to download file or directory',
+        );
+      }
+    },
+  );
+
   app.post(
     '/jobs/:id/files/upload',
     async (
@@ -3288,37 +3546,47 @@ export default async function jobsRoutes(app: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const file = await req.file();
+        const parts = req.files();
+        const results = [];
 
-        if (!file) {
-          return reply.code(400).send({ error: 'No file uploaded' });
+        for await (const part of parts) {
+          if (part.type !== 'file') continue;
+
+          const buffer = await part.toBuffer();
+          // Use the path from the part if available (some clients put it in filename)
+          // For folder uploads, we expect the relative path in the part filename or we use the query param for a single file
+          const pathHint = part.filename;
+          const relativePath = assertValidRelativePath(
+            req.query.relativePath && results.length === 0 ? req.query.relativePath : pathHint,
+            'relativePath',
+          );
+
+          const uploaded = await ArtifactService.uploadJobFile(
+            buffer,
+            part.filename.split('/').pop() || part.filename,
+            req.params.id,
+            relativePath,
+            part.mimetype,
+          );
+
+          const registered = await JobService.registerUploadedJobFile({
+            job_id: req.params.id,
+            relative_path: uploaded.relative_path,
+            filename: uploaded.filename,
+            storage_key: uploaded.storage_key,
+            mime_type: part.mimetype,
+            size_bytes: uploaded.size_bytes,
+            is_executable: req.query.isExecutable === '1' || req.query.isExecutable === 'true',
+          });
+
+          results.push(registered);
         }
 
-        const buffer = await file.toBuffer();
-        const relativePath = assertValidRelativePath(
-          req.query.relativePath || file.filename,
-          'relativePath',
-        );
+        if (results.length === 0) {
+          return reply.code(400).send({ error: 'No files uploaded' });
+        }
 
-        const uploaded = await ArtifactService.uploadJobFile(
-          buffer,
-          file.filename,
-          req.params.id,
-          relativePath,
-          file.mimetype,
-        );
-
-        const registered = await JobService.registerUploadedJobFile({
-          job_id: req.params.id,
-          relative_path: uploaded.relative_path,
-          filename: uploaded.filename,
-          storage_key: uploaded.storage_key,
-          mime_type: file.mimetype,
-          size_bytes: uploaded.size_bytes,
-          is_executable: req.query.isExecutable === '1' || req.query.isExecutable === 'true',
-        });
-
-        return reply.code(201).send(registered);
+        return reply.code(201).send(results.length === 1 ? results[0] : { items: results });
       } catch (err) {
         return sendRouteError(
           req,
@@ -3485,6 +3753,7 @@ import { JobService } from '../services/job.service';
 import { LogLevel, RunStatus } from '../models/job';
 import { broadcastRunLog, broadcastRunProgress, broadcastRunStatus } from './ws';
 import { config } from '../utils/config';
+import { WorkerControlService } from '../services/worker-control.service';
 
 const parseMetrics = (metrics: unknown): unknown => {
   if (typeof metrics !== 'string') return metrics;
@@ -3684,14 +3953,102 @@ export default async function workerRoutes(app: FastifyInstance) {
       try {
         const result = await JobService.cancelRun(req.params.id, req.body?.reason);
 
+        let remote_command_sent = false;
+
         if (result.final) {
           broadcastRunStatus(req.params.id, 'cancelled');
+        } else {
+          remote_command_sent = WorkerControlService.sendStop(
+            req.params.id,
+            req.body?.reason || 'Run cancelled by user',
+          );
         }
 
-        return reply.send(result);
+        return reply.send({
+          ...result,
+          remote_command_sent,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to cancel run';
         req.log.error({ err }, '[POST /api/runs/:id/cancel] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/:id/signal',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: { signal: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const signalName = String(req.body?.signal || '').trim();
+        if (!signalName) {
+          return reply.code(400).send({ error: 'signal is required' });
+        }
+
+        const sent = WorkerControlService.sendSignal(req.params.id, signalName);
+        if (!sent) {
+          return reply.code(404).send({ error: 'Active worker connection for run not found' });
+        }
+
+        return reply.send({
+          ok: true,
+          sent: true,
+          signal: signalName,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to signal run';
+        req.log.error({ err }, '[POST /api/runs/:id/signal] failed');
+        return reply.code(400).send({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/runs/:id/exec',
+    async (
+      req: FastifyRequest<{
+        Params: { id: string };
+        Body: {
+          command: string;
+          args?: string[];
+          cwd?: string;
+          timeout_seconds?: number;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const command = String(req.body?.command || '').trim();
+        if (!command) {
+          return reply.code(400).send({ error: 'command is required' });
+        }
+
+        const result = await WorkerControlService.requestToRun(
+          req.params.id,
+          'run.exec',
+          {
+            command,
+            args: Array.isArray(req.body?.args) ? req.body.args : [],
+            cwd: req.body?.cwd ?? null,
+            timeout_seconds:
+              req.body?.timeout_seconds == null ? 30 : Number(req.body.timeout_seconds),
+          },
+          ((req.body?.timeout_seconds == null ? 30 : Number(req.body.timeout_seconds)) + 5) * 1000,
+        );
+
+        return reply.send({
+          ok: true,
+          result,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to exec on worker';
+        req.log.error({ err }, '[POST /api/runs/:id/exec] failed');
         return reply.code(400).send({ error: message });
       }
     },
@@ -3810,28 +4167,63 @@ path: /src/routes/ws.ts
 import { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import { LogLevel, RunStatus } from '../models/job';
+import { config } from '../utils/config';
+import { JobService } from '../services/job.service';
+import { WorkerModel } from '../models';
+import { WorkerControlService, WorkerEnvelope } from '../services/worker-control.service';
 
 type WSConnection = {
   socket: WebSocket;
 };
 
-const clients = new Map<string, WSConnection[]>();
+const runClients = new Map<string, WSConnection[]>();
 
 const sendToRunClients = (runId: string, payload: Record<string, unknown>) => {
-  const runClients = clients.get(runId) || [];
+  const clients = runClients.get(runId) || [];
   const message = JSON.stringify({
     ...payload,
     runId,
     timestamp: new Date().toISOString(),
   });
 
-  for (const conn of runClients) {
+  for (const conn of clients) {
     try {
       conn.socket.send(message);
     } catch {
       // ignore failed socket send
     }
   }
+};
+
+const sendEnvelope = (
+  socket: WebSocket,
+  type: string,
+  payload: Record<string, unknown> = {},
+  requestId?: string,
+) => {
+  socket.send(
+    JSON.stringify({
+      type,
+      request_id: requestId,
+      payload,
+    }),
+  );
+};
+
+const sendError = (socket: WebSocket, message: string, requestId?: string) => {
+  sendEnvelope(socket, 'error', { message }, requestId);
+};
+
+const getBaseUrl = (req: any): string => {
+  if (config.publicBaseUrl) return config.publicBaseUrl;
+
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const proto =
+    typeof forwardedProto === 'string' && forwardedProto.trim()
+      ? forwardedProto.trim()
+      : 'http';
+
+  return `${proto}://${req.headers.host}`;
 };
 
 export const broadcastRunStatus = (runId: string, status: RunStatus) => {
@@ -3867,22 +4259,397 @@ export const broadcastRunProgress = (
   });
 };
 
-export default async function wsRoutes(app: FastifyInstance) {
-  app.get('/ws/runs/:run_id', { websocket: true } as any, (connection: any, req: any) => {
-    const runId = req.params.run_id as string;
+const handleWorkerMessage = async (
+  app: FastifyInstance,
+  socket: WebSocket,
+  req: any,
+  envelope: WorkerEnvelope,
+): Promise<void> => {
+  const type = envelope?.type;
+  const payload = envelope?.payload || {};
+  const requestId = envelope?.request_id;
 
-    if (!clients.has(runId)) {
-      clients.set(runId, []);
+  if (!type || typeof type !== 'string') {
+    sendError(socket, 'Message type is required', requestId);
+    return;
+  }
+
+  const session = WorkerControlService.getSessionBySocket(socket);
+
+  app.log.info(
+    {
+      type,
+      requestId,
+      hasSession: Boolean(session),
+    },
+    '[WS worker] incoming message',
+  );
+
+  try {
+    switch (type) {
+      case 'worker.hello': {
+        const workerId = String((payload as any).worker_id || '').trim();
+        const workerName = String((payload as any).worker_name || '').trim();
+        const workerHost =
+          (payload as any).worker_host == null ? null : String((payload as any).worker_host);
+        const capabilities =
+          typeof (payload as any).capabilities === 'object' &&
+          (payload as any).capabilities !== null &&
+          !Array.isArray((payload as any).capabilities)
+            ? ((payload as any).capabilities as Record<string, unknown>)
+            : null;
+
+        if (!workerId || !workerName) {
+          sendError(socket, 'worker_id and worker_name are required', requestId);
+          return;
+        }
+
+        const registered = WorkerControlService.registerWorker(
+          {
+            worker_id: workerId,
+            worker_name: workerName,
+            worker_host: workerHost,
+            capabilities,
+          },
+          socket,
+        );
+
+        sendEnvelope(
+          socket,
+          'worker.hello.ack',
+          {
+            worker_id: registered.worker_id,
+            server_time: new Date().toISOString(),
+          },
+          requestId,
+        );
+
+        app.log.info(
+          {
+            workerId: registered.worker_id,
+            workerName: registered.worker_name,
+            workerHost: registered.worker_host,
+          },
+          '[WS worker] hello acknowledged',
+        );
+
+        void (async () => {
+          try {
+            await WorkerModel.upsertHeartbeat({
+              id: registered.worker_id,
+              name: registered.worker_name,
+              host: registered.worker_host ?? null,
+              current_run_id: registered.current_run_id ?? null,
+              capabilities: registered.capabilities ?? null,
+              status: registered.current_run_id ? 'busy' : 'online',
+            });
+          } catch (err) {
+            app.log.error(
+              { err, workerId: registered.worker_id },
+              '[WS worker] failed to persist worker heartbeat after hello',
+            );
+          }
+        })();
+
+        return;
+      }
+
+      case 'run.claim': {
+        if (!session) {
+          sendError(socket, 'worker.hello must be sent before run.claim', requestId);
+          return;
+        }
+
+        const token = String((payload as any).token || '').trim();
+        if (!token) {
+          sendError(socket, 'token is required', requestId);
+          return;
+        }
+
+        const result = await JobService.claimRunByToken(token, getBaseUrl(req));
+        WorkerControlService.bindRun(session.worker_id, result.run_id);
+
+        await WorkerModel.upsertHeartbeat({
+          id: session.worker_id,
+          name: session.worker_name,
+          host: session.worker_host ?? null,
+          current_run_id: result.run_id,
+          capabilities: session.capabilities ?? null,
+          status: 'busy',
+        });
+
+        sendEnvelope(
+          socket,
+          'run.assigned',
+          {
+            run_id: result.run_id,
+            job_id: result.job_id,
+            config: result.config,
+          },
+          requestId,
+        );
+
+        app.log.info(
+          {
+            workerId: session.worker_id,
+            runId: result.run_id,
+            jobId: result.job_id,
+          },
+          '[WS worker] run assigned',
+        );
+        return;
+      }
+
+      case 'run.started': {
+        if (!session) {
+          sendError(socket, 'worker.hello must be sent before run.started', requestId);
+          return;
+        }
+
+        const runId = String((payload as any).run_id || '').trim();
+        if (!runId) {
+          sendError(socket, 'run_id is required', requestId);
+          return;
+        }
+
+        WorkerControlService.bindRun(session.worker_id, runId);
+
+        await JobService.markRunStarted(runId, {
+          id: session.worker_id,
+          name: session.worker_name,
+          host: session.worker_host ?? null,
+          capabilities: session.capabilities ?? null,
+        });
+
+        broadcastRunStatus(runId, 'running');
+
+        sendEnvelope(socket, 'run.started.ack', { ok: true }, requestId);
+        return;
+      }
+
+      case 'run.heartbeat': {
+        if (!session) {
+          sendError(socket, 'worker.hello must be sent before run.heartbeat', requestId);
+          return;
+        }
+
+        const runId = String((payload as any).run_id || '').trim();
+        if (!runId) {
+          sendError(socket, 'run_id is required', requestId);
+          return;
+        }
+
+        WorkerControlService.bindRun(session.worker_id, runId);
+        WorkerControlService.touchWorker(session.worker_id);
+
+        const result = await JobService.heartbeatRun(runId, {
+          id: session.worker_id,
+          name: session.worker_name,
+          host: session.worker_host ?? null,
+          capabilities: session.capabilities ?? null,
+        });
+
+        sendEnvelope(
+          socket,
+          'run.heartbeat.ack',
+          {
+            ok: true,
+            should_stop: result.should_stop,
+            stop_reason: result.stop_reason,
+          },
+          requestId,
+        );
+        return;
+      }
+
+      case 'run.log': {
+        const runId = String((payload as any).run_id || '').trim();
+        const message = String((payload as any).message || '');
+        const level = ((payload as any).level || 'info') as LogLevel;
+
+        if (!runId || !message) {
+          sendError(socket, 'run_id and message are required', requestId);
+          return;
+        }
+
+        await JobService.addRunLog(runId, message, level);
+        broadcastRunLog(runId, message, level);
+
+        if (requestId) {
+          sendEnvelope(socket, 'run.log.ack', { ok: true }, requestId);
+        }
+        return;
+      }
+
+      case 'run.progress': {
+        const runId = String((payload as any).run_id || '').trim();
+
+        if (!runId) {
+          sendError(socket, 'run_id is required', requestId);
+          return;
+        }
+
+        await JobService.addRunProgress({
+          run_id: runId,
+          stage: (payload as any).stage ?? null,
+          progress: (payload as any).progress ?? null,
+          message: (payload as any).message ?? null,
+          extra: (payload as any).extra ?? null,
+        });
+
+        broadcastRunProgress(runId, {
+          stage: (payload as any).stage ?? null,
+          progress: (payload as any).progress ?? null,
+          message: (payload as any).message ?? null,
+          extra: (payload as any).extra ?? null,
+        });
+
+        if (requestId) {
+          sendEnvelope(socket, 'run.progress.ack', { ok: true }, requestId);
+        }
+        return;
+      }
+
+      case 'run.finished': {
+        const runId = String((payload as any).run_id || '').trim();
+        const status = (payload as any).status as Extract<
+          RunStatus,
+          'finished' | 'failed' | 'cancelled' | 'lost'
+        >;
+
+        if (!runId || !status) {
+          sendError(socket, 'run_id and status are required', requestId);
+          return;
+        }
+
+        await JobService.finishRun(
+          runId,
+          status,
+          (payload as any).result,
+          (payload as any).metrics,
+        );
+
+        WorkerControlService.unbindRun(runId);
+        broadcastRunStatus(runId, status);
+
+        if (session) {
+          await WorkerModel.upsertHeartbeat({
+            id: session.worker_id,
+            name: session.worker_name,
+            host: session.worker_host ?? null,
+            current_run_id: null,
+            capabilities: session.capabilities ?? null,
+            status: 'online',
+          });
+        }
+
+        sendEnvelope(socket, 'run.finished.ack', { ok: true }, requestId);
+        return;
+      }
+
+      case 'run.exec.result': {
+        if (!requestId) {
+          sendError(socket, 'request_id is required for run.exec.result');
+          return;
+        }
+
+        WorkerControlService.resolvePendingRequest(requestId, payload);
+        return;
+      }
+
+      default:
+        sendError(socket, `Unsupported worker message type: ${type}`, requestId);
+        return;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Worker WS handler failed';
+
+    app.log.error(
+      {
+        err,
+        type,
+        requestId,
+        sessionWorkerId: session?.worker_id ?? null,
+      },
+      '[WS worker] handler failed',
+    );
+
+    if (requestId) {
+      WorkerControlService.rejectPendingRequest(requestId, message);
     }
 
-    clients.get(runId)!.push(connection);
+    sendError(socket, message, requestId);
+  }
+};
 
-    connection.socket.on('close', () => {
-      const list = clients.get(runId) || [];
-      clients.set(
+export default async function wsRoutes(app: FastifyInstance) {
+  app.get('/ws/runs/:run_id', { websocket: true } as any, (socket: WebSocket, req: any) => {
+    const runId = req.params.run_id as string;
+
+    if (!runClients.has(runId)) {
+      runClients.set(runId, []);
+    }
+
+    const connection: WSConnection = { socket };
+    runClients.get(runId)!.push(connection);
+
+    socket.on('close', () => {
+      const list = runClients.get(runId) || [];
+      runClients.set(
         runId,
-        list.filter((item: any) => item !== connection),
+        list.filter((item) => item.socket !== socket),
       );
+    });
+  });
+
+  app.get('/ws/worker', { websocket: true } as any, (socket: WebSocket, req: any) => {
+    app.log.info(
+      {
+        remoteAddress: req.socket?.remoteAddress ?? null,
+        userAgent: req.headers['user-agent'] ?? null,
+      },
+      '[WS worker] connection opened',
+    );
+
+    socket.on('message', (raw: Buffer | string) => {
+      void (async () => {
+        try {
+          const text = typeof raw === 'string' ? raw : raw.toString('utf8');
+          app.log.info({ text }, '[WS worker] raw message received');
+          const envelope = JSON.parse(text) as WorkerEnvelope;
+          await handleWorkerMessage(app, socket, req, envelope);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Invalid worker WS payload';
+          app.log.error({ err }, '[WS worker] invalid payload');
+          sendError(socket, message);
+        }
+      })();
+    });
+
+    socket.on('close', () => {
+      void (async () => {
+        app.log.info('[WS worker] connection closed');
+
+        const session = WorkerControlService.unregisterSocket(socket);
+        if (!session) return;
+
+        try {
+          await WorkerModel.upsertHeartbeat({
+            id: session.worker_id,
+            name: session.worker_name,
+            host: session.worker_host ?? null,
+            current_run_id: session.current_run_id ?? null,
+            capabilities: session.capabilities ?? null,
+            status: 'offline',
+          });
+        } catch {
+          // ignore cleanup errors
+        }
+      })();
+    });
+
+    socket.on('error', (err: Error) => {
+      app.log.error({ err }, '[WS worker] socket error');
     });
   });
 }
@@ -4755,7 +5522,7 @@ exec "/opt/cloudforge/envs/\${ENV_NAME}/bin/python" "$@"
 path: /src/services/dashboard.service.ts
 ----------------------------------------
 import db from '../db/index';
-import { Run } from '../models/job';
+import { Run, RunManifest } from '../models/job';
 import { JobService } from './job.service';
 
 const allAsync = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
@@ -4781,6 +5548,73 @@ const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+const buildDefaultRunManifest = (row: any): RunManifest => ({
+  run_id: row.id,
+  job_id: row.job_id,
+  execution_language: 'python',
+  bootstrap_image: {
+    id: row.bootstrap_image_id,
+    full_image_name: '',
+    name: '',
+  },
+  workspace: {
+    root: '/workspace',
+    artifacts_dir: '/workspace/artifacts',
+    tmp_dir: '/workspace/tmp',
+  },
+  environment_variables: {},
+  entrypoint: '',
+  entrypoint_args: [],
+  working_dir: '/workspace',
+  files: [],
+  control: {
+    start_url: '',
+    heartbeat_url: '',
+    logs_url: '',
+    progress_url: '',
+    finish_url: '',
+    cancel_url: '',
+  },
+  artifacts: {
+    upload_url: '',
+  },
+});
+
+const normalizeRunManifest = (row: any): RunManifest => {
+  const fallback = buildDefaultRunManifest(row);
+  const parsed = parseJson<Partial<RunManifest>>(row.run_manifest, {});
+
+  return {
+    ...fallback,
+    ...parsed,
+    execution_language:
+      parsed.execution_language === 'javascript' ? 'javascript' : fallback.execution_language,
+    bootstrap_image: {
+      ...fallback.bootstrap_image,
+      ...(parsed.bootstrap_image || {}),
+    },
+    workspace: {
+      ...fallback.workspace,
+      ...(parsed.workspace || {}),
+    },
+    environment_variables: parsed.environment_variables || fallback.environment_variables,
+    entrypoint: parsed.entrypoint ?? fallback.entrypoint,
+    entrypoint_args: Array.isArray(parsed.entrypoint_args)
+      ? parsed.entrypoint_args
+      : fallback.entrypoint_args,
+    working_dir: parsed.working_dir ?? fallback.working_dir,
+    files: Array.isArray(parsed.files) ? parsed.files : fallback.files,
+    control: {
+      ...fallback.control,
+      ...(parsed.control || {}),
+    },
+    artifacts: {
+      ...fallback.artifacts,
+      ...(parsed.artifacts || {}),
+    },
+  };
 };
 
 export class DashboardService {
@@ -4841,36 +5675,7 @@ export class DashboardService {
       status_message: row.status_message ?? null,
       result: row.result ?? null,
       metrics: parseJson(row.metrics, null),
-      run_manifest: parseJson(row.run_manifest, {
-        run_id: row.id,
-        job_id: row.job_id,
-        bootstrap_image: {
-          id: row.bootstrap_image_id,
-          full_image_name: '',
-          name: '',
-        },
-        workspace: {
-          root: '/workspace',
-          artifacts_dir: '/workspace/artifacts',
-          tmp_dir: '/workspace/tmp',
-        },
-        environment_variables: {},
-        entrypoint: '',
-        entrypoint_args: [],
-        working_dir: '/workspace',
-        files: [],
-        control: {
-          start_url: '',
-          heartbeat_url: '',
-          logs_url: '',
-          progress_url: '',
-          finish_url: '',
-          cancel_url: '',
-        },
-        artifacts: {
-          upload_url: '',
-        },
-      }),
+      run_manifest: normalizeRunManifest(row),
       started_at: row.started_at ?? null,
       finished_at: row.finished_at ?? null,
       last_heartbeat_at: row.last_heartbeat_at ?? null,
@@ -4918,6 +5723,8 @@ export class DashboardService {
 path: /src/services/job.service.ts
 ----------------------------------------
 import path from 'path';
+import archiver from 'archiver';
+import { PassThrough } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import {
   BootstrapImageLogModel,
@@ -4948,7 +5755,9 @@ import {
   assertValidCreateJobPayload,
   assertValidRelativePath,
   CreateJobPayload,
+  normalizeDirectoryPath,
 } from '../utils/job-validation';
+import { ArtifactService } from './artifact.service';
 
 const WORKSPACE: WorkspaceLayout = {
   root: '/workspace',
@@ -5309,9 +6118,166 @@ export class JobService {
     return file;
   }
 
+  static async listFilesTree(jobId: string) {
+    const files = await JobFileModel.listByJobId(jobId);
+
+    const root: any[] = [];
+    const map = new Map<string, any>();
+
+    files.forEach((file) => {
+      const parts = file.relative_path.split('/');
+      let currentPath = '';
+
+      parts.forEach((part, index) => {
+        const isLast = index === parts.length - 1;
+        const parentPath = currentPath;
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+        if (!map.has(currentPath)) {
+          const node: any = {
+            name: part,
+            path: currentPath,
+            type: isLast && file.source_type !== 'directory' ? 'file' : 'directory',
+            children: [],
+          };
+
+          if (isLast && file.source_type !== 'directory') {
+            node.file = file;
+          }
+
+          map.set(currentPath, node);
+
+          if (parentPath) {
+            const parent = map.get(parentPath);
+            if (parent) {
+              parent.children.push(node);
+            }
+          } else {
+            root.push(node);
+          }
+        } else if (isLast && file.source_type !== 'directory') {
+          // If the node already exists as a directory (implied by children),
+          // but this record is an actual file, we prefer the file record
+          const node = map.get(currentPath);
+          node.type = 'file';
+          node.file = file;
+        }
+      });
+    });
+
+    return root;
+  }
+
+  static async mkdir(jobId: string, relativePath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = normalizeDirectoryPath(relativePath);
+    const filename = normalized.split('/').pop() || '';
+
+    await JobFileModel.upsertDirectory({
+      id: makeId('jf'),
+      job_id: jobId,
+      relative_path: normalized,
+      filename,
+    });
+
+    return JobFileModel.findByJobIdAndPath(jobId, normalized);
+  }
+
+  static async movePath(jobId: string, oldPath: string, newPath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalizedOld = normalizeDirectoryPath(oldPath);
+    const normalizedNew = normalizeDirectoryPath(newPath);
+
+    await JobFileModel.updatePrefix(jobId, normalizedOld, normalizedNew);
+  }
+
+  static async copyPath(jobId: string, sourcePath: string, targetPath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalizedSource = normalizeDirectoryPath(sourcePath);
+    const normalizedTarget = normalizeDirectoryPath(targetPath);
+
+    await JobFileModel.copyPrefix(jobId, normalizedSource, normalizedTarget);
+  }
+
+  static async renamePath(jobId: string, oldPath: string, newPath: string) {
+    return this.movePath(jobId, oldPath, newPath);
+  }
+
+  static async deletePath(jobId: string, relativePath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = normalizeDirectoryPath(relativePath);
+    await JobFileModel.deleteByPrefix(jobId, normalized);
+  }
+
+  static async downloadPath(jobId: string, relativePath: string) {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    const normalized = normalizeDirectoryPath(relativePath);
+    const item = await JobFileModel.findByJobIdAndPath(jobId, normalized);
+
+    if (item && item.source_type !== 'directory') {
+      // Single file download
+      if (item.source_type === 'inline') {
+        const stream = new PassThrough();
+        stream.end(Buffer.from(item.inline_content || '', 'utf8'));
+        return {
+          stream,
+          filename: item.filename,
+          mimeType: item.mime_type,
+        };
+      } else {
+        if (!item.storage_key) throw new Error('File storage key not found');
+        const objectResponse = await ArtifactService.getObject(item.storage_key);
+        return {
+          stream: objectResponse.Body,
+          filename: item.filename,
+          mimeType: (objectResponse.ContentType as string) || item.mime_type,
+        };
+      }
+    }
+
+    // Directory download as ZIP
+    const files = await JobFileModel.listByPrefix(jobId, normalized);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const stream = new PassThrough();
+    archive.pipe(stream);
+
+    for (const file of files) {
+      if (file.source_type === 'directory') continue;
+
+      const innerPath =
+        file.relative_path === normalized
+          ? file.filename
+          : file.relative_path.substring(normalized.lastIndexOf('/') + 1);
+
+      if (file.source_type === 'inline') {
+        archive.append(file.inline_content || '', { name: innerPath });
+      } else if (file.storage_key) {
+        const objectResponse = await ArtifactService.getObject(file.storage_key);
+        archive.append(objectResponse.Body as any, { name: innerPath });
+      }
+    }
+
+    await archive.finalize();
+
+    return {
+      stream,
+      filename: `${normalized.split('/').pop() || 'workspace'}.zip`,
+      mimeType: 'application/zip',
+    };
+  }
+
   static async deleteJobFile(jobId: string, relativePath: string) {
-    await this.getJobFile(jobId, relativePath);
-    await JobFileModel.deleteByJobIdAndPath(jobId, assertValidRelativePath(relativePath));
+    await this.deletePath(jobId, relativePath);
   }
 
   static async getRunJobFile(runId: string, relativePath: string): Promise<JobFile> {
@@ -5951,6 +6917,252 @@ export class RunWatchdogService {
 }
 
 
+path: /src/services/worker-control.service.ts
+----------------------------------------
+import { WebSocket } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+
+export type WorkerEnvelope<T = Record<string, unknown>> = {
+  type: string;
+  request_id?: string;
+  payload?: T;
+};
+
+export type WorkerSession = {
+  socket: WebSocket;
+  worker_id: string;
+  worker_name: string;
+  worker_host?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  current_run_id?: string | null;
+  connected_at: string;
+  last_seen_at: string;
+};
+
+type PendingRequest = {
+  run_id: string;
+  type: string;
+  resolve: (value: any) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+};
+
+const sessionsByWorkerId = new Map<string, WorkerSession>();
+const runToWorkerId = new Map<string, string>();
+const pendingRequests = new Map<string, PendingRequest>();
+
+const nowIso = () => new Date().toISOString();
+
+const socketIsOpen = (socket: WebSocket) => socket.readyState === WebSocket.OPEN;
+
+const sendEnvelope = (socket: WebSocket, envelope: WorkerEnvelope): boolean => {
+  if (!socketIsOpen(socket)) return false;
+
+  socket.send(JSON.stringify(envelope));
+  return true;
+};
+
+export class WorkerControlService {
+  static registerWorker(
+    data: {
+      worker_id: string;
+      worker_name: string;
+      worker_host?: string | null;
+      capabilities?: Record<string, unknown> | null;
+      current_run_id?: string | null;
+    },
+    socket: WebSocket,
+  ): WorkerSession {
+    const existing = sessionsByWorkerId.get(data.worker_id);
+    if (existing && existing.socket !== socket && socketIsOpen(existing.socket)) {
+      try {
+        existing.socket.close(4000, 'Superseded by a newer worker session');
+      } catch {
+        // ignore
+      }
+    }
+
+    const session: WorkerSession = {
+      socket,
+      worker_id: data.worker_id,
+      worker_name: data.worker_name,
+      worker_host: data.worker_host ?? null,
+      capabilities: data.capabilities ?? null,
+      current_run_id: data.current_run_id ?? existing?.current_run_id ?? null,
+      connected_at: existing?.connected_at ?? nowIso(),
+      last_seen_at: nowIso(),
+    };
+
+    sessionsByWorkerId.set(session.worker_id, session);
+
+    if (session.current_run_id) {
+      runToWorkerId.set(session.current_run_id, session.worker_id);
+    }
+
+    return session;
+  }
+
+  static touchWorker(workerId: string): void {
+    const session = sessionsByWorkerId.get(workerId);
+    if (!session) return;
+
+    session.last_seen_at = nowIso();
+  }
+
+  static bindRun(workerId: string, runId: string): void {
+    const session = sessionsByWorkerId.get(workerId);
+    if (!session) return;
+
+    session.current_run_id = runId;
+    session.last_seen_at = nowIso();
+    runToWorkerId.set(runId, workerId);
+  }
+
+  static unbindRun(runId: string): void {
+    const workerId = runToWorkerId.get(runId);
+    if (!workerId) return;
+
+    const session = sessionsByWorkerId.get(workerId);
+    if (session?.current_run_id === runId) {
+      session.current_run_id = null;
+      session.last_seen_at = nowIso();
+    }
+
+    runToWorkerId.delete(runId);
+  }
+
+  static getSessionByWorkerId(workerId: string): WorkerSession | null {
+    return sessionsByWorkerId.get(workerId) || null;
+  }
+
+  static getSessionByRunId(runId: string): WorkerSession | null {
+    const workerId = runToWorkerId.get(runId);
+    if (!workerId) return null;
+    return sessionsByWorkerId.get(workerId) || null;
+  }
+
+  static getSessionBySocket(socket: WebSocket): WorkerSession | null {
+    for (const session of sessionsByWorkerId.values()) {
+      if (session.socket === socket) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  static unregisterSocket(socket: WebSocket): WorkerSession | null {
+    const session = this.getSessionBySocket(socket);
+    if (!session) return null;
+
+    sessionsByWorkerId.delete(session.worker_id);
+
+    if (session.current_run_id) {
+      runToWorkerId.delete(session.current_run_id);
+    }
+
+    for (const [requestId, pending] of pendingRequests.entries()) {
+      if (pending.run_id === session.current_run_id) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error('Worker disconnected before replying'));
+        pendingRequests.delete(requestId);
+      }
+    }
+
+    return session;
+  }
+
+  static sendToRun(runId: string, type: string, payload: Record<string, unknown> = {}): boolean {
+    const session = this.getSessionByRunId(runId);
+    if (!session) return false;
+
+    session.last_seen_at = nowIso();
+
+    return sendEnvelope(session.socket, {
+      type,
+      payload,
+    });
+  }
+
+  static sendSignal(runId: string, signalName: string): boolean {
+    return this.sendToRun(runId, 'run.signal', {
+      signal: signalName,
+    });
+  }
+
+  static sendStop(runId: string, reason?: string): boolean {
+    return this.sendToRun(runId, 'run.stop', {
+      reason: reason || 'Run cancelled by user',
+    });
+  }
+
+  static async requestToRun<T = unknown>(
+    runId: string,
+    type: string,
+    payload: Record<string, unknown> = {},
+    timeoutMs = 30_000,
+  ): Promise<T> {
+    const session = this.getSessionByRunId(runId);
+    if (!session) {
+      throw new Error('No active worker session for this run');
+    }
+
+    if (!socketIsOpen(session.socket)) {
+      throw new Error('Worker socket is not open');
+    }
+
+    const requestId = uuidv4().replace(/-/g, '');
+
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingRequests.delete(requestId);
+        reject(new Error(`Timed out waiting for worker response to ${type}`));
+      }, timeoutMs);
+
+      pendingRequests.set(requestId, {
+        run_id: runId,
+        type,
+        resolve,
+        reject,
+        timer,
+      });
+
+      const sent = sendEnvelope(session.socket, {
+        type,
+        request_id: requestId,
+        payload,
+      });
+
+      if (!sent) {
+        clearTimeout(timer);
+        pendingRequests.delete(requestId);
+        reject(new Error('Failed to send request to worker'));
+      }
+    });
+  }
+
+  static resolvePendingRequest(requestId: string, payload: unknown): boolean {
+    const pending = pendingRequests.get(requestId);
+    if (!pending) return false;
+
+    clearTimeout(pending.timer);
+    pendingRequests.delete(requestId);
+    pending.resolve(payload);
+    return true;
+  }
+
+  static rejectPendingRequest(requestId: string, message: string): boolean {
+    const pending = pendingRequests.get(requestId);
+    if (!pending) return false;
+
+    clearTimeout(pending.timer);
+    pendingRequests.delete(requestId);
+    pending.reject(new Error(message));
+    return true;
+  }
+}
+
+
+
 path: /src/utils/config.ts
 ----------------------------------------
 import dotenv from 'dotenv';
@@ -6267,6 +7479,19 @@ export const assertValidRelativePath = (value: unknown, fieldName = 'relative_pa
   }
 };
 
+export const normalizeDirectoryPath = (value: string): string => {
+  const normalized = path.posix.normalize(value.replace(/\\/g, '/')).replace(/^\/+/, '');
+  if (
+    !normalized ||
+    normalized === '.' ||
+    normalized.startsWith('../') ||
+    normalized.includes('/../')
+  ) {
+    throw new Error(`invalid directory path "${value}"`);
+  }
+  return normalized.replace(/\/+$/, '');
+};
+
 
 path: /src/utils/logger.ts
 ----------------------------------------
@@ -6330,14 +7555,16 @@ describe('Smoke E2E: Full Job & Run Lifecycle', () => {
         db.run('DELETE FROM runs', () => {});
         db.run('DELETE FROM logs', () => {});
         db.run('DELETE FROM run_artifacts', () => {});
-        db.run('DELETE FROM workers', () => resolve());
+        db.run('DELETE FROM workers', () => {});
+        db.run('DELETE FROM bootstrap_images', () => {});
+        db.run('DELETE FROM bootstrap_image_logs', () => resolve());
       });
     });
   });
 
   it('should complete the full happy path flow', async () => {
     // 1. Setup a dummy bootstrap image
-    const bootstrap_id = 'img_smoke_test';
+    const bootstrap_id = `img_smoke_${Math.random().toString(36).slice(2, 10)}`;
     await new Promise<void>((resolve, reject) => {
       db.run(
         `INSERT INTO bootstrap_images (id, name, base_image, tag, full_image_name, dockerfile_text, status)
@@ -6564,8 +7791,8 @@ export default defineConfig({
 
 
 === SUMMARY ===
-included: 36
+included: 37
 skipped(binary): 1
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 183759
+totalBytes(approx): 219223

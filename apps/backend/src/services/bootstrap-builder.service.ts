@@ -184,8 +184,10 @@ SHELL ["/bin/bash", "-lc"]
 
 ENV CLOUD_FORGE_HOME=/opt/cloudforge
 ENV CLOUD_FORGE_ENVS=/opt/cloudforge/envs
+ENV CLOUD_FORGE_SDK=/opt/cloudforge/sdk
 ENV CLOUD_FORGE_NODE_HOME=/opt/cloudforge/node
 ENV PATH="/opt/cloudforge/bin:$PATH"
+ENV PYTHONPATH="/opt/cloudforge/sdk:\${PYTHONPATH}"
 
 WORKDIR /opt/cloudforge
 
@@ -215,7 +217,7 @@ ${executionLanguage === 'python' ? pythonBlocks : javascriptBlock}
 ${
   executionLanguage === 'python'
     ? `ENV PATH="/opt/cloudforge/envs/${defaultEnvName}/bin:/opt/cloudforge/bin:$PATH"`
-    : `ENV NODE_PATH="/opt/cloudforge/node/node_modules:\${NODE_PATH}"`
+    : `ENV NODE_PATH="/opt/cloudforge/sdk:/opt/cloudforge/node/node_modules:\${NODE_PATH}"`
 }
 
 WORKDIR /workspace
@@ -251,7 +253,6 @@ ENTRYPOINT ["python3", "/opt/cloudforge/runner.py"]
     const {
       id,
       name,
-      baseImage,
       tag,
       executionLanguage,
       dockerfileText,
@@ -313,8 +314,14 @@ exec "/opt/cloudforge/envs/\${ENV_NAME}/bin/python" "$@"
       );
 
       if (executionLanguage === 'javascript') {
-        const packages = environments.flatMap((env) => splitPackageLines(env.requirements_text || ''));
-        fs.writeFileSync(path.join(workspaceDir, 'packages.txt'), `${packages.join('\n')}\n`, 'utf8');
+        const packages = environments.flatMap((env) =>
+          splitPackageLines(env.requirements_text || ''),
+        );
+        fs.writeFileSync(
+          path.join(workspaceDir, 'packages.txt'),
+          `${packages.join('\n')}\n`,
+          'utf8',
+        );
       } else {
         for (const env of environments) {
           const envName = safeEnvName(env.name || 'default');
@@ -527,3 +534,4 @@ exec "/opt/cloudforge/envs/\${ENV_NAME}/bin/python" "$@"
     });
   }
 }
+

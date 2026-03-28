@@ -256,6 +256,17 @@ export class JobService {
 
     for (const file of files) {
       const fileId = makeId('jf');
+
+      if (file.source_type === 'directory') {
+        await JobFileModel.upsertDirectory({
+          id: fileId,
+          job_id: newId,
+          relative_path: file.relative_path,
+          filename: file.filename,
+        });
+        continue;
+      }
+
       if (file.source_type === 'inline') {
         await JobFileModel.upsertInline({
           id: fileId,
@@ -266,18 +277,19 @@ export class JobService {
           mime_type: file.mime_type,
           is_executable: file.is_executable,
         });
-      } else {
-        await JobFileModel.upsertUploaded({
-          id: fileId,
-          job_id: newId,
-          relative_path: file.relative_path,
-          filename: file.filename,
-          storage_key: file.storage_key || '',
-          mime_type: file.mime_type,
-          size_bytes: file.size_bytes,
-          is_executable: file.is_executable,
-        });
+        continue;
       }
+
+      await JobFileModel.upsertUploaded({
+        id: fileId,
+        job_id: newId,
+        relative_path: file.relative_path,
+        filename: file.filename,
+        storage_key: file.storage_key || '',
+        mime_type: file.mime_type,
+        size_bytes: file.size_bytes,
+        is_executable: file.is_executable,
+      });
     }
 
     const cloned = await JobModel.findById(newId);
@@ -432,8 +444,6 @@ export class JobService {
             root.push(node);
           }
         } else if (isLast && file.source_type !== 'directory') {
-          // If the node already exists as a directory (implied by children),
-          // but this record is an actual file, we prefer the file record
           const node = map.get(currentPath);
           node.type = 'file';
           node.file = file;
@@ -501,7 +511,6 @@ export class JobService {
     const item = await JobFileModel.findByJobIdAndPath(jobId, normalized);
 
     if (item && item.source_type !== 'directory') {
-      // Single file download
       if (item.source_type === 'inline') {
         const stream = new PassThrough();
         stream.end(Buffer.from(item.inline_content || '', 'utf8'));
@@ -521,7 +530,6 @@ export class JobService {
       }
     }
 
-    // Directory download as ZIP
     const files = await JobFileModel.listByPrefix(jobId, normalized);
     const archive = archiver('zip', { zlib: { level: 9 } });
     const stream = new PassThrough();
@@ -682,7 +690,10 @@ export class JobService {
       throw new Error('Bootstrap image not found or not ready');
     }
 
-    const jobFiles = await JobFileModel.listByJobId(job.id);
+    const jobFiles = (await JobFileModel.listByJobId(job.id)).filter(
+      (file) => file.source_type !== 'directory',
+    );
+
     const runId = makeId('run');
 
     const manifestFiles: RunManifestFile[] = jobFiles.map((file): RunManifestFile => {

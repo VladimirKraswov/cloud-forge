@@ -16,6 +16,7 @@ import {
   Worker,
   WorkerStatus,
 } from './job';
+import { v4 as uuidv4 } from 'uuid';
 
 const parseJson = <T>(value: string | null | undefined, fallback: T): T => {
   if (!value) return fallback;

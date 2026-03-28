@@ -51,6 +51,12 @@ export default async function workerRoutes(app: FastifyInstance) {
       try {
         const file = await JobService.getRunJobFile(req.params.id, req.query.relativePath);
 
+        if (file.source_type === 'directory' || file.mime_type === 'inode/directory') {
+          return reply.code(400).send({
+            error: 'Directories cannot be downloaded as file content',
+          });
+        }
+
         if (file.source_type === 'inline') {
           reply.type(file.mime_type || 'text/plain; charset=utf-8');
           return reply.send(file.inline_content || '');

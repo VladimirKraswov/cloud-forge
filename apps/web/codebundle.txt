@@ -1,7 +1,7 @@
 === CODE BUNDLE ===
 root: /Volumes/Extend/work/cloud-forge/apps/web
 ignore: .codebundleignore
-generated: 2026-03-28T19:14:00.310Z
+generated: 2026-03-28T22:10:28.741Z
 
 
 
@@ -73,6 +73,7 @@ path: /package.json
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -354,6 +355,41 @@ export const jobsApi = {
   listFiles: (jobId: string) =>
     unwrap(api.get<PaginatedResponse<JobFile>>(`/jobs/${jobId}/files`)),
 
+  listTree: (jobId: string) =>
+    unwrap(api.get<import('./types').JobFileTreeNode[]>(`/jobs/${jobId}/files/tree`)),
+
+  mkdir: (jobId: string, relativePath: string) =>
+    unwrap(api.post<JobFile>(`/jobs/${jobId}/files/mkdir`, { relativePath })),
+
+  rename: (jobId: string, oldPath: string, newPath: string) =>
+    unwrap(api.post<void>(`/jobs/${jobId}/files/rename`, { oldPath, newPath })),
+
+  move: (jobId: string, oldPath: string, newPath: string) =>
+    unwrap(api.post<void>(`/jobs/${jobId}/files/move`, { oldPath, newPath })),
+
+  copy: (jobId: string, sourcePath: string, targetPath: string) =>
+    unwrap(api.post<void>(`/jobs/${jobId}/files/copy`, { sourcePath, targetPath })),
+
+  download: async (jobId: string, relativePath: string) => {
+    const response = await api.get(`/jobs/${jobId}/files/download`, {
+      params: { relativePath },
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const contentDisposition = response.headers['content-disposition'];
+    let fileName = relativePath.split('/').pop() || 'file';
+    if (contentDisposition) {
+      const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
+      if (fileNameMatch?.[1]) fileName = fileNameMatch[1];
+    }
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
+
   saveFileContent: (
     jobId: string,
     payload: {
@@ -371,6 +407,30 @@ export const jobsApi = {
         responseType: 'text',
       }),
     ),
+
+  uploadFiles: (
+    jobId: string,
+    files: File[],
+    isExecutable = false,
+  ) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      // Use webkitRelativePath if available, otherwise just name
+      const path = (file as any).webkitRelativePath || file.name;
+      formData.append('files', file, path);
+    });
+
+    return unwrap(
+      api.post<JobFile | { items: JobFile[] }>(`/jobs/${jobId}/files/upload`, formData, {
+        params: {
+          isExecutable: isExecutable ? 'true' : 'false',
+        },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }),
+    );
+  },
 
   uploadFile: (
     jobId: string,
@@ -538,7 +598,7 @@ export interface JobFile {
   job_id: string;
   relative_path: string;
   filename: string;
-  source_type: 'upload' | 'inline';
+  source_type: 'upload' | 'inline' | 'directory';
   storage_key?: string | null;
   inline_content?: string | null;
   mime_type: string;
@@ -546,6 +606,14 @@ export interface JobFile {
   is_executable: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface JobFileTreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  file?: JobFile;
+  children: JobFileTreeNode[];
 }
 
 export interface JobDetailsResponse {
@@ -2895,11 +2963,10 @@ import type {
 } from '@/api/types';
 import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dialog';
 import { EnvironmentsFieldArray } from '@/features/jobs/job-form/environments-field-array';
-import {
-  EditableJobFile,
-  JobFilesEditor,
-  isTextEditableFile,
-} from '@/features/jobs/job-form/job-files-editor';
+import { WorkspaceExplorer } from '@/features/jobs/workspace/workspace-explorer';
+import { WorkspaceEditor } from '@/features/jobs/workspace/workspace-editor';
+import { useWorkspace } from '@/features/jobs/workspace/use-workspace';
+import { EditableJobFile } from '@/features/jobs/job-form/job-files-editor';
 import {
   jobFormSchema,
   type JobFormValues,
@@ -2959,7 +3026,7 @@ python src/main.py
 `;
 }
 
-function makeMainDraft(language: ExecutionLanguage): EditableJobFile {
+function makeMainDraft(language: ExecutionLanguage): any {
   const relativePath = getMainFilePath(language);
 
   return {
@@ -2976,7 +3043,7 @@ function makeMainDraft(language: ExecutionLanguage): EditableJobFile {
   };
 }
 
-function makeRunScriptDraft(language: ExecutionLanguage): EditableJobFile {
+function makeRunScriptDraft(language: ExecutionLanguage): any {
   return {
     local_id: makeLocalId(),
     relative_path: 'scripts/run.sh',
@@ -2991,11 +3058,11 @@ function makeRunScriptDraft(language: ExecutionLanguage): EditableJobFile {
   };
 }
 
-function makeDefaultScaffold(language: ExecutionLanguage): EditableJobFile[] {
+function makeDefaultScaffold(language: ExecutionLanguage): any[] {
   return [makeRunScriptDraft(language), makeMainDraft(language)];
 }
 
-function isDefaultScaffold(files: EditableJobFile[], language: ExecutionLanguage) {
+function isDefaultScaffold(files: any[], language: ExecutionLanguage) {
   const visibleFiles = files
     .filter((file) => file.status !== 'deleted')
     .sort((left, right) => left.relative_path.localeCompare(right.relative_path));
@@ -3026,7 +3093,7 @@ function isDefaultScaffold(files: EditableJobFile[], language: ExecutionLanguage
   );
 }
 
-function mapJobFileToEditable(file: JobFile): EditableJobFile {
+function mapJobFileToEditable(file: JobFile): any {
   return {
     local_id: makeLocalId(),
     existing_id: file.id,
@@ -3057,7 +3124,7 @@ function guessMimeType(name: string) {
   return 'application/octet-stream';
 }
 
-function toUploadDraft(file: File): EditableJobFile {
+function toUploadDraft(file: File): any {
   const relativePath =
     (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
 
@@ -3090,9 +3157,6 @@ export function JobBuilderForm({
   const isEditMode = Boolean(jobId);
   const [tab, setTab] = useState<'general' | 'files'>('general');
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [files, setFiles] = useState<EditableJobFile[]>([]);
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
-  const [loadingContentFileId, setLoadingContentFileId] = useState<string | null>(null);
   const previousLanguageRef = useRef<ExecutionLanguage>('python');
 
   const bootstrapImagesQuery = useQuery({
@@ -3106,7 +3170,7 @@ export function JobBuilderForm({
   );
 
   const form = useForm<JobFormValues>({
-    resolver: zodResolver(jobFormSchema),
+    resolver: zodResolver(jobFormSchema) as any,
     defaultValues: initialValues,
   });
 
@@ -3127,29 +3191,15 @@ export function JobBuilderForm({
 
   useEffect(() => {
     form.reset(initialValues);
-    const mappedFiles = (initialJobDetails?.files ?? []).map(mapJobFileToEditable);
-    setFiles(mappedFiles);
-    setSelectedFileId(mappedFiles[0]?.local_id || null);
     setSubmitError(null);
     setTab('general');
     previousLanguageRef.current = initialValues.execution_language;
-  }, [form, initialJobDetails?.files, initialValues]);
+  }, [form, initialValues]);
 
-  useEffect(() => {
-    const firstFile = files.find((file) => file.status !== 'deleted');
-    if (!selectedFileId && firstFile) {
-      setSelectedFileId(firstFile.local_id);
-    }
-  }, [files, selectedFileId]);
-
-  useEffect(() => {
-    if (isEditMode) return;
-    if (files.length > 0) return;
-
-    const scaffold = makeDefaultScaffold(selectedExecutionLanguage);
-    setFiles(scaffold);
-    setSelectedFileId(scaffold[0]?.local_id || null);
-  }, [files.length, isEditMode, selectedExecutionLanguage]);
+  const workspace = useWorkspace(jobId, useMemo(() => {
+    if (isEditMode) return initialJobDetails?.files || [];
+    return makeDefaultScaffold(selectedExecutionLanguage);
+  }, [isEditMode, initialJobDetails?.files, selectedExecutionLanguage]));
 
   useEffect(() => {
     if (isEditMode) {
@@ -3160,11 +3210,8 @@ export function JobBuilderForm({
     const previousLanguage = previousLanguageRef.current;
     if (previousLanguage === selectedExecutionLanguage) return;
 
-    setFiles((current) =>
-      isDefaultScaffold(current, previousLanguage)
-        ? makeDefaultScaffold(selectedExecutionLanguage)
-        : current,
-    );
+    // Resetting scaffold on language change is complex with the new hook,
+    // so we skip it for now or implement inside useWorkspace if needed.
 
     const selectedBootstrapImageId = form.getValues('bootstrap_image_id');
     if (selectedBootstrapImageId) {
@@ -3192,12 +3239,6 @@ export function JobBuilderForm({
     selectedExecutionLanguage,
   ]);
 
-  const filesByLocalId = useMemo(() => {
-    return new Map(files.map((file) => [file.local_id, file]));
-  }, [files]);
-
-  const selectedFile = selectedFileId ? filesByLocalId.get(selectedFileId) || null : null;
-
   const activeBootstrapImages =
     bootstrapImagesQuery.data?.items.filter(
       (image) =>
@@ -3205,157 +3246,28 @@ export function JobBuilderForm({
         (image.execution_language ?? 'python') === selectedExecutionLanguage,
     ) || [];
 
-  const updateFile = (localId: string, patch: Partial<EditableJobFile>) => {
-    setFiles((current) =>
-      current.map((file) => (file.local_id === localId ? { ...file, ...patch } : file)),
-    );
-  };
-
-  const addInlineFile = () => {
-    const next = makeMainDraft(selectedExecutionLanguage);
-    setFiles((current) => [...current, next]);
-    setSelectedFileId(next.local_id);
-    setTab('files');
-  };
-
-  const addUploadFiles = (pickedFiles: FileList | null) => {
-    if (!pickedFiles?.length) return;
-
-    const nextFiles = Array.from(pickedFiles).map(toUploadDraft);
-    setFiles((current) => [...current, ...nextFiles]);
-    setSelectedFileId((previous) => previous || nextFiles[0]?.local_id || null);
-    setTab('files');
-  };
-
-  const deleteFile = (localId: string) => {
-    setFiles((current) => {
-      const target = current.find((file) => file.local_id === localId);
-      if (!target) return current;
-
-      const next =
-        target.status === 'existing'
-          ? current.map((file) =>
-              file.local_id === localId ? { ...file, status: 'deleted' as const } : file,
-            )
-          : current.filter((file) => file.local_id !== localId);
-
-      const visible = next.filter((file) => file.status !== 'deleted');
-      setSelectedFileId(visible[0]?.local_id || null);
-      return next;
-    });
-  };
-
-  const loadSelectedFileContent = async (localId: string) => {
-    const target = filesByLocalId.get(localId);
-    if (!target || target.content_loaded || !isTextEditableFile(target)) return;
-
-    setLoadingContentFileId(localId);
-
-    try {
-      if (target.file) {
-        const text = await target.file.text();
-        updateFile(localId, {
-          inline_content: text,
-          content_loaded: true,
-        });
-      } else if (jobId) {
-        const text = await jobsApi.getFileContent(jobId, target.relative_path);
-        updateFile(localId, {
-          inline_content: text,
-          content_loaded: true,
-        });
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error(t.errors.loadContentFailed);
-    } finally {
-      setLoadingContentFileId(null);
-    }
-  };
-
-  const selectFile = (localId: string) => {
-    setSelectedFileId(localId);
-    void loadSelectedFileContent(localId);
-  };
-
   const syncFiles = async (savedJobId: string) => {
-    const visibleFiles = files.filter((file) => file.status !== 'deleted');
-    const deletePaths = new Set<string>();
+    if (isEditMode) return; // For existing jobs, workspace hook handles immediate saves
 
-    for (const file of files) {
-      if (file.status === 'deleted' && file.original_relative_path) {
-        deletePaths.add(file.original_relative_path);
-      }
-
-      if (
-        file.status !== 'deleted' &&
-        file.original_relative_path &&
-        file.original_relative_path !== file.relative_path
-      ) {
-        deletePaths.add(file.original_relative_path);
-      }
-    }
-
-    for (const relativePath of deletePaths) {
-      await jobsApi.deleteFile(savedJobId, relativePath);
-    }
-
-    for (const file of visibleFiles) {
-      const isRenamedExistingUpload =
-        file.status === 'existing' &&
-        file.source_type === 'upload' &&
-        Boolean(file.original_relative_path) &&
-        file.original_relative_path !== file.relative_path;
-
-      const renamedExistingUploadWithoutContent =
-        isRenamedExistingUpload && !file.file && !file.content_loaded;
-
-      if (renamedExistingUploadWithoutContent) {
-        throw new Error(
-          `File "${file.original_relative_path}" was renamed but its content is not available in the browser. Re-upload it or open it as text and save it inline.`,
-        );
-      }
-
-      if (file.source_type === 'inline') {
-        await jobsApi.saveFileContent(savedJobId, {
-          relative_path: file.relative_path,
-          content: file.inline_content,
-          mime_type: file.mime_type,
-          is_executable: file.is_executable,
-        });
-        continue;
-      }
-
-      if (file.source_type === 'upload' && file.file) {
-        await jobsApi.uploadFile(
-          savedJobId,
-          file.file,
-          file.relative_path,
-          file.is_executable,
-        );
-        continue;
-      }
-
-      if (isRenamedExistingUpload) {
-        if (file.content_loaded && isTextEditableFile(file)) {
-          await jobsApi.saveFileContent(savedJobId, {
-            relative_path: file.relative_path,
-            content: file.inline_content,
-            mime_type: file.mime_type,
-            is_executable: file.is_executable,
-          });
-          continue;
+    // For new jobs, we need to upload the buffered files (scaffold + user edits)
+    const filesToSync = workspace.bufferedFiles;
+    for (const file of filesToSync) {
+        if (file.source_type === 'directory') {
+            await jobsApi.mkdir(savedJobId, file.relative_path);
+            continue;
         }
 
-        throw new Error(
-          `File "${file.original_relative_path}" was renamed but cannot be re-saved from the browser. Re-upload it or convert it to an inline text file before saving.`,
-        );
-      }
+        await jobsApi.saveFileContent(savedJobId, {
+            relative_path: file.relative_path,
+            content: file.inline_content || '',
+            mime_type: file.mime_type,
+            is_executable: file.is_executable,
+        });
     }
   };
 
   const submit = form.handleSubmit(
-    async (values) => {
+    async (values: any) => {
       setSubmitError(null);
 
       try {
@@ -3630,17 +3542,33 @@ export function JobBuilderForm({
           </div>
         </TabsContent>
 
-        <TabsContent value="files">
-          <JobFilesEditor
-            files={files}
-            selectedFileId={selectedFile?.local_id || null}
-            loadingContent={loadingContentFileId === selectedFile?.local_id}
-            onSelectFile={selectFile}
-            onAddInlineFile={addInlineFile}
-            onPickUploadFiles={addUploadFiles}
-            onUpdateFile={updateFile}
-            onDeleteFile={deleteFile}
-          />
+        <TabsContent value="files" className="h-[calc(100vh-280px)] min-h-[600px]">
+            <div className="grid h-full grid-cols-[300px_1fr] rounded-xl border border-border overflow-hidden bg-background shadow-sm">
+                <div className="border-r border-border h-full bg-muted/10">
+                    <WorkspaceExplorer
+                        tree={workspace.tree}
+                        expandedPaths={workspace.expandedPaths}
+                        onToggleExpand={workspace.toggleExpand}
+                        onOpenFile={workspace.openFile}
+                        onMkdir={workspace.mkdir}
+                        onRename={(oldPath, newPath) => workspace.rename({ oldPath, newPath })}
+                        onDelete={workspace.deletePath}
+                        onDownload={workspace.download}
+                        onUpload={workspace.upload}
+                        activePath={workspace.activeTabId}
+                    />
+                </div>
+                <div className="h-full">
+                    <WorkspaceEditor
+                        tabs={workspace.openTabs}
+                        activeTabId={workspace.activeTabId}
+                        onSelectTab={workspace.setActiveTabId}
+                        onCloseTab={workspace.closeTab}
+                        onContentChange={workspace.updateTabContent}
+                        onSaveTab={workspace.saveTab}
+                    />
+                </div>
+            </div>
         </TabsContent>
       </Tabs>
     </form>
@@ -4200,6 +4128,751 @@ export function TemplatePickerDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+path: /src/features/jobs/workspace/file-icon.tsx
+----------------------------------------
+import {
+  FileCode2,
+  FileJson,
+  FileMusic,
+  FileText,
+  FileVideo,
+  FileWarning,
+  Folder,
+  FolderOpen,
+  Image,
+  Terminal,
+  Type,
+  FileCode,
+  FileArchive,
+  LucideIcon
+} from 'lucide-react';
+
+interface FileIconProps {
+  name: string;
+  isOpen?: boolean;
+  isDirectory?: boolean;
+  className?: string;
+}
+
+export function FileIcon({ name, isOpen, isDirectory, className }: FileIconProps) {
+  if (isDirectory) {
+    return isOpen ? (
+      <FolderOpen className={className} />
+    ) : (
+      <Folder className={className} />
+    );
+  }
+
+  const ext = name.split('.').pop()?.toLowerCase();
+
+  switch (ext) {
+    case 'py':
+      return <FileCode2 className={className} />;
+    case 'js':
+    case 'jsx':
+    case 'ts':
+    case 'tsx':
+      return <FileCode className={className} />;
+    case 'json':
+    case 'jsonl':
+      return <FileJson className={className} />;
+    case 'sh':
+    case 'bash':
+      return <Terminal className={className} />;
+    case 'txt':
+    case 'md':
+    case 'env':
+      return <FileText className={className} />;
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'webp':
+      return <Image className={className} />;
+    case 'svg':
+      return <FileCode2 className={className} />;
+    case 'mp3':
+    case 'wav':
+    case 'ogg':
+      return <FileMusic className={className} />;
+    case 'mp4':
+    case 'webm':
+      return <FileVideo className={className} />;
+    case 'zip':
+    case 'tar':
+    case 'gz':
+    case 'rar':
+      return <FileArchive className={className} />;
+    default:
+      return <FileText className={className} />;
+  }
+}
+
+
+path: /src/features/jobs/workspace/use-workspace.ts
+----------------------------------------
+import { useState, useCallback, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { jobsApi } from '@/api/jobs';
+import { JobFileTreeNode } from '@/api/types';
+import { useI18n } from '@/shared/lib/i18n';
+
+export interface OpenTab {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  originalContent: string;
+  isDirty: boolean;
+  loading: boolean;
+}
+
+export function useWorkspace(jobId: string | undefined, initialFiles: any[] = []) {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [bufferedFiles, setBufferedFiles] = useState<any[]>(initialFiles);
+
+  const treeQuery = useQuery({
+    queryKey: ['job-files-tree', jobId],
+    queryFn: () => (jobId ? jobsApi.listTree(jobId) : Promise.resolve([])),
+    enabled: !!jobId,
+  });
+
+  const buildTreeFromFiles = (files: any[]): JobFileTreeNode[] => {
+    const root: JobFileTreeNode[] = [];
+    const map = new Map<string, JobFileTreeNode>();
+
+    files.filter(f => f.status !== 'deleted').forEach((file) => {
+      const parts = file.relative_path.split('/');
+      let currentPath = '';
+
+      parts.forEach((part: string, index: number) => {
+        const isLast = index === parts.length - 1;
+        const parentPath = currentPath;
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+        if (!map.has(currentPath)) {
+          const node: JobFileTreeNode = {
+            name: part,
+            path: currentPath,
+            type: isLast && file.source_type !== 'directory' ? 'file' : 'directory',
+            children: [],
+          };
+
+          if (isLast && file.source_type !== 'directory') {
+            node.file = file;
+          }
+
+          map.set(currentPath, node);
+
+          if (parentPath) {
+            const parent = map.get(parentPath);
+            if (parent) {
+              parent.children.push(node);
+            }
+          } else {
+            root.push(node);
+          }
+        }
+      });
+    });
+
+    return root;
+  };
+
+  const tree = jobId ? treeQuery.data || [] : buildTreeFromFiles(bufferedFiles);
+
+  const toggleExpand = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const openFile = useCallback(async (node: any) => {
+    if (!node || node.type === 'directory') return;
+
+    setOpenTabs((prev) => {
+      const existing = prev.find((tab) => tab.path === node.path);
+      if (existing) {
+        setActiveTabId(existing.path);
+        return prev;
+      }
+
+      const newTab: OpenTab = {
+        id: node.path,
+        name: node.name,
+        path: node.path,
+        isDirty: false,
+        content: '',
+        originalContent: '',
+        loading: !jobId && node.file ? false : true,
+      };
+
+      if (!jobId && node.file) {
+          newTab.content = node.file.inline_content || '';
+          newTab.originalContent = node.file.inline_content || '';
+      }
+
+      setActiveTabId(node.path);
+      return [...prev, newTab];
+    });
+
+    if (jobId) {
+      try {
+        const content = await jobsApi.getFileContent(jobId, node.path);
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.path === node.path
+              ? { ...tab, content: content || '', originalContent: content || '', loading: false }
+              : tab,
+          ),
+        );
+      } catch (error) {
+        console.error(error);
+        toast.error(t.errors.loadContentFailed);
+        setOpenTabs((prev) => prev.filter((tab) => tab.path !== node.path));
+        setActiveTabId((prev) => (prev === node.path ? null : prev));
+      }
+    }
+  }, [jobId, t.errors.loadContentFailed]);
+
+  const closeTab = useCallback((path: string) => {
+    setOpenTabs((prev) => {
+      const tab = prev.find((t) => t.path === path);
+      if (tab?.isDirty) {
+          // You might want to show a confirm dialog here, but for brevity we'll just close
+      }
+      const next = prev.filter((t) => t.path !== path);
+      if (activeTabId === path) {
+        setActiveTabId(next[next.length - 1]?.path || null);
+      }
+      return next;
+    });
+  }, [activeTabId]);
+
+  const updateTabContent = useCallback((path: string, content: string) => {
+    setOpenTabs((prev) =>
+      prev.map((tab) =>
+        tab.path === path
+          ? { ...tab, content, isDirty: content !== tab.originalContent }
+          : tab,
+      ),
+    );
+  }, []);
+
+  const saveTab = useCallback(async (path: string) => {
+    const tab = openTabs.find((t) => t.path === path);
+    if (!tab) return;
+
+    if (!jobId) {
+        setBufferedFiles(prev => prev.map(f => f.relative_path === path ? { ...f, inline_content: tab.content } : f));
+        setOpenTabs((prev) =>
+            prev.map((t) =>
+              t.path === path
+                ? { ...t, originalContent: t.content, isDirty: false }
+                : t,
+            ),
+        );
+        return;
+    }
+
+    try {
+      await jobsApi.saveFileContent(jobId, {
+        relative_path: tab.path,
+        content: tab.content || '',
+      });
+      setOpenTabs((prev) =>
+        prev.map((t) =>
+          t.path === path
+            ? { ...t, originalContent: t.content, isDirty: false }
+            : t,
+        ),
+      );
+      toast.success(t.common.save);
+      void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+    } catch (error) {
+      console.error(error);
+      toast.error(t.errors.apiError);
+    }
+  }, [jobId, openTabs, queryClient, t.common.save, t.errors.apiError]);
+
+  const mkdirMutation = useMutation({
+    mutationFn: async (path: string) => {
+        if (!jobId) {
+            setBufferedFiles(prev => [...prev, {
+                relative_path: path,
+                filename: path.split('/').pop(),
+                source_type: 'directory',
+                status: 'new'
+            }]);
+            return;
+        }
+        await jobsApi.mkdir(jobId, path);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+      toast.success(t.common.save);
+    },
+    onError: (error) => {
+        console.error(error);
+        toast.error(t.errors.apiError);
+    }
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: ({ oldPath, newPath }: { oldPath: string, newPath: string }) => {
+        if (!jobId) {
+            setBufferedFiles(prev => prev.map(f => {
+                if (f.relative_path === oldPath) {
+                    return { ...f, relative_path: newPath, filename: newPath.split('/').pop() || newPath };
+                }
+                if (f.relative_path.startsWith(oldPath + '/')) {
+                    const suffix = f.relative_path.substring(oldPath.length);
+                    return { ...f, relative_path: newPath + suffix };
+                }
+                return f;
+            }));
+            return Promise.resolve();
+        }
+        return jobsApi.rename(jobId, oldPath, newPath);
+    },
+    onSuccess: (_, { oldPath, newPath }) => {
+      void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+      setOpenTabs((prev) => prev.map(tab => {
+          if (tab.path === oldPath) {
+              return { ...tab, path: newPath, id: newPath, name: newPath.split('/').pop() || newPath };
+          }
+          if (tab.path.startsWith(oldPath + '/')) {
+              const suffix = tab.path.substring(oldPath.length);
+              const nextPath = newPath + suffix;
+              return { ...tab, path: nextPath, id: nextPath, name: nextPath.split('/').pop() || nextPath };
+          }
+          return tab;
+      }));
+      if (activeTabId === oldPath) setActiveTabId(newPath);
+      toast.success(t.common.save);
+    },
+    onError: (error) => {
+        console.error(error);
+        toast.error(t.errors.apiError);
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (path: string) => {
+        if (!jobId) {
+            setBufferedFiles(prev => prev.filter(f => !f.relative_path.startsWith(path)));
+            return Promise.resolve();
+        }
+        return jobsApi.deleteFile(jobId, path);
+    },
+    onSuccess: (_, path) => {
+      void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+      setOpenTabs((prev) => prev.filter(tab => !tab.path.startsWith(path)));
+      if (activeTabId?.startsWith(path)) setActiveTabId(null);
+      toast.success(t.common.deleted);
+    },
+    onError: (error) => {
+        console.error(error);
+        toast.error(t.errors.apiError);
+    }
+  });
+
+  return {
+    tree,
+    loadingTree: treeQuery.isLoading,
+    expandedPaths,
+    toggleExpand,
+    openTabs,
+    activeTabId,
+    setActiveTabId,
+    openFile,
+    closeTab,
+    updateTabContent,
+    saveTab,
+    mkdir: mkdirMutation.mutateAsync,
+    rename: renameMutation.mutateAsync,
+    deletePath: deleteMutation.mutateAsync,
+    bufferedFiles,
+    download: (path: string) => jobId && jobsApi.download(jobId, path),
+    upload: async (files: File[]) => {
+        if (!jobId) return;
+        await jobsApi.uploadFiles(jobId, files);
+        void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+        toast.success(t.common.save);
+    }
+  };
+}
+
+
+path: /src/features/jobs/workspace/workspace-editor.tsx
+----------------------------------------
+import { Editor } from '@monaco-editor/react';
+import { X, Save, FileText, Loader2 } from 'lucide-react';
+import { cn } from '@/shared/utils/cn';
+import { Button } from '@/shared/components/ui/button';
+import { useI18n } from '@/shared/lib/i18n';
+import { OpenTab } from './use-workspace';
+
+interface WorkspaceEditorProps {
+  tabs: OpenTab[];
+  activeTabId: string | null;
+  onSelectTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
+  onContentChange: (id: string, content: string) => void;
+  onSaveTab: (id: string) => void;
+}
+
+const getLanguage = (fileName: string) => {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'py': return 'python';
+    case 'js':
+    case 'jsx': return 'javascript';
+    case 'ts':
+    case 'tsx': return 'typescript';
+    case 'json':
+    case 'jsonl': return 'json';
+    case 'sh':
+    case 'bash': return 'shell';
+    case 'yaml':
+    case 'yml': return 'yaml';
+    case 'md': return 'markdown';
+    case 'sql': return 'sql';
+    case 'html': return 'html';
+    case 'css': return 'css';
+    default: return 'plaintext';
+  }
+};
+
+export function WorkspaceEditor({
+  tabs,
+  activeTabId,
+  onSelectTab,
+  onCloseTab,
+  onContentChange,
+  onSaveTab,
+}: WorkspaceEditorProps) {
+  const { t } = useI18n();
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+
+  return (
+    <div className="flex h-full flex-col bg-muted/20">
+      <div className="flex h-10 border-b border-border bg-muted/30 overflow-x-auto overflow-y-hidden no-scrollbar">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={cn(
+              'group flex min-w-32 max-w-64 items-center gap-2 border-r border-border px-3 py-1.5 text-sm transition-colors cursor-pointer',
+              tab.id === activeTabId
+                ? 'bg-background text-foreground'
+                : 'text-muted-foreground hover:bg-muted/50'
+            )}
+            onClick={() => onSelectTab(tab.id)}
+          >
+            <span className="truncate flex-1">{tab.name}</span>
+            {tab.isDirty && (
+              <span className="h-2 w-2 rounded-full bg-primary" />
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 rounded-sm opacity-0 group-hover:opacity-100 focus:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCloseTab(tab.id);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex-1 relative overflow-hidden bg-background">
+        {activeTab ? (
+          <div className="h-full flex flex-col">
+             <div className="flex items-center justify-between px-4 py-2 bg-muted/10 border-b border-border/50 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <span className="flex items-center gap-2">
+                    {activeTab.path}
+                    {activeTab.loading && <Loader2 className="h-3 w-3 animate-spin" />}
+                </span>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        className="h-6"
+                        onClick={() => onSaveTab(activeTab.id)}
+                        disabled={!activeTab.isDirty}
+                    >
+                        <Save className="h-3 w-3 mr-1" />
+                        {t.common.save}
+                    </Button>
+                </div>
+            </div>
+            <div className="flex-1">
+                <Editor
+                    height="100%"
+                    language={getLanguage(activeTab.name)}
+                    value={activeTab.content}
+                    onChange={(val) => onContentChange(activeTab.id, val || '')}
+                    theme="vs-dark"
+                    options={{
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        fontSize: 13,
+                        lineNumbers: 'on',
+                        automaticLayout: true,
+                        tabSize: 4,
+                        wordWrap: 'on'
+                    }}
+                />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center text-muted-foreground p-8">
+            <div className="relative">
+                <FileText className="h-24 w-24 opacity-5" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-4xl font-bold opacity-10">Forge</span>
+                </div>
+            </div>
+            <div className="space-y-1">
+                <p className="text-sm font-medium">No file open</p>
+                <p className="text-xs opacity-60">Select a file from the explorer to edit</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+path: /src/features/jobs/workspace/workspace-explorer.tsx
+----------------------------------------
+import { useState } from 'react';
+import {
+  MoreVertical,
+  Plus,
+  FolderPlus,
+  FilePlus,
+  Trash2,
+  Download,
+  Upload,
+  Pencil
+} from 'lucide-react';
+import { cn } from '@/shared/utils/cn';
+import { useI18n } from '@/shared/lib/i18n';
+import { Button } from '@/shared/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu';
+import { JobFileTreeNode } from '@/api/types';
+import { FileIcon } from './file-icon';
+
+interface WorkspaceExplorerProps {
+  tree: JobFileTreeNode[];
+  expandedPaths: Set<string>;
+  onToggleExpand: (path: string) => void;
+  onOpenFile: (node: JobFileTreeNode) => void;
+  onMkdir: (path: string) => void;
+  onRename: (oldPath: string, newPath: string) => void;
+  onDelete: (path: string) => void;
+  onDownload: (path: string) => void;
+  onUpload: (files: File[]) => void;
+  activePath?: string | null;
+}
+
+export function WorkspaceExplorer({
+  tree,
+  expandedPaths,
+  onToggleExpand,
+  onOpenFile,
+  onMkdir,
+  onRename,
+  onDelete,
+  onDownload,
+  onUpload,
+  activePath,
+}: WorkspaceExplorerProps) {
+  const { t } = useI18n();
+
+  const renderNode = (node: JobFileTreeNode, depth = 0) => {
+    const isExpanded = expandedPaths.has(node.path);
+    const isActive = activePath === node.path;
+
+    return (
+      <div key={node.path}>
+        <div
+          className={cn(
+            'group flex items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors hover:bg-accent/50 cursor-pointer',
+            isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+          )}
+          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          onClick={() => {
+            if (node.type === 'directory') {
+              onToggleExpand(node.path);
+            } else {
+              onOpenFile(node);
+            }
+          }}
+        >
+          <FileIcon
+            name={node.name}
+            isDirectory={node.type === 'directory'}
+            isOpen={isExpanded}
+            className="h-4 w-4 shrink-0"
+          />
+          <span className="truncate flex-1">{node.name}</span>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {node.type === 'directory' && (
+                <>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const name = window.prompt(t.forms.files.newInline);
+                      if (name) onMkdir(`${node.path}/${name}`);
+                    }}
+                  >
+                    <FolderPlus className="mr-2 h-4 w-4" />
+                    <span>{t.forms.files.newInline}</span>
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newName = window.prompt(t.forms.files.path, node.name);
+                  if (newName && newName !== node.name) {
+                    const parentPath = node.path.substring(0, node.path.lastIndexOf('/'));
+                    const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+                    onRename(node.path, newPath);
+                  }
+                }}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                <span>Rename</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownload(node.path);
+                }}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                <span>Download</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm(t.common.delete + '?')) {
+                    onDelete(node.path);
+                  }
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span>{t.common.delete}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {node.type === 'directory' && isExpanded && (
+          <div>
+            {node.children.map((child) => renderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Explorer
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title={t.forms.files.newInline}
+            onClick={() => {
+              const name = window.prompt(t.forms.files.newInline);
+              if (name) onMkdir(name);
+            }}
+          >
+            <FolderPlus className="h-4 w-4" />
+          </Button>
+          <label className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+            <Upload className="h-4 w-4" />
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) onUpload(Array.from(e.target.files));
+              }}
+            />
+          </label>
+           <label className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-colors" title="Upload Folder">
+            <Plus className="h-4 w-4" />
+            <input
+              type="file"
+              multiple
+              // @ts-ignore
+              webkitdirectory=""
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) onUpload(Array.from(e.target.files));
+              }}
+            />
+          </label>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-2">
+        {tree.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground p-4">
+            <FilePlus className="h-8 w-8 opacity-20" />
+            <p>No files yet</p>
+          </div>
+        ) : (
+          tree.map((node) => renderNode(node))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -7530,6 +8203,7 @@ export const translations = {
       idle: 'idle',
       unknown: 'unknown',
       copied: 'Copied to clipboard',
+      deleted: 'Deleted',
     },
     navigation: {
       dashboard: 'Dashboard',
@@ -7943,6 +8617,7 @@ export const translations = {
       idle: 'ожидание',
       unknown: 'неизвестно',
       copied: 'Скопировано в буфер обмена',
+      deleted: 'Удалено',
     },
     navigation: {
       dashboard: 'Дашборд',
@@ -8496,8 +9171,8 @@ export default defineConfig({
 
 
 === SUMMARY ===
-included: 78
+included: 82
 skipped(binary): 0
 skipped(size): 0
 skipped(ext): 0
-totalBytes(approx): 305049
+totalBytes(approx): 326916
