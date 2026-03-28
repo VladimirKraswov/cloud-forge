@@ -255,6 +255,45 @@ export function useWorkspace(jobId: string | undefined, initialFiles: any[] = []
     }
   });
 
+  const moveMutation = useMutation({
+    mutationFn: ({ oldPath, newPath }: { oldPath: string, newPath: string }) => {
+        if (!jobId) {
+            setBufferedFiles(prev => prev.map(f => {
+                if (f.relative_path === oldPath) {
+                    return { ...f, relative_path: newPath, filename: newPath.split('/').pop() || newPath };
+                }
+                if (f.relative_path.startsWith(oldPath + '/')) {
+                    const suffix = f.relative_path.substring(oldPath.length);
+                    return { ...f, relative_path: newPath + suffix };
+                }
+                return f;
+            }));
+            return Promise.resolve();
+        }
+        return jobsApi.move(jobId, oldPath, newPath);
+    },
+    onSuccess: (_, { oldPath, newPath }) => {
+      void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+      setOpenTabs((prev) => prev.map(tab => {
+          if (tab.path === oldPath) {
+              return { ...tab, path: newPath, id: newPath, name: newPath.split('/').pop() || newPath };
+          }
+          if (tab.path.startsWith(oldPath + '/')) {
+              const suffix = tab.path.substring(oldPath.length);
+              const nextPath = newPath + suffix;
+              return { ...tab, path: nextPath, id: nextPath, name: nextPath.split('/').pop() || nextPath };
+          }
+          return tab;
+      }));
+      if (activeTabId === oldPath) setActiveTabId(newPath);
+      toast.success(t.common.save);
+    },
+    onError: (error) => {
+        console.error(error);
+        toast.error(t.errors.apiError);
+    }
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (path: string) => {
         if (!jobId) {
@@ -287,6 +326,25 @@ export function useWorkspace(jobId: string | undefined, initialFiles: any[] = []
     closeTab,
     updateTabContent,
     saveTab,
+    move: moveMutation.mutateAsync,
+    createFile: async (path: string) => {
+        if (!jobId) {
+            setBufferedFiles(prev => [...prev, {
+                relative_path: path,
+                filename: path.split('/').pop(),
+                source_type: 'inline',
+                inline_content: '',
+                status: 'new'
+            }]);
+            return;
+        }
+        await jobsApi.saveFileContent(jobId, {
+            relative_path: path,
+            content: '',
+        });
+        void queryClient.invalidateQueries({ queryKey: ['job-files-tree', jobId] });
+        toast.success(t.common.save);
+    },
     mkdir: mkdirMutation.mutateAsync,
     rename: renameMutation.mutateAsync,
     deletePath: deleteMutation.mutateAsync,

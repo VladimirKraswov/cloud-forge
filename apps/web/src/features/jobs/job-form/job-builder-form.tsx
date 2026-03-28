@@ -17,6 +17,8 @@ import { BootstrapBuilderDialog } from '@/features/catalog/bootstrap-builder-dia
 import { EnvironmentsFieldArray } from '@/features/jobs/job-form/environments-field-array';
 import { WorkspaceExplorer } from '@/features/jobs/workspace/workspace-explorer';
 import { WorkspaceEditor } from '@/features/jobs/workspace/workspace-editor';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { useWorkspace } from '@/features/jobs/workspace/use-workspace';
 import { EditableJobFile } from '@/features/jobs/job-form/job-files-editor';
 import {
@@ -347,6 +349,7 @@ export function JobBuilderForm({
   );
 
   return (
+    <DndProvider backend={HTML5Backend}>
     <form className="space-y-6" onSubmit={submit}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={(value) => setTab(value as 'general' | 'files')}>
@@ -603,7 +606,9 @@ export function JobBuilderForm({
                         onToggleExpand={workspace.toggleExpand}
                         onOpenFile={workspace.openFile}
                         onMkdir={workspace.mkdir}
+                        onCreateFile={workspace.createFile}
                         onRename={(oldPath, newPath) => workspace.rename({ oldPath, newPath })}
+                        onMove={(oldPath, newPath) => workspace.move({ oldPath, newPath })}
                         onDelete={workspace.deletePath}
                         onDownload={workspace.download}
                         onUpload={workspace.upload}
@@ -624,5 +629,6 @@ export function JobBuilderForm({
         </TabsContent>
       </Tabs>
     </form>
+    </DndProvider>
   );
 }

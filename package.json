@@ -7,26 +7,26 @@
   "scripts": {
     "dev:backend": "npm run dev --workspace=apps/backend",
     "dev:web": "npm run dev --workspace=apps/web",
-
     "dev:infra": "docker compose -f infra/compose/docker-compose.dev.yml up -d redis minio",
     "dev:down": "docker compose -f infra/compose/docker-compose.dev.yml down",
     "dev:stop": "docker compose -f infra/compose/docker-compose.dev.yml stop",
-
     "dev:all": "npm run dev:infra && concurrently -n backend,web \"npm run dev:backend\" \"npm run dev:web\"",
     "dev:docker": "docker compose -f infra/compose/docker-compose.dev.yml up --build",
-
     "dev:restart": "npm run dev:down && npm run dev:all",
     "dev:docker:restart": "npm run dev:down && npm run dev:docker",
-
     "build:backend": "npm run build --workspace=apps/backend",
     "build:web": "npm run build --workspace=apps/web",
     "build:worker": "npm run worker:build --workspace=apps/backend",
-
     "test:backend": "npm run test --workspace=apps/backend",
     "lint:backend": "npm run lint --workspace=apps/backend",
     "lint:web": "npm run lint --workspace=apps/web"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "dnd-core": "^16.0.1",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1"
   }
 }
