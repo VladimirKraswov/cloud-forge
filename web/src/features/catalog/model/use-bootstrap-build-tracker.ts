@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { catalogApi } from '@/api/catalog';
+import { ApiClientError } from '@/api/client';
 
 const STORAGE_KEY = 'cloudforge.activeBootstrapBuild';
 const CHANGED_EVENT = 'cloudforge:bootstrap-build-changed';
@@ -90,17 +91,16 @@ export function useBootstrapBuildTracker() {
         let logs = build.logs;
 
         try {
-          const res = await catalogApi.getBuildProgress(build.id);
-          status = res.status;
-          logs = res.logs ?? logs;
-        } catch (error: any) {
-          // If 404, the in-memory progress is gone (server restart), fetch from DB
-          if (error?.response?.status === 404) {
+          const result = await catalogApi.getBuildProgress(build.id);
+          status = result.status;
+          logs = result.logs ?? logs;
+        } catch (error) {
+          if (error instanceof ApiClientError && error.status === 404) {
             const dbImage = await catalogApi.getBootstrapImage(build.id);
+            const logResult = await catalogApi.getBootstrapImageLogs(build.id);
+
             status = dbImage.status;
-            // For logs, we might need a separate call if we want the full history
-            const logRes = await catalogApi.getBootstrapImageLogs(build.id);
-            logs = logRes.items.map((l) => l.message);
+            logs = logResult.items.map((entry) => entry.message);
           } else {
             throw error;
           }
@@ -124,14 +124,16 @@ export function useBootstrapBuildTracker() {
       }
     };
 
-    poll();
-    const timer = window.setInterval(poll, 2000);
+    void poll();
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 2000);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [build?.id, build?.status, build?.imageRef, build?.startedAt]);
+  }, [build?.id, build?.imageRef, build?.startedAt, build?.status]);
 
   useEffect(() => {
     const currentStatus = build?.status ?? null;
@@ -146,20 +148,28 @@ export function useBootstrapBuildTracker() {
       toast.success('Bootstrap image build completed');
     } else if (currentStatus === 'failed') {
       toast.error('Bootstrap image build failed');
+    } else if (currentStatus === 'cancelled') {
+      toast('Bootstrap image build cancelled');
     }
 
     previousStatusRef.current = currentStatus;
   }, [build]);
 
   const startTracking = useCallback(
-    (payload: { id: string; imageRef?: string; logs?: string[]; status?: BootstrapBuildStatus }) => {
+    (payload: {
+      id: string;
+      imageRef?: string;
+      logs?: string[];
+      status?: BootstrapBuildStatus;
+    }) => {
+      const timestamp = new Date().toISOString();
       const snapshot: ActiveBootstrapBuild = {
         id: payload.id,
         status: payload.status ?? 'building',
         logs: payload.logs ?? ['Starting build...'],
         imageRef: payload.imageRef,
-        startedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        startedAt: timestamp,
+        updatedAt: timestamp,
       };
 
       previousStatusRef.current = snapshot.status;

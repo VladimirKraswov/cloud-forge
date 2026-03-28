@@ -93,6 +93,10 @@ export function useRunWebsocket({
       }
     };
 
+    socket.onerror = (error) => {
+      console.error('Run WebSocket error', error);
+    };
+
     return () => {
       socket.close();
     };

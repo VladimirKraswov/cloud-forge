@@ -12,7 +12,12 @@ import {
   Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { z } from 'zod';
 import { catalogApi } from '@/api/catalog';
+import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
+import { Badge } from '@/shared/components/ui/badge';
+import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -21,22 +26,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/shared/components/ui/dialog';
-import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
-import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert';
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
-import { Badge } from '@/shared/components/ui/badge';
-import { cn } from '@/shared/utils/cn';
-import { z } from 'zod';
 import { useI18n } from '@/shared/lib/i18n';
+import { cn } from '@/shared/utils/cn';
 import {
   OPEN_BUILD_DIALOG_EVENT,
   useBootstrapBuildTracker,
 } from './model/use-bootstrap-build-tracker';
 
 type BuilderStep = 'form' | 'preview' | 'building';
+
 type BuildStageId =
   | 'queued'
   | 'assets'
@@ -202,26 +203,45 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
       stageId = rankStage(stageId, 'pulling');
     }
 
-    const layerMatch =
-      line.match(
-        /sha256:([a-f0-9]+).*?(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)\s*\/\s*(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)/i,
-      ) || line.match(/([a-z0-9]{12}):\s*Pulling\s*fs\s*layer/i);
+    const sizedLayerMatch = line.match(
+      /sha256:([a-f0-9]+).*?(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)\s*\/\s*(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)/i,
+    );
+    const pullingLayerMatch = line.match(/([a-z0-9]{12}):\s*Pulling\s*fs\s*layer/i);
 
-    if (layerMatch) {
-      const [, digest, , , totalValueRaw, totalUnit] = layerMatch;
-      const totalValue = Number(totalValueRaw);
-      const bytes = toBytes(totalValue, totalUnit);
-      const sizeLabel = `${totalValueRaw}${totalUnit.toUpperCase()}`;
+    if (sizedLayerMatch) {
+      const digest = sizedLayerMatch[1];
+      const totalValueRaw = sizedLayerMatch[4];
+      const totalUnit = sizedLayerMatch[5];
 
-      stageId = rankStage(stageId, 'downloading');
+      if (digest && totalValueRaw && totalUnit) {
+        const totalValue = Number(totalValueRaw);
+        const bytes = toBytes(totalValue, totalUnit);
+        const sizeLabel = `${totalValueRaw}${totalUnit.toUpperCase()}`;
 
-      const existing = layerMap.get(digest);
-      if (!existing || bytes > existing.bytes) {
-        layerMap.set(digest, {
-          digest,
-          sizeLabel,
-          bytes,
-        });
+        stageId = rankStage(stageId, 'downloading');
+
+        const existing = layerMap.get(digest);
+        if (!existing || bytes > existing.bytes) {
+          layerMap.set(digest, {
+            digest,
+            sizeLabel,
+            bytes,
+          });
+        }
+      }
+    } else if (pullingLayerMatch) {
+      const digest = pullingLayerMatch[1];
+
+      if (digest) {
+        stageId = rankStage(stageId, 'downloading');
+
+        if (!layerMap.has(digest)) {
+          layerMap.set(digest, {
+            digest,
+            sizeLabel: 'unknown',
+            bytes: 0,
+          });
+        }
       }
     }
 
@@ -241,7 +261,10 @@ function parseBuildInsights(progress: BuildProgress | null): BuildInsights {
       stageId = rankStage(stageId, 'pushing');
     }
 
-    if (progress.status === 'failed' || /error:|failed to solve|denied:|unauthorized|no space left/i.test(lower)) {
+    if (
+      progress.status === 'failed' ||
+      /error:|failed to solve|denied:|unauthorized|no space left/i.test(lower)
+    ) {
       stageId = 'failed';
     }
   }
@@ -274,9 +297,9 @@ function LabelWithHelp({
       <Label htmlFor={htmlFor}>{label}</Label>
       <div className="group relative">
         <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 transition-colors hover:text-muted-foreground" />
-        <div className="absolute bottom-full left-1/2 mb-2 hidden w-48 -translate-x-1/2 rounded-lg border bg-popover p-2 text-[10px] leading-tight text-popover-foreground shadow-md group-hover:block z-50">
+        <div className="absolute bottom-full left-1/2 z-50 mb-2 hidden w-48 -translate-x-1/2 rounded-lg border bg-popover p-2 text-[10px] leading-tight text-popover-foreground shadow-md group-hover:block">
           {help}
-          <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-border" />
+          <div className="absolute left-1/2 top-full -ml-1 border-4 border-transparent border-t-border" />
         </div>
       </div>
     </div>
@@ -328,9 +351,13 @@ function StageRow({
         <div className="flex items-center gap-2">
           <p className="font-medium">{title}</p>
           {state === 'active' ? <Badge>active</Badge> : null}
-          {state === 'done' ? <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">done</Badge> : null}
+          {state === 'done' ? (
+            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
+              done
+            </Badge>
+          ) : null}
           {state === 'failed' ? (
-            <Badge className="bg-red-50 text-red-700 border-red-200">failed</Badge>
+            <Badge className="border-red-200 bg-red-50 text-red-700">failed</Badge>
           ) : null}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -339,12 +366,16 @@ function StageRow({
   );
 }
 
+function isTerminalStatus(status?: string | null) {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
 export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<BuilderStep>('form');
   const [loading, setLoading] = useState(false);
   const { build, startTracking, clearTracking } = useBootstrapBuildTracker();
-  const { t, lang } = useI18n();
+  const { t, lang, setLang } = useI18n();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -361,15 +392,16 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   const logEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (autoScroll) {
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [progress?.logs, autoScroll]);
+  }, [autoScroll, progress?.logs]);
 
-  const handleLogScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
+  const handleLogScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const target = event.currentTarget;
     const isAtBottom =
       Math.abs(target.scrollHeight - target.clientHeight - target.scrollTop) < 20;
 
@@ -380,6 +412,7 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
 
   const handleCancel = async () => {
     if (!buildId) return;
+
     setCancelling(true);
     try {
       await catalogApi.cancelBuild(buildId);
@@ -393,20 +426,24 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined;
+    let interval: number | undefined;
 
     if (step === 'building' && buildId) {
-      interval = setInterval(async () => {
+      interval = window.setInterval(async () => {
         try {
-          const res = await catalogApi.getBuildProgress(buildId);
-          setProgress(res);
+          const result = await catalogApi.getBuildProgress(buildId);
+          setProgress(result);
 
-          if (res.status === 'completed' || res.status === 'failed') {
-            if (interval) clearInterval(interval);
+          if (isTerminalStatus(result.status)) {
+            if (interval !== undefined) {
+              window.clearInterval(interval);
+            }
 
-            if (res.status === 'completed') {
+            if (result.status === 'completed') {
               toast.success('Image published successfully');
               onSuccess?.();
+            } else if (result.status === 'cancelled') {
+              toast('Build cancelled');
             } else {
               toast.error('Build failed. Check logs for details.');
             }
@@ -418,7 +455,9 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval !== undefined) {
+        window.clearInterval(interval);
+      }
     };
   }, [buildId, onSuccess, step]);
 
@@ -464,29 +503,31 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
   const largestLayer = insights.largeLayers[0];
   const hasHugeLayers = Boolean(largestLayer && largestLayer.bytes >= 5 * 1024 ** 3);
 
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-
   const handlePreview = async () => {
     const result = baseInfoSchema.safeParse(formData);
+
     if (!result.success) {
       const errors: Record<string, string> = {};
       result.error.errors.forEach((err) => {
-        if (err.path[0]) errors[err.path[0].toString()] = err.message;
+        if (err.path[0]) {
+          errors[err.path[0].toString()] = err.message;
+        }
       });
       setFormErrors(errors);
       toast.error('Please fix validation errors');
       return;
     }
-    setFormErrors({});
 
+    setFormErrors({});
     setLoading(true);
 
     try {
-      const res = await catalogApi.previewDockerfile({
+      const response = await catalogApi.previewDockerfile({
         baseImage: formData.baseImage,
         environments: [{ name: 'default', requirements_text: formData.extraPackages }],
       });
-      setDockerfile(res.dockerfile);
+
+      setDockerfile(response.dockerfile);
       setStep('preview');
     } catch (error) {
       console.error(error);
@@ -498,34 +539,37 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
 
   const handleStartBuild = async () => {
     const result = buildFormSchema.safeParse(formData);
+
     if (!result.success) {
       const errors: Record<string, string> = {};
       result.error.errors.forEach((err) => {
-        if (err.path[0]) errors[err.path[0].toString()] = err.message;
+        if (err.path[0]) {
+          errors[err.path[0].toString()] = err.message;
+        }
       });
       setFormErrors(errors);
       toast.error('Please fix validation errors');
       return;
     }
-    setFormErrors({});
 
+    setFormErrors({});
     setLoading(true);
 
     try {
-      const res = await catalogApi.buildBootstrapImage({
+      const response = await catalogApi.buildBootstrapImage({
         ...formData,
         dockerfileText: dockerfile,
         environments: [{ name: 'default', requirements_text: formData.extraPackages }],
       });
 
       startTracking({
-        id: res.id,
+        id: response.id,
         status: 'building',
         logs: ['Starting build...'],
         imageRef: `${formData.dockerUser}/${formData.name}:${formData.tag}`,
       });
 
-      setBuildId(res.id);
+      setBuildId(response.id);
       setProgress({
         status: 'building',
         logs: ['Starting build...'],
@@ -539,14 +583,16 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     }
   };
 
-  const renderStageState = (index: number): 'done' | 'active' | 'pending' | 'failed' => {
-    if (insights.stageId === 'failed') {
+  const renderStageState = (
+    index: number,
+  ): 'done' | 'active' | 'pending' | 'failed' => {
+    if (progress?.status === 'failed' || progress?.status === 'cancelled') {
       if (index < activeStageIndex) return 'done';
       if (index === activeStageIndex) return 'failed';
       return 'pending';
     }
 
-    if (insights.stageId === 'completed') {
+    if (progress?.status === 'completed' || insights.stageId === 'completed') {
       return 'done';
     }
 
@@ -555,6 +601,16 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
     return 'pending';
   };
 
+  const currentStageLabel =
+    progress?.status === 'cancelled'
+      ? 'cancelled'
+      : progress?.status === 'failed'
+        ? 'failed'
+        : progress?.status === 'completed'
+          ? 'completed'
+          : t.catalog.stages[insights.stageId as Exclude<BuildStageId, 'completed' | 'failed'>]
+              ?.title ?? 'Queued';
+
   return (
     <Dialog
       open={open}
@@ -562,7 +618,6 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
         setOpen(value);
 
         if (!value) {
-          // модалка закрывается, но активную сборку НЕ трогаем
           return;
         }
 
@@ -589,7 +644,8 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
             <DialogTitle>{t.catalog.builderTitle}</DialogTitle>
             <DialogDescription>{t.catalog.builderDescription}</DialogDescription>
           </div>
-          <div className="flex items-center gap-1 rounded-lg border bg-muted p-0.5 mr-6">
+
+          <div className="mr-6 flex items-center gap-1 rounded-lg border bg-muted p-0.5">
             <Button
               variant={lang === 'en' ? 'secondary' : 'ghost'}
               size="xs"
@@ -628,9 +684,9 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
                     setFormData((prev) => ({ ...prev, name: event.target.value }))
                   }
                 />
-                {formErrors.name && (
-                  <p className="text-xs text-destructive font-medium">{formErrors.name}</p>
-                )}
+                {formErrors.name ? (
+                  <p className="text-xs font-medium text-destructive">{formErrors.name}</p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -649,9 +705,9 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
                     setFormData((prev) => ({ ...prev, tag: event.target.value }))
                   }
                 />
-                {formErrors.tag && (
-                  <p className="text-xs text-destructive font-medium">{formErrors.tag}</p>
-                )}
+                {formErrors.tag ? (
+                  <p className="text-xs font-medium text-destructive">{formErrors.tag}</p>
+                ) : null}
               </div>
             </div>
 
@@ -671,9 +727,11 @@ export function BootstrapBuilderDialog({ onSuccess }: { onSuccess?: () => void }
                   setFormData((prev) => ({ ...prev, baseImage: event.target.value }))
                 }
               />
-              {formErrors.baseImage && (
-                <p className="text-xs text-destructive font-medium">{formErrors.baseImage}</p>
-              )}
+              {formErrors.baseImage ? (
+                <p className="text-xs font-medium text-destructive">
+                  {formErrors.baseImage}
+                </p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 If this base image already contains model weights, the first build can
                 take a long time and download tens of GB.
@@ -706,9 +764,9 @@ datasets>=3.6.0`}
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Heads up for model-heavy base images</AlertTitle>
               <AlertDescription>
-                Choosing a base image with embedded weights is convenient, but the initial
-                pull can be very large. The builder will now show stages like base image
-                pull, large layer download, build, and push.
+                Choosing a base image with embedded weights is convenient, but the
+                initial pull can be very large. The builder will now show stages like
+                base image pull, large layer download, build, and push.
               </AlertDescription>
             </Alert>
 
@@ -728,7 +786,7 @@ datasets>=3.6.0`}
                 <CardTitle className="text-base">Dockerfile preview</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="rounded-2xl bg-muted p-4 font-mono text-xs whitespace-pre overflow-x-auto">
+                <div className="overflow-x-auto whitespace-pre rounded-2xl bg-muted p-4 font-mono text-xs">
                   {dockerfile}
                 </div>
               </CardContent>
@@ -738,8 +796,8 @@ datasets>=3.6.0`}
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Docker Hub credentials</AlertTitle>
               <AlertDescription>
-                These credentials are used only to push the final bootstrap image to your
-                Docker Hub repository.
+                These credentials are used only to push the final bootstrap image to
+                your Docker Hub repository.
               </AlertDescription>
             </Alert>
 
@@ -760,9 +818,11 @@ datasets>=3.6.0`}
                     setFormData((prev) => ({ ...prev, dockerUser: event.target.value }))
                   }
                 />
-                {formErrors.dockerUser && (
-                  <p className="text-xs text-destructive font-medium">{formErrors.dockerUser}</p>
-                )}
+                {formErrors.dockerUser ? (
+                  <p className="text-xs font-medium text-destructive">
+                    {formErrors.dockerUser}
+                  </p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -782,9 +842,11 @@ datasets>=3.6.0`}
                     setFormData((prev) => ({ ...prev, dockerPass: event.target.value }))
                   }
                 />
-                {formErrors.dockerPass && (
-                  <p className="text-xs text-destructive font-medium">{formErrors.dockerPass}</p>
-                )}
+                {formErrors.dockerPass ? (
+                  <p className="text-xs font-medium text-destructive">
+                    {formErrors.dockerPass}
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -806,7 +868,7 @@ datasets>=3.6.0`}
             <div className="flex items-center gap-3">
               {progress?.status === 'completed' ? (
                 <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              ) : progress?.status === 'failed' ? (
+              ) : progress?.status === 'failed' || progress?.status === 'cancelled' ? (
                 <AlertCircle className="h-5 w-5 text-destructive" />
               ) : (
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -818,18 +880,13 @@ datasets>=3.6.0`}
                     ? t.catalog.completed
                     : progress?.status === 'failed'
                       ? t.catalog.failed
-                      : t.catalog.building}
+                      : progress?.status === 'cancelled'
+                        ? 'Build cancelled'
+                        : t.catalog.building}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {t.catalog.currentStage}:{' '}
-                  <span className="font-medium">
-                    {insights.stageId === 'failed'
-                      ? 'failed'
-                      : insights.stageId === 'completed'
-                        ? 'completed'
-                        : STAGE_META.find((item) => item.id === insights.stageId)?.title ??
-                          'Queued'}
-                  </span>
+                  <span className="font-medium">{currentStageLabel}</span>
                 </p>
               </div>
             </div>
@@ -841,36 +898,26 @@ datasets>=3.6.0`}
                     <CardTitle className="text-base">{t.catalog.buildStages}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {STAGE_META.map((stage, index) => {
-                      const title = lang === 'ru' ? translations.ru.catalog.stages[stage.id].title : stage.title;
-                      const description = lang === 'ru' ? translations.ru.catalog.stages[stage.id].description : stage.description;
-                      return (
-                        <StageRow
-                          key={stage.id}
-                          title={title}
-                          description={description}
-                          icon={stage.icon}
-                          state={renderStageState(index)}
-                        />
-                      );
-                    })}
+                    {STAGE_META.map((stage, index) => (
+                      <StageRow
+                        key={stage.id}
+                        title={t.catalog.stages[stage.id].title}
+                        description={t.catalog.stages[stage.id].description}
+                        icon={stage.icon}
+                        state={renderStageState(index)}
+                      />
+                    ))}
                   </CardContent>
                 </Card>
 
                 {insights.largeLayers.length > 0 ? (
                   <Alert variant={hasHugeLayers ? 'warning' : 'default'}>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>
-                      Large base-image layers detected
-                    </AlertTitle>
+                    <AlertTitle>Large base-image layers detected</AlertTitle>
                     <AlertDescription>
                       {hasHugeLayers ? (
                         <div className="space-y-2">
-                          <p>
-                            The builder is downloading very large layers from the selected
-                            base image. The first build can take a long time and may require
-                            tens of GB of free disk space.
-                          </p>
+                          <p>{t.catalog.largeLayersWarning}</p>
                           <div className="flex flex-wrap gap-2">
                             {insights.largeLayers.map((layer) => (
                               <Badge
@@ -884,11 +931,7 @@ datasets>=3.6.0`}
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          <p>
-                            Large container layers are being downloaded. This is expected for
-                            model-heavy images and usually happens before the Dockerfile
-                            steps start running.
-                          </p>
+                          <p>{t.catalog.largeLayersInfo}</p>
                           <div className="flex flex-wrap gap-2">
                             {insights.largeLayers.map((layer) => (
                               <Badge key={layer.digest}>
@@ -915,12 +958,14 @@ datasets>=3.6.0`}
                     </div>
                     <div>
                       <span className="text-muted-foreground">Base image:</span>{' '}
-                      <span className="font-medium break-all">{formData.baseImage}</span>
+                      <span className="break-all font-medium">{formData.baseImage}</span>
                     </div>
                     {insights.lastMeaningfulLine ? (
                       <div>
                         <span className="text-muted-foreground">Last log line:</span>{' '}
-                        <span className="font-medium break-all">{insights.lastMeaningfulLine}</span>
+                        <span className="break-all font-medium">
+                          {insights.lastMeaningfulLine}
+                        </span>
                       </div>
                     ) : null}
                   </CardContent>
@@ -933,7 +978,7 @@ datasets>=3.6.0`}
                     <Terminal className="h-4 w-4" />
                     {t.catalog.rawLogs}
                   </CardTitle>
-                  {!autoScroll && progress?.status === 'building' && (
+                  {!autoScroll && !isTerminalStatus(progress?.status) ? (
                     <Button
                       variant="ghost"
                       size="xs"
@@ -942,7 +987,7 @@ datasets>=3.6.0`}
                     >
                       {t.catalog.resumeAutoScroll}
                     </Button>
-                  )}
+                  ) : null}
                 </CardHeader>
                 <CardContent>
                   <div
@@ -967,11 +1012,9 @@ datasets>=3.6.0`}
               </Card>
             </div>
 
-            <div className="flex justify-between items-center pt-1">
+            <div className="flex items-center justify-between pt-1">
               <div>
-                {progress?.status === 'completed' ||
-                progress?.status === 'failed' ||
-                progress?.status === 'cancelled' ? (
+                {isTerminalStatus(progress?.status) ? (
                   <Button variant="ghost" size="sm" onClick={clearTracking}>
                     {t.catalog.clearStatus}
                   </Button>
@@ -994,17 +1037,12 @@ datasets>=3.6.0`}
                   </Button>
                 )}
               </div>
+
               <Button
-                variant={
-                  progress?.status === 'completed' || progress?.status === 'failed'
-                    ? 'default'
-                    : 'outline'
-                }
+                variant={isTerminalStatus(progress?.status) ? 'default' : 'outline'}
                 onClick={() => setOpen(false)}
               >
-                {progress?.status === 'completed' || progress?.status === 'failed'
-                  ? t.catalog.close
-                  : t.catalog.hide}
+                {isTerminalStatus(progress?.status) ? t.catalog.close : t.catalog.hide}
               </Button>
             </div>
           </div>

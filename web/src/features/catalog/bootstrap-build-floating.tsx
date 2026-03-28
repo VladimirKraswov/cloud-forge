@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { catalogApi } from '@/api/catalog';
+import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent } from '@/shared/components/ui/card';
-import { Badge } from '@/shared/components/ui/badge';
 import { useI18n } from '@/shared/lib/i18n';
 import {
   requestOpenBootstrapBuildDialog,
@@ -33,6 +33,7 @@ export function BootstrapBuildFloating() {
 
   const handleCancel = async () => {
     if (!build.id) return;
+
     setCancelling(true);
     try {
       await catalogApi.cancelBuild(build.id);
@@ -45,9 +46,18 @@ export function BootstrapBuildFloating() {
     }
   };
 
+  const statusMessage =
+    build.status === 'completed'
+      ? t.floating.buildCompleted
+      : build.status === 'cancelled'
+        ? 'Build cancelled.'
+        : isActive
+          ? t.floating.buildInProgress
+          : t.floating.buildFailed;
+
   return (
     <div className="fixed bottom-4 right-4 z-[100] w-[360px] max-w-[calc(100vw-2rem)]">
-      <Card className="shadow-2xl border">
+      <Card className="border shadow-2xl">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             <div className="mt-0.5">
@@ -68,13 +78,7 @@ export function BootstrapBuildFloating() {
                 <Badge variant="outline">{getStatusLabel(build.status)}</Badge>
               </div>
 
-              <p className="mt-1 text-sm text-muted-foreground">
-                {isActive
-                  ? t.floating.buildInProgress
-                  : build.status === 'completed'
-                    ? t.floating.buildCompleted
-                    : t.floating.buildFailed}
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{statusMessage}</p>
 
               {build.logs?.length ? (
                 <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">

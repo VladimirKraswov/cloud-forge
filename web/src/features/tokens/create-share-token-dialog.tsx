@@ -23,6 +23,18 @@ function toIsoOrUndefined(value: string) {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
+function parseMaxClaims(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error('Max claims must be a positive integer');
+  }
+
+  return parsed;
+}
+
 export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
   const [open, setOpen] = useState(false);
   const [expiresAt, setExpiresAt] = useState('');
@@ -32,11 +44,11 @@ export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
   const createMutation = useMutation({
     mutationFn: () => {
       const expiresAtIso = toIsoOrUndefined(expiresAt);
-      const maxClaimsValue = maxClaims ? Number(maxClaims) : undefined;
+      const maxClaimsValue = parseMaxClaims(maxClaims);
 
       return jobsApi.createShareToken(jobId, {
         ...(expiresAtIso ? { expires_at: expiresAtIso } : {}),
-        ...(maxClaimsValue ? { max_claims: maxClaimsValue } : {}),
+        ...(maxClaimsValue !== undefined ? { max_claims: maxClaimsValue } : {}),
       });
     },
     onSuccess: () => {
@@ -60,7 +72,8 @@ export function CreateShareTokenDialog({ jobId }: { jobId: string }) {
         <DialogHeader>
           <DialogTitle>Create share token</DialogTitle>
           <DialogDescription>
-            For a simple remote run on one Docker machine, the default single-use token is usually enough.
+            For a simple remote run on one Docker machine, the default single-use token
+            is usually enough.
           </DialogDescription>
         </DialogHeader>
 

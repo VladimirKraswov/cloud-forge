@@ -1,15 +1,15 @@
 import { z } from 'zod';
 
 export const keyValueSchema = z.object({
-  key: z.string().default(''),
-  value: z.string().default(''),
+  key: z.string(),
+  value: z.string(),
 });
 
 export const resourceSchema = z.object({
-  cpu_limit: z.string().default(''),
-  memory_limit: z.string().default(''),
-  gpus: z.string().default(''),
-  shm_size: z.string().default(''),
+  cpu_limit: z.string(),
+  memory_limit: z.string(),
+  gpus: z.string(),
+  shm_size: z.string(),
 });
 
 export const jobFormSchema = z.object({
@@ -17,15 +17,10 @@ export const jobFormSchema = z.object({
   description: z.string().optional(),
   bootstrap_image_id: z.string().min(1, 'Choose a bootstrap image'),
   entrypoint: z.string().min(1, 'Entrypoint is required'),
-  entrypoint_args_text: z.string().default(''),
-  working_dir: z.string().default('/workspace'),
-  environment_variables: z.array(keyValueSchema).default([]),
-  resources: resourceSchema.default({
-    cpu_limit: '',
-    memory_limit: '',
-    gpus: '',
-    shm_size: '',
-  }),
+  entrypoint_args_text: z.string(),
+  working_dir: z.string(),
+  environment_variables: z.array(keyValueSchema),
+  resources: resourceSchema,
 });
 
 export type JobFormValues = z.infer<typeof jobFormSchema>;

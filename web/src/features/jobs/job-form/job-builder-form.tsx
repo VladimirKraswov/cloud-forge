@@ -22,7 +22,6 @@ import {
   mapFormValuesToPayload,
   mapJobToFormValues,
 } from '@/features/jobs/job-form/job-form-mappers';
-import { getApiErrorMessage } from '@/shared/lib/api-error';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
@@ -36,6 +35,7 @@ import {
 } from '@/shared/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import { Textarea } from '@/shared/components/ui/textarea';
+import { getApiErrorMessage } from '@/shared/lib/api-error';
 
 function makeLocalId() {
   return `local_${Math.random().toString(36).slice(2, 10)}`;
@@ -127,7 +127,7 @@ export function JobBuilderForm({
     queryFn: catalogApi.listBootstrapImages,
   });
 
-  const initialValues = useMemo(
+  const initialValues = useMemo<JobFormValues>(
     () => mapJobToFormValues(initialJobDetails?.job ?? null, initialBootstrapImageId),
     [initialBootstrapImageId, initialJobDetails?.job],
   );
@@ -258,12 +258,14 @@ export function JobBuilderForm({
     }
 
     for (const file of visibleFiles) {
-      const renamedExistingUploadWithoutContent =
+      const isRenamedExistingUpload =
         file.status === 'existing' &&
-        file.original_relative_path !== file.relative_path &&
         file.source_type === 'upload' &&
-        !file.file &&
-        !file.content_loaded;
+        Boolean(file.original_relative_path) &&
+        file.original_relative_path !== file.relative_path;
+
+      const renamedExistingUploadWithoutContent =
+        isRenamedExistingUpload && !file.file && !file.content_loaded;
 
       if (renamedExistingUploadWithoutContent) {
         throw new Error(
@@ -287,6 +289,23 @@ export function JobBuilderForm({
           file.file,
           file.relative_path,
           file.is_executable,
+        );
+        continue;
+      }
+
+      if (isRenamedExistingUpload) {
+        if (file.content_loaded && isTextEditableFile(file)) {
+          await jobsApi.saveFileContent(savedJobId, {
+            relative_path: file.relative_path,
+            content: file.inline_content,
+            mime_type: file.mime_type,
+            is_executable: file.is_executable,
+          });
+          continue;
+        }
+
+        throw new Error(
+          `File "${file.original_relative_path}" was renamed but cannot be re-saved from the browser. Re-upload it or convert it to an inline text file before saving.`,
         );
       }
     }
@@ -476,14 +495,18 @@ export function JobBuilderForm({
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
                               Environments
                             </div>
-                            <div className="mt-1 font-medium">{selected.environments.length}</div>
+                            <div className="mt-1 font-medium">
+                              {selected.environments.length}
+                            </div>
                           </div>
 
                           <div>
                             <div className="text-xs uppercase tracking-wide text-muted-foreground">
                               Status
                             </div>
-                            <div className="mt-1 font-medium capitalize">{selected.status}</div>
+                            <div className="mt-1 font-medium capitalize">
+                              {selected.status}
+                            </div>
                           </div>
                         </div>
                       );
